@@ -30,8 +30,11 @@ commit en français).
   commité dans `generated/`, `WorkflowScriptParser`, `WorkflowConfigVisitor`,
   chargeur `INCLUDE`/`FRAGMENT`), 84 tests verts dont golden README source +
   `ParserUnitTest`.
-- [ ] **Étape 3 — Moteur** (prochaine) : processor, engine, locks
-- [ ] Étape 4 — Templating urban-json (TranslateActions)
+- [x] **Étape 3 — Moteur** : `urban_workflow/engine/` (factory, processor,
+  engine + locks CRC32, chaîne d'append, couture `ActionTranslator`) et
+  `urban_workflow/outputs/` (décorateurs + transactions, mémoire), 113 tests
+  verts dont ports de `WorkflowsUnitTest` et scénarios DSL bout-en-bout.
+- [ ] **Étape 4 — Templating urban-json** (prochaine) : TranslateActions
 - [ ] Étape 5 — Persistance SQL (SQLAlchemy, extra optionnel)
 - [ ] Étape 6 — Finitions (docs, CI)
 
@@ -57,24 +60,50 @@ commit en français).
 - `EXPIRE AFTER` : événement `__expired`, garde `CurrentState`, actions
   techniques push/cancel reminder (délais en **minutes**).
 
-## Étape 3 (Moteur) — notes de reprise
+## Étape 3 (Moteur) — acquis
+
+- `engine/factory.py` : `WorkflowFactory` (créateurs par type/nom+version,
+  `context_factory` pour sous-classer `RunContext`). **L'événement
+  d'historique porte l'uuid de l'événement entrant** — le source générait
+  un Guid neuf et sa garde anti-double-intégration ne se déclenchait jamais.
+- `engine/serializer.py` : `parse_incoming_event` — propriétés CamelCase
+  connues (`Name`, `Uuid`, `ExternalId`, `CreationDate`, `EventDate`) vers
+  les champs typés, le reste en `extended_datas`.
+- `engine/processor.py` : flux complet (existants par ExternalId +
+  restriction `WorkflowId`, Initializers + CONCURENCY, transitions,
+  récursif, collecte, append, traduction, sorties sous transaction).
+  `evaluate_event` retourne les contextes impactés.
+- `engine/engine.py` : verrou `zlib.crc32(external_id)` + compteur d'usage ;
+  `engine/translator.py` : couture `ActionTranslator` pour l'étape 4,
+  `DefaultActionTranslator` matérialise sans template (dont `$_reminder`).
+- `outputs/` : `Transaction` context-manager (rollback réel sans commit),
+  `MemoryStorage`/`MemoryLocker`, chaîne `default_memory_output(storage)` =
+  SetProperties → PushBus → PushModel.
+- Écarts assumés vs source (tests dédiés) : garde CONCURENCY stricte (`<`),
+  rejeu d'un événement déjà intégré sans recréation de workflow,
+  rollback effectif, `Decrement` qui décrémente,
+  `create_base_incoming_event` aux conditions remises à l'endroit.
+
+## Étape 4 (Templating urban-json) — notes de reprise
 
 1. Recloner le source si absent :
    `git clone --depth 1 https://github.com/Black-Beard-Sdk/workflow /home/user/black-beard-sdk/workflow`
-2. À porter (dans `Src/Black.Beard.Workflows.Models/Workflows/`) :
-   `WorkflowEngine` (locks par clé `zlib.crc32(external_id)`),
-   `WorkflowProcessor` (création via Initializers + CONCURENCY, transitions,
-   règles d'entrée/sortie, mode récursif, collecte des `ResultAction`),
-   `RunContext.Set`, `WorkflowFactory`, chaîne `AppendEvents/`,
-   sorties mémoire (`Outputs/Memories/` : MemoryStorage, décorateurs
-   SetProperties/PushBus/PushModel + transaction).
-3. Bugs §5 de l'analyse à ne pas reproduire : `UseResource.Decrement`,
-   `CreateBaseIncomingEvent` (conditions inversées).
-4. Spécification de référence : `Src/UnitTestWorkflow/WorkflowsUnitTest.cs`,
-   `IncomingEventUnitTest.cs`, `WorkflowsConfigUnitTest1.cs` + les scénarios
-   bout-en-bout de `ParserUnitTest.cs` (TestFilter, TestInitialize,
-   TestInitializeWithJumpState, TestExpire) — à porter en pytest sur les
-   scripts DSL de `tests/test_dsl.py`.
+2. Cible : `urban_workflow/templating/` — `TemplateRegistry` (nom d'action →
+   template JSLT, fichiers `.jslt` + template par défaut), contexte JSON
+   sérialisé (action/workflow/event/incoming/now, cf. analyse §3),
+   en-têtes/métadonnées (dict ou second template), template `$_reminder`.
+3. Brancher via la couture `ActionTranslator` de l'étape 3 : un
+   `JsltActionTranslator(templates, metadatas)` remplace
+   `DefaultActionTranslator` dans `WorkflowProcessor`.
+4. Référence source : `Workflows/Templates/` (TemplateRepository,
+   TemplateModels.DefaultAction, MetadatRepository — bug §5 : AddMetadata
+   écrase par `key` au lieu de `metadata.Key`), `MessageRaw`/Header/Body.
+5. API urban-json : package PyPI `urban-json` 0.2.1 (déjà en dépendance),
+   moteur JSLT — voir sa doc/tests pour `register_function`, chargement de
+   templates et évaluation.
+6. Tests : triplets template → contexte → sortie JSON attendue ; reprendre
+   la forme de `TemplateModels.DefaultAction` ; métadonnées qui ne
+   s'écrasent pas entre elles (bug §5).
 
 ## Commandes
 

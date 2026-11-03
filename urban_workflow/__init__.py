@@ -6,6 +6,25 @@ sorties JSON par `urban-json <https://pypi.org/project/urban-json/>`_.
 """
 
 from .clock import WorkflowClock
+from .engine import (
+    ActionTranslator,
+    DefaultActionTranslator,
+    WorkflowEngine,
+    WorkflowFactory,
+    WorkflowProcessor,
+    parse_incoming_event,
+)
+from .outputs import (
+    DoNothingTransaction,
+    LockObject,
+    MemoryLocker,
+    MemoryStorage,
+    OutputAction,
+    PushBusOutputAction,
+    PushModelOutputAction,
+    SetPropertiesOutputAction,
+    Transaction,
+)
 from .config import (
     DeclaredEventConfig,
     IncomingEventConfig,
@@ -47,9 +66,24 @@ from .values import ContextRef, make_value, resolve_value
 __version__ = "0.1.0"
 
 __all__ = [
+    "ActionTranslator",
     "ChangeEnum",
     "ContextRef",
     "CurrentEvaluation",
+    "DefaultActionTranslator",
+    "DoNothingTransaction",
+    "LockObject",
+    "MemoryLocker",
+    "MemoryStorage",
+    "OutputAction",
+    "PushBusOutputAction",
+    "PushModelOutputAction",
+    "SetPropertiesOutputAction",
+    "Transaction",
+    "WorkflowEngine",
+    "WorkflowFactory",
+    "WorkflowProcessor",
+    "parse_incoming_event",
     "DeclaredEventConfig",
     "DuplicatedArgumentNameError",
     "Event",

@@ -63,12 +63,17 @@ PAYLOAD = """
     ;
 """
 
-# Variante avec RECURSIVE et condition parenthésée (ParserUnitTest.payload2).
+# Variante avec RECURSIVE et condition parenthésée (ParserUnitTest.payload2) :
+# State1 écoute Event1 (et non Event2), pour que l'initialisation récursive
+# enchaîne directement sur la transition.
 PAYLOAD2 = PAYLOAD.replace(
     "ON EVENT Event1 WHEN NOT IsEmpty(text = @Workflow.ExternalId)\n"
     "            SWITCH State1",
     "ON EVENT Event1 WHEN (NOT IsEmpty(text = @Workflow.ExternalId))\n"
     "            RECURSIVE SWITCH State1",
+).replace(
+    "ON EVENT Event2\n            SWITCH State2",
+    "ON EVENT Event1\n            SWITCH State2",
 )
 
 
