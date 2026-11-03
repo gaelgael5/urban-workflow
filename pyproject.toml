@@ -29,9 +29,13 @@ Homepage = "https://github.com/gaelgael5/urban-workflow"
 Issues = "https://github.com/gaelgael5/urban-workflow/issues"
 
 [project.optional-dependencies]
+sql = [
+    "sqlalchemy>=2.0",
+]
 dev = [
     "pytest>=7",
     "ruff>=0.4",
+    "sqlalchemy>=2.0",
 ]
 
 [tool.setuptools.packages.find]

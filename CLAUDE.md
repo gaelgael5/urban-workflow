@@ -38,7 +38,11 @@ commit en français).
   (`TemplateRegistry` JSLT + fichiers `.jslt`, `MetadataRegistry`,
   `JsltActionTranslator` branché sur la couture `ActionTranslator`,
   document de contexte action/workflow/event/incoming/now), 127 tests verts.
-- [ ] **Étape 5 — Persistance SQL** (prochaine) : SQLAlchemy, extra optionnel
+- [x] **Étape 5 — Persistance SQL** : `urban_workflow/storage_sql/` (extra
+  `[sql]`, SQLAlchemy Core — schéma logique du source en 3 tables,
+  agrégats JSON, upserts idempotents, chaîne `sql_output` sous transaction
+  SQL unique) + interface `OutputBus`/`BusOutputAction` dans `outputs/`,
+  141 tests verts (SQLite en mémoire, skip propre sans sqlalchemy).
 - [~] **Étape 6 — Finitions** : documentation française faite —
   `docs/guide-dsl.md` (langage complet), `docs/guide-integration.md`
   (moteur, templates, sorties), `docs/guide-tests.md` (règles et tests),
@@ -116,26 +120,27 @@ commit en français).
   absents → `None`. Le sous-paquet n'est pas réexporté par la racine
   (comme `dsl`) — import via `urban_workflow.templating`.
 
-## Étape 5 (Persistance SQL) — notes de reprise
+## Étape 5 (Persistance SQL) — acquis
 
-1. Recloner le source si absent :
-   `git clone --depth 1 https://github.com/Black-Beard-Sdk/workflow /home/user/black-beard-sdk/workflow`
-2. Décision actée (analyse §1/§4) : **ne pas porter** le micro-ORM maison
-   (`Black.Beard.Workflows.Outputs.Sql`, 37 fichiers) — le remplacer par
-   SQLAlchemy Core en extra optionnel `[sql]` (SQLite en dev/tests,
-   PostgreSQL en prod). Lire le source seulement pour le **schéma logique**
-   (tables workflows/événements/actions poussées) et la sémantique des
-   `OutputAction` SQL (upsert modèle, push bus, transaction).
-3. Cible : `urban_workflow/storage_sql/` — stockage SQLAlchemy Core
-   (workflows sérialisés JSON + index external_id/uuid), `OutputAction`s
-   SQL réutilisant `Transaction` (commit/rollback réels sur la connexion),
-   et un `Storage` abstrait si utile pour partager l'interface avec
-   `MemoryStorage` (get_by external_id = le besoin du processor).
-4. `pyproject.toml` : extra `[project.optional-dependencies] sql =
-   ["sqlalchemy>=2"]` ; tests d'intégration SQLite en mémoire, skippés
-   proprement si sqlalchemy absent.
-5. Interface `OutputBus` abstraite seulement (analyse §1, Outputs.Mom) —
-   pas d'implémentation broker en v1.
+- `storage_sql/schema.py` : tables `workflows` / `workflow_events` /
+  `workflow_actions` (schéma logique du `Sqlserver.txt` source ; dates en
+  ISO 8601 pour garder le fuseau sur tous les dialectes ; pas de table
+  `Locks` — verrou distribué = implémentation de `LockObject` à brancher).
+- `storage_sql/storage.py` : `SqlWorkflowStorage(engine|url)` —
+  `create_schema()`, `load_by_external_id` (se branche tel quel sur le
+  callback du processor), `get`/`get_all`, `save_workflow` en **upsert
+  idempotent** de l'agrégat complet (le rejeu ne duplique rien). Bug du
+  source non reproduit : `WorkflowStoreSql.Save` passait `txtStep` dans
+  `DatasWorkflow`.
+- `storage_sql/outputs.py` : `SqlUnitOfWork` (une connexion + une
+  transaction partagées par toute la chaîne — rollback SQL réel testé),
+  `SqlPushModelOutputAction`, fabrique `sql_output(storage, bus=None)` =
+  SetProperties → (bus ?) → SqlPushModel. Les actions matérialisées sont
+  persistées avec l'agrégat (= outbox) ; pas de table bus séparée.
+- `outputs/base.py` : `OutputBus` (ABC, contrat Outputs.Mom) +
+  `BusOutputAction(bus, kinds)` générique.
+- SQLite `create_engine("sqlite://")` en tests (pool mémoire persistant) ;
+  `pytest.importorskip("sqlalchemy")` ; extra `sql` + dev dans pyproject.
 
 ## Commandes
 

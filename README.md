@@ -80,11 +80,12 @@ parseur DSL). Python ≥ 3.10.
 
 ## État du portage
 
-Socle, DSL (grammaires ANTLR reprises du source), moteur et templating
-urban-json sont fonctionnels et testés (scénarios de bout en bout
-*script DSL → événements → états → messages*). À venir : persistance SQL
-en extra optionnel `[sql]` et CI. Les bugs connus du moteur source ne
-sont pas reproduits — chacun est couvert par un test dédié.
+Socle, DSL (grammaires ANTLR reprises du source), moteur, templating
+urban-json et persistance SQL (extra `[sql]`, SQLAlchemy Core) sont
+fonctionnels et testés (scénarios de bout en bout *script DSL →
+événements → états → messages*, cycle de vie persisté en SQL). À venir :
+CI. Les bugs connus du moteur source ne sont pas reproduits — chacun est
+couvert par un test dédié.
 
 ## Licence
 

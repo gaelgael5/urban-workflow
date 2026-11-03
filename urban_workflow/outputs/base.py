@@ -125,3 +125,39 @@ class LockObject(ABC):
 
     @abstractmethod
     def unlock(self, crc: int) -> None: ...
+
+
+class OutputBus(ABC):
+    """Bus de sortie des actions matérialisées (contrat ``Outputs.Mom``).
+
+    Interface abstraite seulement en v1 : les implémentations concrètes
+    (RabbitMQ, Kafka, outbox…) vivent hors du cœur. À brancher dans la
+    chaîne de sorties via :class:`BusOutputAction`.
+    """
+
+    @abstractmethod
+    def push(self, action) -> None:
+        """Pousse une :class:`~urban_workflow.models.PushedAction`."""
+
+
+class BusOutputAction(OutputAction):
+    """Maillon générique : pousse les actions d'un ``kind`` donné vers un bus."""
+
+    def __init__(
+        self,
+        bus: OutputBus,
+        kinds: tuple = ("$_push",),
+        child: Optional["OutputAction"] = None,
+    ) -> None:
+        super().__init__(child)
+        self._bus = bus
+        self._kinds = tuple(kinds)
+
+    def _prepare_impl(self, ctx: RunContext) -> None:
+        self.items.extend(
+            action for action in ctx.event.actions if action.kind in self._kinds
+        )
+
+    def _execute_impl(self) -> None:
+        for action in self.items:
+            self._bus.push(action)

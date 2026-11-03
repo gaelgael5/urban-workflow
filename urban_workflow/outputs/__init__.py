@@ -6,9 +6,11 @@ les tests.
 """
 
 from .base import (
+    BusOutputAction,
     DoNothingTransaction,
     LockObject,
     OutputAction,
+    OutputBus,
     Transaction,
 )
 from .memory import (
@@ -21,8 +23,10 @@ from .memory import (
 )
 
 __all__ = [
+    "BusOutputAction",
     "DoNothingTransaction",
     "LockObject",
+    "OutputBus",
     "MemoryLocker",
     "MemoryStorage",
     "OutputAction",

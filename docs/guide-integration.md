@@ -241,6 +241,47 @@ class PushToRabbit(OutputAction):
 Si un maillon échoue, la transaction de toute la chaîne est annulée et
 l'exception remonte — l'événement pourra être rejoué sans doublon.
 
+### Persistance SQL prête à l'emploi (extra `[sql]`)
+
+Pour un déploiement durable sans écrire ses propres maillons, l'extra
+`sql` (`pip install urban-workflow[sql]`) fournit un stockage SQLAlchemy
+Core — SQLite en développement, PostgreSQL ou autre en production :
+
+```python
+from sqlalchemy import create_engine
+from urban_workflow.storage_sql import SqlWorkflowStorage, sql_output
+
+storage = SqlWorkflowStorage(create_engine("sqlite:///workflows.db"))
+storage.create_schema()    # tables workflows / workflow_events / workflow_actions
+
+processor.load_existing_workflows_by_external_id = storage.load_by_external_id
+processor.output_actions = sql_output(storage)
+```
+
+Les trois tables reprennent le schéma logique du moteur source ; chaque
+workflow est persisté en agrégat (instance, historique d'événements,
+actions matérialisées avec leurs messages JSON — l'outbox). Les écritures
+sont idempotentes (rejouer une sauvegarde ne duplique rien) et toute la
+chaîne partage **une seule transaction SQL** : si un maillon échoue, rien
+n'est écrit.
+
+Pour pousser aussi vers un broker, brancher une implémentation de
+`OutputBus` :
+
+```python
+from urban_workflow.outputs import OutputBus
+
+class RabbitBus(OutputBus):
+    def push(self, action):
+        channel.publish(json.dumps(action.execute_message))
+
+processor.output_actions = sql_output(storage, bus=RabbitBus())
+```
+
+Attention au verrouillage : `MemoryLocker` ne protège qu'un processus.
+Plusieurs instances du moteur sur la même base exigent un `LockObject`
+distribué (verrou base de données, Redis…).
+
 ## 6. Les événements côté moteur
 
 ### Format des payloads
