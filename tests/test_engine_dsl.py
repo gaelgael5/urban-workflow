@@ -123,7 +123,7 @@ class TestExpire:
         # poussé sur le bus : 2 DAY → 2880 minutes.
         reminders = storage.get_all(PushedAction)
         assert len(reminders) == 1
-        message = reminders[0].execute_message
+        message = reminders[0].execute_message["Body"]
         assert message["Name"] == constants.PUSH_REMINDER
         assert message["Delay"] == 2 * 24 * 60
         assert message["Message"]["Name"] == constants.EXPIRED_EVENT_NAME

@@ -172,7 +172,7 @@ class TestWorkflowProcessor:
 
         # L'argument @Event.Name est résolu à la traduction.
         in_2 = actions["act_on_state_in_2"]
-        assert in_2.execute_message["Arguments"] == {"name": "evnt1"}
+        assert in_2.execute_message["Body"]["Arguments"] == {"name": "evnt1"}
         assert in_2.change is ChangeEnum.NEW
 
     def test_switch_state(self):
@@ -580,7 +580,7 @@ class TestDefaultTranslator:
         processor.evaluate_event(make_event("evnt1", str(uuid4())))
 
         pushed = storage.get_all(PushedAction)[0]
-        message = pushed.execute_message
+        message = pushed.execute_message["Body"]
         assert message["Name"] == constants.PUSH_REMINDER
         assert message["Delay"] == 120
         assert message["Message"]["Name"] == "remind_me"

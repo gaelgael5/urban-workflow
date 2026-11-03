@@ -34,8 +34,11 @@ commit en français).
   engine + locks CRC32, chaîne d'append, couture `ActionTranslator`) et
   `urban_workflow/outputs/` (décorateurs + transactions, mémoire), 113 tests
   verts dont ports de `WorkflowsUnitTest` et scénarios DSL bout-en-bout.
-- [ ] **Étape 4 — Templating urban-json** (prochaine) : TranslateActions
-- [ ] Étape 5 — Persistance SQL (SQLAlchemy, extra optionnel)
+- [x] **Étape 4 — Templating urban-json** : `urban_workflow/templating/`
+  (`TemplateRegistry` JSLT + fichiers `.jslt`, `MetadataRegistry`,
+  `JsltActionTranslator` branché sur la couture `ActionTranslator`,
+  document de contexte action/workflow/event/incoming/now), 127 tests verts.
+- [ ] **Étape 5 — Persistance SQL** (prochaine) : SQLAlchemy, extra optionnel
 - [ ] Étape 6 — Finitions (docs, CI)
 
 ## Étape 2 (DSL) — acquis
@@ -84,26 +87,50 @@ commit en français).
   rollback effectif, `Decrement` qui décrémente,
   `create_base_incoming_event` aux conditions remises à l'endroit.
 
-## Étape 4 (Templating urban-json) — notes de reprise
+## Étape 4 (Templating urban-json) — acquis
+
+- `templating/context.py` : `build_action_document(ctx, action)` → document
+  JSON `action/workflow/event/incoming/now` ; données étendues fusionnées
+  dans leur section (clés CamelCase), champs normalisés snake_case
+  prioritaires ; `json_safe` (datetime→ISO, UUID→str, Enum→value).
+- `templating/registry.py` : `TemplateRegistry` (`add_template`,
+  `add_directory` — nom de fichier `.jslt` = nom d'action, `default.jslt` =
+  défaut, `functions=` registre urban-json custom) ; constantes
+  `DEFAULT_ACTION_TEMPLATE` (même forme que `TemplateModels.DefaultAction` :
+  Uuid/Name/PushedAt/Arguments/WorkflowId/EventId/From_State/To_State) et
+  `REMINDER_TEMPLATE` (pré-enregistrée sous `$_reminder`, remplaçable).
+- `templating/metadata.py` : `MetadataRegistry` — fusion **par clé de
+  métadonnée** (bug §5 `AddMetadata` non reproduit), défaut, copies.
+- `templating/translator.py` : `JsltActionTranslator(templates, metadatas)`
+  → `execute_message = {"Header": dict, "Body": …}` (forme `MessageRaw`),
+  encapsulation `$_reminder` des actions différées (corps réel sous
+  `Message`). `DefaultActionTranslator` (étape 3) aligné sur la même forme.
+- API urban-json utilisée : `JsltTemplate.parse(src).build()`,
+  `.transform(doc, functions=…)`, `default_registry.copy()` +
+  `register(name, func)` avec convention `func(ctx, *args)` ; chemins
+  absents → `None`. Le sous-paquet n'est pas réexporté par la racine
+  (comme `dsl`) — import via `urban_workflow.templating`.
+
+## Étape 5 (Persistance SQL) — notes de reprise
 
 1. Recloner le source si absent :
    `git clone --depth 1 https://github.com/Black-Beard-Sdk/workflow /home/user/black-beard-sdk/workflow`
-2. Cible : `urban_workflow/templating/` — `TemplateRegistry` (nom d'action →
-   template JSLT, fichiers `.jslt` + template par défaut), contexte JSON
-   sérialisé (action/workflow/event/incoming/now, cf. analyse §3),
-   en-têtes/métadonnées (dict ou second template), template `$_reminder`.
-3. Brancher via la couture `ActionTranslator` de l'étape 3 : un
-   `JsltActionTranslator(templates, metadatas)` remplace
-   `DefaultActionTranslator` dans `WorkflowProcessor`.
-4. Référence source : `Workflows/Templates/` (TemplateRepository,
-   TemplateModels.DefaultAction, MetadatRepository — bug §5 : AddMetadata
-   écrase par `key` au lieu de `metadata.Key`), `MessageRaw`/Header/Body.
-5. API urban-json : package PyPI `urban-json` 0.2.1 (déjà en dépendance),
-   moteur JSLT — voir sa doc/tests pour `register_function`, chargement de
-   templates et évaluation.
-6. Tests : triplets template → contexte → sortie JSON attendue ; reprendre
-   la forme de `TemplateModels.DefaultAction` ; métadonnées qui ne
-   s'écrasent pas entre elles (bug §5).
+2. Décision actée (analyse §1/§4) : **ne pas porter** le micro-ORM maison
+   (`Black.Beard.Workflows.Outputs.Sql`, 37 fichiers) — le remplacer par
+   SQLAlchemy Core en extra optionnel `[sql]` (SQLite en dev/tests,
+   PostgreSQL en prod). Lire le source seulement pour le **schéma logique**
+   (tables workflows/événements/actions poussées) et la sémantique des
+   `OutputAction` SQL (upsert modèle, push bus, transaction).
+3. Cible : `urban_workflow/storage_sql/` — stockage SQLAlchemy Core
+   (workflows sérialisés JSON + index external_id/uuid), `OutputAction`s
+   SQL réutilisant `Transaction` (commit/rollback réels sur la connexion),
+   et un `Storage` abstrait si utile pour partager l'interface avec
+   `MemoryStorage` (get_by external_id = le besoin du processor).
+4. `pyproject.toml` : extra `[project.optional-dependencies] sql =
+   ["sqlalchemy>=2"]` ; tests d'intégration SQLite en mémoire, skippés
+   proprement si sqlalchemy absent.
+5. Interface `OutputBus` abstraite seulement (analyse §1, Outputs.Mom) —
+   pas d'implémentation broker en v1.
 
 ## Commandes
 

@@ -31,6 +31,9 @@ class DefaultActionTranslator(ActionTranslator):
     Le corps du message reprend la forme du template par défaut du source
     (``TemplateModels.DefaultAction``) : identité de l'action, arguments
     résolus contre le contexte, identité du workflow et de l'événement.
+    Le message produit a la forme ``MessageRaw`` du source
+    (``{"Header": {...}, "Body": {...}}``), la même que celle du
+    ``JsltActionTranslator`` de :mod:`urban_workflow.templating`.
     """
 
     def translate(self, ctx: RunContext, action: ResultAction) -> PushedAction:
@@ -44,7 +47,7 @@ class DefaultActionTranslator(ActionTranslator):
             name=action.name,
             kind=action.kind,
             change=ChangeEnum.NEW,
-            execute_message=body,
+            execute_message={"Header": {}, "Body": body},
         )
 
     def build_body(self, ctx: RunContext, action: ResultAction) -> Dict[str, Any]:
