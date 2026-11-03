@@ -25,38 +25,56 @@ commit en français).
 - [x] **Étape 1 — Socle** : `urban_workflow/` (models, values/ContextRef,
   config + builders fluides, registry, clock, constants, exceptions),
   29 tests pytest verts.
-- [ ] **Étape 2 — DSL** (prochaine, le gros morceau) : grammaires ANTLR
-  reprises + visiteur → `WorkflowConfig`
-- [ ] Étape 3 — Moteur (processor, engine, locks)
+- [x] **Étape 2 — DSL** : `urban_workflow/dsl/` (grammaires reprises telles
+  quelles dans `grammar/` + `regenerate.sh`, parseur généré ANTLR 4.13.2
+  commité dans `generated/`, `WorkflowScriptParser`, `WorkflowConfigVisitor`,
+  chargeur `INCLUDE`/`FRAGMENT`), 84 tests verts dont golden README source +
+  `ParserUnitTest`.
+- [ ] **Étape 3 — Moteur** (prochaine) : processor, engine, locks
 - [ ] Étape 4 — Templating urban-json (TranslateActions)
 - [ ] Étape 5 — Persistance SQL (SQLAlchemy, extra optionnel)
 - [ ] Étape 6 — Finitions (docs, CI)
 
-## Étape 2 (DSL) — notes de reprise
+## Étape 2 (DSL) — acquis
 
-1. Le dépôt source doit être recloné (conteneur éphémère) :
+- `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
+  **inchangées** par rapport au source ; `regenerate.sh` régénère le parseur
+  (jar ANTLR 4.13.2 téléchargé depuis Maven Central — www.antlr.org peut être
+  bloqué ; même version que le runtime `antlr4-python3-runtime` d'urban-json).
+- `urban_workflow/dsl/generated/` : code généré commité, ne jamais l'éditer.
+  Particularité cible Python : accesseurs `state_()` et `type_()`.
+- `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,
+  `is_fragment`, `crc`, erreurs de syntaxe positionnées (`check()` →
+  `DslSyntaxError`).
+- `WorkflowConfigVisitor(rules=FunctionRegistry)` + `add_rule()` fluide ;
+  conditions `WHEN` compilées en closures avec log fonctionnel ; arguments
+  `'littéral'` convertis au type déclaré, `@chemin` → `ContextRef`, nom nu →
+  constante sinon littéral ; validations positionnées (`fichier:ligne:col`) ;
+  cibles `SWITCH` vérifiées à la fin du script.
+- Bugs du source non reproduits (tests dédiés) : condition inversée de
+  `VisitParameters`, arguments `@…` d'action devenus littéraux dans
+  `GetLambda`.
+- `EXPIRE AFTER` : événement `__expired`, garde `CurrentState`, actions
+  techniques push/cancel reminder (délais en **minutes**).
+
+## Étape 3 (Moteur) — notes de reprise
+
+1. Recloner le source si absent :
    `git clone --depth 1 https://github.com/Black-Beard-Sdk/workflow /home/user/black-beard-sdk/workflow`
-2. Grammaires à reprendre **telles quelles** :
-   `Src/Black.beard.Workflow.AntlrParser/Parser/Grammar/WorkflowLexer.g4` et
-   `WorkflowParser.g4` → les copier dans `urban_workflow/dsl/grammar/`.
-3. Générer le parseur : cible **Python3**, ANTLR 4.13.2 (même runtime
-   qu'urban-json, déjà en dépendance transitive). Commiter le code généré +
-   script de régénération.
-4. Réécrire `WorkflowConfigVisitor` (1 292 lignes C#, même chemin source) en
-   Python sur la base `WorkflowParserBaseVisitor` générée. Il construit un
-   `urban_workflow.WorkflowConfig` :
-   - déclarations `DEFINE EVENT/RULE/ACTION/CONST` + validation stricte
-     (règle/action non déclarée, arguments vs signature, doublons) —
-     s'appuyer sur `FunctionRegistry.validate_call` ;
-   - conditions `WHEN` : arbre NOT/AND/OR de `rule(args)` → **composition de
-     closures** (pas d'arbres d'expressions) ;
-   - chemins `@Event.X` → `urban_workflow.values.ContextRef` (déjà compatible
-     CamelCase du DSL → attributs snake_case) ;
-   - erreurs positionnées (fichier, ligne, colonne) → `RuleSpan` ;
-   - `INCLUDE` / `FRAGMENT` (fragments réutilisables).
-5. Tests golden : l'exemple complet du README source + les cas de
-   `Src/UnitTestWorkflow/ParserUnitTest.cs` doivent produire une config
-   équivalente.
+2. À porter (dans `Src/Black.Beard.Workflows.Models/Workflows/`) :
+   `WorkflowEngine` (locks par clé `zlib.crc32(external_id)`),
+   `WorkflowProcessor` (création via Initializers + CONCURENCY, transitions,
+   règles d'entrée/sortie, mode récursif, collecte des `ResultAction`),
+   `RunContext.Set`, `WorkflowFactory`, chaîne `AppendEvents/`,
+   sorties mémoire (`Outputs/Memories/` : MemoryStorage, décorateurs
+   SetProperties/PushBus/PushModel + transaction).
+3. Bugs §5 de l'analyse à ne pas reproduire : `UseResource.Decrement`,
+   `CreateBaseIncomingEvent` (conditions inversées).
+4. Spécification de référence : `Src/UnitTestWorkflow/WorkflowsUnitTest.cs`,
+   `IncomingEventUnitTest.cs`, `WorkflowsConfigUnitTest1.cs` + les scénarios
+   bout-en-bout de `ParserUnitTest.cs` (TestFilter, TestInitialize,
+   TestInitializeWithJumpState, TestExpire) — à porter en pytest sur les
+   scripts DSL de `tests/test_dsl.py`.
 
 ## Commandes
 

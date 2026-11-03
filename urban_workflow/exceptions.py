@@ -43,3 +43,19 @@ class MissingArgumentNameError(WorkflowError):
 
 class DuplicatedArgumentNameError(WorkflowError):
     """Un nom (argument, règle, action, état…) est déclaré deux fois."""
+
+
+class InvalidArgumentValueError(WorkflowError):
+    """Une valeur d'argument n'est pas convertible vers le type déclaré."""
+
+
+class DslSyntaxError(WorkflowError):
+    """Le script DSL contient des erreurs de syntaxe.
+
+    ``errors`` porte la liste des erreurs positionnées
+    (:class:`urban_workflow.dsl.errors.DslErrorModel`).
+    """
+
+    def __init__(self, message: str, errors=None) -> None:
+        super().__init__(message)
+        self.errors = list(errors or [])
