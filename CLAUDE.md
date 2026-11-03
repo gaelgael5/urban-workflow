@@ -39,7 +39,12 @@ commit en français).
   `JsltActionTranslator` branché sur la couture `ActionTranslator`,
   document de contexte action/workflow/event/incoming/now), 127 tests verts.
 - [ ] **Étape 5 — Persistance SQL** (prochaine) : SQLAlchemy, extra optionnel
-- [ ] Étape 6 — Finitions (docs, CI)
+- [~] **Étape 6 — Finitions** : documentation française faite —
+  `docs/guide-dsl.md` (langage complet), `docs/guide-integration.md`
+  (moteur, templates, sorties), `docs/guide-tests.md` (règles et tests),
+  README réécrit ; le cas d'usage des guides (circuit de validation) est
+  pérennisé dans `tests/test_docs_examples.py` (133 tests verts).
+  Reste : CI GitHub Actions, version anglaise des guides éventuelle.
 
 ## Étape 2 (DSL) — acquis
 
