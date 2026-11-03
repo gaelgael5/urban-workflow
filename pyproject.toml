@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "urban-workflow"
+version = "0.1.0"
+description = "Moteur de workflow piloté par un DSL métier — portage Python de Black-Beard-Sdk/Workflow, sorties JSON normalisées via urban-json (JSLT)."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "urban-json>=0.2.1",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/gaelgael5/urban-workflow"
+Issues = "https://github.com/gaelgael5/urban-workflow/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+    "ruff>=0.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["urban_workflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
