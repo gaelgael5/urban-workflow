@@ -13,7 +13,7 @@ contexte qui annule réellement la transaction si le bloc sort sans
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import Any
 
 from ..models import RunContext
 
@@ -22,7 +22,7 @@ class Transaction(ABC):
     """Transaction chaînée (chaque maillon de la chaîne de sorties a la sienne)."""
 
     def __init__(self) -> None:
-        self.child: Optional["Transaction"] = None
+        self.child: Transaction | None = None
         self._committed = False
         self._rolled_back = False
 
@@ -58,7 +58,7 @@ class Transaction(ABC):
     # Gestionnaire de contexte : rollback si le bloc sort sans commit.
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "Transaction":
+    def __enter__(self) -> Transaction:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -83,12 +83,12 @@ class OutputAction(ABC):
     ``begin_transaction()`` et ``execute()`` sous transaction.
     """
 
-    def __init__(self, child: Optional["OutputAction"] = None) -> None:
+    def __init__(self, child: OutputAction | None = None) -> None:
         self._child = child
-        self.items: List[Any] = []
+        self.items: list[Any] = []
 
     @property
-    def child(self) -> Optional["OutputAction"]:
+    def child(self) -> OutputAction | None:
         return self._child
 
     def prepare(self, ctx: RunContext) -> None:
@@ -147,7 +147,7 @@ class BusOutputAction(OutputAction):
         self,
         bus: OutputBus,
         kinds: tuple = ("$_push",),
-        child: Optional["OutputAction"] = None,
+        child: OutputAction | None = None,
     ) -> None:
         super().__init__(child)
         self._bus = bus

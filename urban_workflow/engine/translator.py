@@ -11,7 +11,7 @@ des actions différées.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 from .. import constants
 from ..clock import WorkflowClock
@@ -50,7 +50,7 @@ class DefaultActionTranslator(ActionTranslator):
             execute_message={"Header": {}, "Body": body},
         )
 
-    def build_body(self, ctx: RunContext, action: ResultAction) -> Dict[str, Any]:
+    def build_body(self, ctx: RunContext, action: ResultAction) -> dict[str, Any]:
         event = action.event
         return {
             "Uuid": str(action.uuid),
@@ -65,7 +65,7 @@ class DefaultActionTranslator(ActionTranslator):
             "ToState": event.to_state if event is not None else "",
         }
 
-    def wrap_reminder(self, action: ResultAction, body: Dict[str, Any]) -> Dict[str, Any]:
+    def wrap_reminder(self, action: ResultAction, body: dict[str, Any]) -> dict[str, Any]:
         """Encapsule une action différée dans un message ``$_reminder``."""
         return {
             "Uuid": str(action.uuid),

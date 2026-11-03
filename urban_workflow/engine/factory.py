@@ -10,7 +10,8 @@ nommé est résolu dans le registre des créateurs, et son absence lève une
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from ..clock import WorkflowClock
 from ..models import ChangeEnum, Event, IncomingEvent, RunContext, Workflow, new_uuid
@@ -27,16 +28,16 @@ class WorkflowFactory:
 
     def __init__(
         self,
-        new_incoming_event: Optional[Callable[[], IncomingEvent]] = None,
-        new_workflow: Optional[Callable[[], Workflow]] = None,
+        new_incoming_event: Callable[[], IncomingEvent] | None = None,
+        new_workflow: Callable[[], Workflow] | None = None,
         *,
         context_factory: Callable[[], RunContext] = RunContext,
-        context_initializer: Optional[Callable[[RunContext], None]] = None,
+        context_initializer: Callable[[RunContext], None] | None = None,
     ) -> None:
         self._default_incoming_event = new_incoming_event or IncomingEvent
         self._default_workflow = new_workflow or Workflow
-        self._incoming_event_creators: Dict[str, Callable[[], IncomingEvent]] = {}
-        self._workflow_creators: Dict[Tuple[str, int], Callable[[], Workflow]] = {}
+        self._incoming_event_creators: dict[str, Callable[[], IncomingEvent]] = {}
+        self._workflow_creators: dict[tuple[str, int], Callable[[], Workflow]] = {}
         self.context_factory = context_factory
         self.context_initializer = context_initializer
 
@@ -46,13 +47,13 @@ class WorkflowFactory:
 
     def add_incoming_event(
         self, key: str, creator: Callable[[], IncomingEvent]
-    ) -> "WorkflowFactory":
+    ) -> WorkflowFactory:
         self._incoming_event_creators[key] = creator
         return self
 
     def add_workflow(
         self, workflow_name: str, version: int, creator: Callable[[], Workflow]
-    ) -> "WorkflowFactory":
+    ) -> WorkflowFactory:
         self._workflow_creators[(workflow_name, version)] = creator
         return self
 
@@ -62,8 +63,8 @@ class WorkflowFactory:
 
     def create_base_incoming_event(
         self,
-        payload: Union[str, Mapping[str, Any], IncomingEvent],
-        incoming_type: Optional[str] = None,
+        payload: str | Mapping[str, Any] | IncomingEvent,
+        incoming_type: str | None = None,
     ) -> IncomingEvent:
         """Désérialise un payload en événement entrant.
 
@@ -88,7 +89,7 @@ class WorkflowFactory:
         workflow_name: str,
         workflow_version: int,
         external_id: str,
-        extended_datas: Optional[Mapping[str, Any]] = None,
+        extended_datas: Mapping[str, Any] | None = None,
     ) -> Workflow:
         workflow = self._get_workflow(workflow_name, workflow_version)
 

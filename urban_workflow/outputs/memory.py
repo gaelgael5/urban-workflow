@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 from uuid import UUID
 
 from .. import constants
@@ -25,7 +26,7 @@ class MemoryStorage:
     """Stockage en mémoire, indexé par type puis par clé UUID."""
 
     def __init__(self) -> None:
-        self._items: Dict[type, Dict[UUID, Any]] = {}
+        self._items: dict[type, dict[UUID, Any]] = {}
         self._lock = threading.Lock()
 
     def save(self, key: UUID, item: Any) -> None:
@@ -39,15 +40,15 @@ class MemoryStorage:
             if box is not None:
                 box.pop(key, None)
 
-    def get(self, item_type: Type[T], key: UUID) -> Optional[T]:
+    def get(self, item_type: type[T], key: UUID) -> T | None:
         box = self._items.get(item_type)
         return box.get(key) if box is not None else None
 
-    def get_all(self, item_type: Type[T]) -> List[T]:
+    def get_all(self, item_type: type[T]) -> list[T]:
         box = self._items.get(item_type, {})
         return list(box.values())
 
-    def get_by(self, item_type: Type[T], value: Any, attribute: str) -> List[T]:
+    def get_by(self, item_type: type[T], value: Any, attribute: str) -> list[T]:
         """Les éléments dont ``attribute`` vaut ``value`` (ex. ``external_id``)."""
         return [
             item
@@ -65,7 +66,7 @@ class MemoryLocker(LockObject):
 
     def __init__(self, timeout: float = 3.0) -> None:
         self._timeout = timeout
-        self._locked: Dict[int, float] = {}
+        self._locked: dict[int, float] = {}
         self._guard = threading.Lock()
 
     def lock(self, crc: int) -> None:
@@ -109,7 +110,7 @@ class PushBusOutputAction(OutputAction):
     Portage de ``PushBusActionOutputActionInMemory`` (le « bus » des tests).
     """
 
-    def __init__(self, storage: MemoryStorage, child: Optional[OutputAction] = None) -> None:
+    def __init__(self, storage: MemoryStorage, child: OutputAction | None = None) -> None:
         super().__init__(child)
         self._storage = storage
 
@@ -131,7 +132,7 @@ class PushModelOutputAction(OutputAction):
     Portage de ``PushModelOutputActionInMemory``.
     """
 
-    def __init__(self, storage: MemoryStorage, child: Optional[OutputAction] = None) -> None:
+    def __init__(self, storage: MemoryStorage, child: OutputAction | None = None) -> None:
         super().__init__(child)
         self._storage = storage
 

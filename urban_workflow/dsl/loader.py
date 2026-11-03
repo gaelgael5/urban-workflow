@@ -7,8 +7,8 @@ complet est visité par un visiteur neuf, précédé de la visite de ses
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict, List, Union
 
 from ..config import WorkflowsConfig
 from .parser import WorkflowScriptParser
@@ -18,8 +18,8 @@ VisitorFactory = Callable[[], WorkflowConfigVisitor]
 
 
 def parse_directory(
-    path: Union[str, Path], pattern: str = "*"
-) -> List[WorkflowScriptParser]:
+    path: str | Path, pattern: str = "*"
+) -> list[WorkflowScriptParser]:
     """Analyse tous les fichiers de ``path`` correspondant à ``pattern``."""
     directory = Path(path)
     return [
@@ -32,7 +32,7 @@ def parse_directory(
 def load_directory(
     config: WorkflowsConfig,
     visitor_factory: VisitorFactory,
-    path: Union[str, Path],
+    path: str | Path,
     pattern: str = "*",
 ) -> WorkflowsConfig:
     """Charge dans ``config`` tous les workflows d'un répertoire.
@@ -44,7 +44,7 @@ def load_directory(
     for parser in parsers:
         parser.check()
 
-    fragments: Dict[str, WorkflowScriptParser] = {}
+    fragments: dict[str, WorkflowScriptParser] = {}
     for parser in parsers:
         if parser.is_fragment:
             fragments[parser.filename] = parser

@@ -430,7 +430,7 @@ class TestWorkflowEngine:
         storage = MemoryStorage()
         engine = make_engine(storage)
         engine.evaluate_event(
-            '{"Name": "evnt1", "Uuid": "%s", "ExternalId": "ext-2"}' % uuid4()
+            f'{{"Name": "evnt1", "Uuid": "{uuid4()}", "ExternalId": "ext-2"}}'
         )
         assert storage.get_by(Workflow, "ext-2", "external_id")
 

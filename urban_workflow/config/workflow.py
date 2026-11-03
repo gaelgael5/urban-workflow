@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 from .. import constants
 from ..exceptions import MissingConfigurationError, MissingStateError
@@ -29,10 +29,10 @@ class WorkflowConfig:
     version: int = 0
     concurrency: int = 1
     crc: int = 0
-    filters: Dict[str, str] = field(default_factory=dict)
-    initializers: Dict[str, InitializationOnEventConfig] = field(default_factory=dict)
-    declared_events: Dict[str, DeclaredEventConfig] = field(default_factory=dict)
-    states: Dict[str, StateConfig] = field(default_factory=dict)
+    filters: dict[str, str] = field(default_factory=dict)
+    initializers: dict[str, InitializationOnEventConfig] = field(default_factory=dict)
+    declared_events: dict[str, DeclaredEventConfig] = field(default_factory=dict)
+    states: dict[str, StateConfig] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._built = False
@@ -42,15 +42,15 @@ class WorkflowConfig:
     # Construction fluide
     # ------------------------------------------------------------------
 
-    def add_state(self, state: StateConfig) -> "WorkflowConfig":
+    def add_state(self, state: StateConfig) -> WorkflowConfig:
         self.states[state.name] = state
         return self
 
-    def add_initializer(self, initializer: InitializationOnEventConfig) -> "WorkflowConfig":
+    def add_initializer(self, initializer: InitializationOnEventConfig) -> WorkflowConfig:
         self.initializers[initializer.event_name] = initializer
         return self
 
-    def add_filter(self, key: str, value: str) -> "WorkflowConfig":
+    def add_filter(self, key: str, value: str) -> WorkflowConfig:
         """``MATCHING (key = 'value')`` : filtre de routage des événements."""
         self.filters[key] = value
         return self
@@ -59,7 +59,7 @@ class WorkflowConfig:
     # Construction / résolution
     # ------------------------------------------------------------------
 
-    def build(self) -> "WorkflowConfig":
+    def build(self) -> WorkflowConfig:
         """Résout les références et prépare la configuration (idempotent)."""
         if self._built:
             return self
@@ -134,13 +134,13 @@ class WorkflowsConfig:
     """
 
     def __init__(self) -> None:
-        self._configs: List[WorkflowConfig] = []
-        self._by_name_version: Dict[Tuple[str, int], WorkflowConfig] = {}
-        self._selectable: List[WorkflowConfig] = []
-        self._version_selectors: Dict[str, Set[int]] = {}
+        self._configs: list[WorkflowConfig] = []
+        self._by_name_version: dict[tuple[str, int], WorkflowConfig] = {}
+        self._selectable: list[WorkflowConfig] = []
+        self._version_selectors: dict[str, set[int]] = {}
         self._lock = threading.Lock()
 
-    def set_version_selector(self, workflow_name: str, version: int) -> "WorkflowsConfig":
+    def set_version_selector(self, workflow_name: str, version: int) -> WorkflowsConfig:
         """Restreint la création de nouveaux workflows ``workflow_name`` à ``version``.
 
         Sans sélecteur, toutes les versions chargées sont candidates ; les
@@ -151,7 +151,7 @@ class WorkflowsConfig:
             self._rebuild_selectable()
         return self
 
-    def add_document(self, config: WorkflowConfig) -> "WorkflowsConfig":
+    def add_document(self, config: WorkflowConfig) -> WorkflowsConfig:
         config.build()
         with self._lock:
             self._configs.append(config)
@@ -179,10 +179,10 @@ class WorkflowsConfig:
             raise MissingConfigurationError(f"{workflow_name} V {version}")
         return config
 
-    def try_get(self, workflow_name: str, version: int) -> Optional[WorkflowConfig]:
+    def try_get(self, workflow_name: str, version: int) -> WorkflowConfig | None:
         return self._by_name_version.get((workflow_name, version))
 
-    def get_all(self, workflow_name: str) -> List[WorkflowConfig]:
+    def get_all(self, workflow_name: str) -> list[WorkflowConfig]:
         return [config for config in self._configs if config.name == workflow_name]
 
     def __len__(self) -> int:

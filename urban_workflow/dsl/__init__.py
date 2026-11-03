@@ -18,8 +18,6 @@ Point d'entrée simple ::
 
 from __future__ import annotations
 
-from typing import Optional
-
 from ..config import WorkflowConfig
 from ..registry import FunctionRegistry
 from .errors import DslErrorModel
@@ -41,7 +39,7 @@ __all__ = [
 
 def parse_config(
     source: str,
-    rules: Optional[FunctionRegistry] = None,
+    rules: FunctionRegistry | None = None,
     filename: str = "",
 ) -> WorkflowConfig:
     """Analyse un script DSL complet et construit sa configuration.

@@ -9,7 +9,7 @@ est le nom d'action ; ``default.jslt`` définit le template par défaut).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from urban_json import FunctionRegistry as JsltFunctionRegistry
 from urban_json import JsltTemplate
@@ -38,7 +38,7 @@ REMINDER_TEMPLATE = """{
     "PushedAt": $.now
 }"""
 
-TemplateSource = Union[str, JsltTemplate]
+TemplateSource = str | JsltTemplate
 
 
 def _compile(template: TemplateSource) -> JsltTemplate:
@@ -56,12 +56,12 @@ class TemplateRegistry:
 
     def __init__(
         self,
-        default_template: Optional[TemplateSource] = DEFAULT_ACTION_TEMPLATE,
-        functions: Optional[JsltFunctionRegistry] = None,
+        default_template: TemplateSource | None = DEFAULT_ACTION_TEMPLATE,
+        functions: JsltFunctionRegistry | None = None,
     ) -> None:
         self.functions = functions
-        self._templates: Dict[str, JsltTemplate] = {}
-        self._default: Optional[JsltTemplate] = (
+        self._templates: dict[str, JsltTemplate] = {}
+        self._default: JsltTemplate | None = (
             _compile(default_template) if default_template is not None else None
         )
         # Enveloppe des rappels différés, remplaçable par add_template.
@@ -71,18 +71,18 @@ class TemplateRegistry:
     # Enregistrement
     # ------------------------------------------------------------------
 
-    def add_template(self, action_name: str, template: TemplateSource) -> "TemplateRegistry":
+    def add_template(self, action_name: str, template: TemplateSource) -> TemplateRegistry:
         """Associe ``template`` à ``action_name`` (remplace, comme le source)."""
         self._templates[action_name] = _compile(template)
         return self
 
-    def set_default(self, template: Optional[TemplateSource]) -> "TemplateRegistry":
+    def set_default(self, template: TemplateSource | None) -> TemplateRegistry:
         self._default = _compile(template) if template is not None else None
         return self
 
     def add_directory(
-        self, path: Union[str, Path], pattern: str = "*.jslt"
-    ) -> "TemplateRegistry":
+        self, path: str | Path, pattern: str = "*.jslt"
+    ) -> TemplateRegistry:
         """Charge tous les fichiers ``pattern`` de ``path``.
 
         Le nom du fichier (sans extension) est le nom d'action ;
@@ -103,7 +103,7 @@ class TemplateRegistry:
     # Résolution / application
     # ------------------------------------------------------------------
 
-    def get(self, action_name: str) -> Optional[JsltTemplate]:
+    def get(self, action_name: str) -> JsltTemplate | None:
         """Le template de ``action_name``, sinon le template par défaut."""
         return self._templates.get(action_name, self._default)
 

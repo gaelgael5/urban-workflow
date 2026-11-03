@@ -11,7 +11,8 @@ construction de la configuration) s'appuie sur ``inspect.signature``.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Dict, Iterable, Optional
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from .exceptions import (
     DuplicatedArgumentNameError,
@@ -31,19 +32,19 @@ class FunctionRegistry:
 
     def __init__(self, kind: str = "function") -> None:
         self._kind = kind
-        self._functions: Dict[str, ContextFunction] = {}
+        self._functions: dict[str, ContextFunction] = {}
 
     # ------------------------------------------------------------------
     # Enregistrement
     # ------------------------------------------------------------------
 
-    def add(self, name: str, func: ContextFunction) -> "FunctionRegistry":
+    def add(self, name: str, func: ContextFunction) -> FunctionRegistry:
         if name in self._functions:
             raise DuplicatedArgumentNameError(f"{self._kind} name {name!r} is already registered")
         self._functions[name] = func
         return self
 
-    def register(self, name: Optional[str] = None) -> Callable[[ContextFunction], ContextFunction]:
+    def register(self, name: str | None = None) -> Callable[[ContextFunction], ContextFunction]:
         """Décorateur : ``@rules.register("IsMajor")`` ou ``@rules.register()``."""
 
         def decorator(func: ContextFunction) -> ContextFunction:

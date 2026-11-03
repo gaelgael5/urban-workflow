@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import zlib
 from pathlib import Path
-from typing import List, Optional, Union
 
 from antlr4 import CommonTokenStream, InputStream
 from antlr4.error.ErrorListener import ErrorListener
@@ -34,7 +33,7 @@ class _CollectingErrorListener(ErrorListener):
 
     def __init__(self, filename: str) -> None:
         self.filename = filename
-        self.errors: List[DslErrorModel] = []
+        self.errors: list[DslErrorModel] = []
 
     def syntaxError(self, recognizer, offendingSymbol, line, column, msg, e):
         text = offendingSymbol.text if offendingSymbol is not None else ""
@@ -59,11 +58,11 @@ class WorkflowScriptParser:
 
     def __init__(
         self,
-        tree: "WorkflowParser.ScriptContext",
+        tree: WorkflowParser.ScriptContext,
         *,
         filename: str,
         content: str,
-        errors: List[DslErrorModel],
+        errors: list[DslErrorModel],
     ) -> None:
         self.tree = tree
         self.filename = filename
@@ -74,7 +73,7 @@ class WorkflowScriptParser:
         fragment = tree.script_fragment()
         self.is_fragment = fragment is not None
 
-        self.includes: List[str] = []
+        self.includes: list[str] = []
         if not self.is_fragment:
             full = tree.script_full()
             if full is not None and full.INCLUDE():
@@ -85,7 +84,7 @@ class WorkflowScriptParser:
     # ------------------------------------------------------------------
 
     @classmethod
-    def parse_string(cls, source: str, filename: str = "") -> "WorkflowScriptParser":
+    def parse_string(cls, source: str, filename: str = "") -> WorkflowScriptParser:
         """Analyse ``source`` ; les erreurs de syntaxe sont collectées dans ``errors``."""
         listener = _CollectingErrorListener(filename)
 
@@ -102,7 +101,7 @@ class WorkflowScriptParser:
         return cls(tree, filename=filename, content=source, errors=listener.errors)
 
     @classmethod
-    def parse_path(cls, path: Union[str, Path]) -> "WorkflowScriptParser":
+    def parse_path(cls, path: str | Path) -> WorkflowScriptParser:
         """Analyse le fichier ``path`` (UTF-8, BOM toléré)."""
         path = Path(path)
         content = path.read_text(encoding="utf-8-sig")
@@ -112,7 +111,7 @@ class WorkflowScriptParser:
     # Diagnostics
     # ------------------------------------------------------------------
 
-    def check(self) -> "WorkflowScriptParser":
+    def check(self) -> WorkflowScriptParser:
         """Lève :class:`DslSyntaxError` si des erreurs de syntaxe ont été collectées."""
         if self.errors:
             details = "; ".join(str(error) for error in self.errors)
@@ -122,7 +121,7 @@ class WorkflowScriptParser:
             )
         return self
 
-    def visit(self, visitor) -> Optional[object]:
+    def visit(self, visitor) -> object | None:
         """Fait visiter l'arbre par ``visitor`` (positionne son ``filename``/``crc``)."""
         visitor.filename = self.filename
         visitor.crc = self.crc

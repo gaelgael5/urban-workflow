@@ -15,7 +15,7 @@ from __future__ import annotations
 import enum
 import json
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Engine, select
@@ -39,15 +39,15 @@ def _dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, default=_json_default)
 
 
-def _load(text: Optional[str]) -> Any:
+def _load(text: str | None) -> Any:
     return json.loads(text) if text else None
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _parse_date(text: Optional[str]) -> Optional[datetime]:
+def _parse_date(text: str | None) -> datetime | None:
     return datetime.fromisoformat(text) if text else None
 
 
@@ -58,14 +58,14 @@ class SqlWorkflowStorage:
     ``postgresql+psycopg://…``).
     """
 
-    def __init__(self, engine: Union[Engine, str]) -> None:
+    def __init__(self, engine: Engine | str) -> None:
         if isinstance(engine, str):
             from sqlalchemy import create_engine
 
             engine = create_engine(engine)
         self.engine: Engine = engine
 
-    def create_schema(self) -> "SqlWorkflowStorage":
+    def create_schema(self) -> SqlWorkflowStorage:
         create_schema(self.engine)
         return self
 
@@ -73,7 +73,7 @@ class SqlWorkflowStorage:
     # Lecture (dont le callback du processor)
     # ------------------------------------------------------------------
 
-    def load_by_external_id(self, external_id: str) -> List[Workflow]:
+    def load_by_external_id(self, external_id: str) -> list[Workflow]:
         """Les workflows d'un sujet — à brancher tel quel sur
         ``processor.load_existing_workflows_by_external_id``."""
         with self.engine.connect() as connection:
@@ -82,7 +82,7 @@ class SqlWorkflowStorage:
             ).mappings()
             return [self._build_workflow(connection, row) for row in rows]
 
-    def get(self, uuid: Union[UUID, str]) -> Optional[Workflow]:
+    def get(self, uuid: UUID | str) -> Workflow | None:
         with self.engine.connect() as connection:
             row = (
                 connection.execute(
@@ -93,7 +93,7 @@ class SqlWorkflowStorage:
             )
             return self._build_workflow(connection, row) if row else None
 
-    def get_all(self) -> List[Workflow]:
+    def get_all(self) -> list[Workflow]:
         with self.engine.connect() as connection:
             rows = connection.execute(select(workflows)).mappings()
             return [self._build_workflow(connection, row) for row in rows]
@@ -103,7 +103,7 @@ class SqlWorkflowStorage:
     # ------------------------------------------------------------------
 
     def save_workflow(
-        self, workflow: Workflow, connection: Optional[Connection] = None
+        self, workflow: Workflow, connection: Connection | None = None
     ) -> None:
         """Upsert du workflow, de ses événements et de leurs actions.
 
@@ -176,7 +176,7 @@ class SqlWorkflowStorage:
                 )
 
     @staticmethod
-    def _upsert(connection: Connection, table, row: Dict[str, Any]) -> None:
+    def _upsert(connection: Connection, table, row: dict[str, Any]) -> None:
         key = row["uuid"]
         exists = connection.execute(
             select(table.c.uuid).where(table.c.uuid == key)

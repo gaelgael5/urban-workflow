@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 from ..models import RuleSpan
 from .rules import ResultActionConfig, ResultRuleConfig, Rule, append_rule_actions
@@ -14,19 +13,19 @@ class TransitionConfig:
     """``(WHEN règle)? … SWITCH état`` au sein d'un ``ON EVENT``."""
 
     target_state_name: str = ""
-    when_rule: Optional[Rule] = None
+    when_rule: Rule | None = None
     when_rule_text: str = ""
     when_rule_code: str = ""
     when_rule_position: RuleSpan = field(default_factory=RuleSpan.none)
-    rule_actions: List[ResultRuleConfig] = field(default_factory=list)
+    rule_actions: list[ResultRuleConfig] = field(default_factory=list)
 
     #: Résolu par :meth:`WorkflowConfig.build`.
-    target_state: Optional["StateConfig"] = None
+    target_state: StateConfig | None = None
     label: str = ""
 
     def add_actions(
-        self, when_rule: Optional[Rule], *actions: ResultActionConfig
-    ) -> "TransitionConfig":
+        self, when_rule: Rule | None, *actions: ResultActionConfig
+    ) -> TransitionConfig:
         append_rule_actions(self.rule_actions, when_rule, *actions)
         return self
 
@@ -36,16 +35,16 @@ class IncomingEventConfig:
     """``ON EVENT nom`` d'un état : règles exécutées et transitions."""
 
     name: str = ""
-    transitions: List[TransitionConfig] = field(default_factory=list)
-    rules: List[ResultRuleConfig] = field(default_factory=list)
+    transitions: list[TransitionConfig] = field(default_factory=list)
+    rules: list[ResultRuleConfig] = field(default_factory=list)
 
-    def add_transition(self, transition: TransitionConfig) -> "IncomingEventConfig":
+    def add_transition(self, transition: TransitionConfig) -> IncomingEventConfig:
         self.transitions.append(transition)
         return self
 
     def add_action(
-        self, when_rule: Optional[Rule], action: ResultActionConfig
-    ) -> "IncomingEventConfig":
+        self, when_rule: Rule | None, action: ResultActionConfig
+    ) -> IncomingEventConfig:
         append_rule_actions(self.rules, when_rule, action)
         return self
 
@@ -56,23 +55,23 @@ class StateConfig:
 
     name: str = ""
     label: str = ""
-    events: Dict[str, IncomingEventConfig] = field(default_factory=dict)
-    incoming_rules: List[ResultRuleConfig] = field(default_factory=list)
-    outcoming_rules: List[ResultRuleConfig] = field(default_factory=list)
+    events: dict[str, IncomingEventConfig] = field(default_factory=dict)
+    incoming_rules: list[ResultRuleConfig] = field(default_factory=list)
+    outcoming_rules: list[ResultRuleConfig] = field(default_factory=list)
 
-    def add_event(self, event: IncomingEventConfig) -> "StateConfig":
+    def add_event(self, event: IncomingEventConfig) -> StateConfig:
         self.events[event.name] = event
         return self
 
     def add_incoming_actions(
-        self, when_rule: Optional[Rule], *actions: ResultActionConfig
-    ) -> "StateConfig":
+        self, when_rule: Rule | None, *actions: ResultActionConfig
+    ) -> StateConfig:
         append_rule_actions(self.incoming_rules, when_rule, *actions)
         return self
 
     def add_outcoming_actions(
-        self, when_rule: Optional[Rule], *actions: ResultActionConfig
-    ) -> "StateConfig":
+        self, when_rule: Rule | None, *actions: ResultActionConfig
+    ) -> StateConfig:
         append_rule_actions(self.outcoming_rules, when_rule, *actions)
         return self
 
@@ -82,13 +81,13 @@ class InitializationConfig:
     """Un ``SWITCH`` d'initialisation : ``(WHEN règle)? SWITCH état``."""
 
     target_state_name: str = ""
-    when_rule: Optional[Rule] = None
+    when_rule: Rule | None = None
     when_rule_text: str = ""
     when_rule_code: str = ""
     when_rule_position: RuleSpan = field(default_factory=RuleSpan.none)
 
     #: Résolu par :meth:`WorkflowConfig.build`.
-    target_state: Optional[StateConfig] = None
+    target_state: StateConfig | None = None
 
 
 @dataclass
@@ -97,16 +96,16 @@ class InitializationOnEventConfig:
 
     event_name: str = ""
     recursive: bool = False
-    switchs: List[InitializationConfig] = field(default_factory=list)
+    switchs: list[InitializationConfig] = field(default_factory=list)
 
     def add_switch(
         self,
         target_state_name: str,
-        when_rule: Optional[Rule] = None,
+        when_rule: Rule | None = None,
         when_rule_text: str = "",
         when_rule_code: str = "",
-        when_rule_position: Optional[RuleSpan] = None,
-    ) -> "InitializationOnEventConfig":
+        when_rule_position: RuleSpan | None = None,
+    ) -> InitializationOnEventConfig:
         self.switchs.append(
             InitializationConfig(
                 target_state_name=target_state_name,

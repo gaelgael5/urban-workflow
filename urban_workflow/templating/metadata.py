@@ -9,19 +9,19 @@ fusion se fait bien par clé de métadonnée.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Mapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
 
-Metadatas = Union[Mapping[str, str], Iterable[Tuple[str, str]]]
+Metadatas = Mapping[str, str] | Iterable[tuple[str, str]]
 
 
 class MetadataRegistry:
     """En-têtes des messages poussés, par nom d'action, avec défaut."""
 
-    def __init__(self, default: Optional[Metadatas] = None) -> None:
-        self._default: Dict[str, str] = dict(default or {})
-        self._by_action: Dict[str, Dict[str, str]] = {}
+    def __init__(self, default: Metadatas | None = None) -> None:
+        self._default: dict[str, str] = dict(default or {})
+        self._by_action: dict[str, dict[str, str]] = {}
 
-    def add_metadata(self, action_name: str, metadatas: Metadatas) -> "MetadataRegistry":
+    def add_metadata(self, action_name: str, metadatas: Metadatas) -> MetadataRegistry:
         """Fusionne ``metadatas`` dans les en-têtes de ``action_name``.
 
         La fusion est **par clé de métadonnée** : une clé déjà présente est
@@ -31,11 +31,11 @@ class MetadataRegistry:
         box.update(dict(metadatas))
         return self
 
-    def set_default(self, metadatas: Metadatas) -> "MetadataRegistry":
+    def set_default(self, metadatas: Metadatas) -> MetadataRegistry:
         self._default = dict(metadatas)
         return self
 
-    def get(self, action_name: str) -> Dict[str, str]:
+    def get(self, action_name: str) -> dict[str, str]:
         """Copie des en-têtes de ``action_name``, sinon ceux par défaut."""
         box = self._by_action.get(action_name)
         return dict(box) if box is not None else dict(self._default)

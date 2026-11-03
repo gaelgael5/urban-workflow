@@ -20,8 +20,8 @@ from urban_workflow import (
     Workflow,
     WorkflowConfig,
     WorkflowsConfig,
+    constants,
 )
-from urban_workflow import constants
 from urban_workflow.values import ContextRef
 
 

@@ -9,7 +9,6 @@ message de résultat à l'action d'origine.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
 from uuid import UUID
 
 from .. import constants
@@ -19,7 +18,7 @@ from ..models import ChangeEnum, RunContext
 class AppendEventResponsibility(ABC):
     """Maillon de la chaîne (portage de ``Responsability<TContext>``)."""
 
-    def __init__(self, child: Optional["AppendEventResponsibility"] = None) -> None:
+    def __init__(self, child: AppendEventResponsibility | None = None) -> None:
         self.child = child
 
     def eval(self, ctx: RunContext) -> None:

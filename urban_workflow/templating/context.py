@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
-from typing import Any, Dict, Optional
+from typing import Any
 from uuid import UUID
 
 from ..clock import WorkflowClock
@@ -36,11 +36,11 @@ def json_safe(value: Any) -> Any:
     return value
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def build_action_document(ctx: RunContext, action: ResultAction) -> Dict[str, Any]:
+def build_action_document(ctx: RunContext, action: ResultAction) -> dict[str, Any]:
     """Construit le document JSON de contexte pour ``action``.
 
     Structure : ``action`` / ``workflow`` / ``event`` / ``incoming`` /
@@ -53,7 +53,7 @@ def build_action_document(ctx: RunContext, action: ResultAction) -> Dict[str, An
     workflow = ctx.workflow
     incoming = ctx.incoming_event
 
-    document: Dict[str, Any] = {
+    document: dict[str, Any] = {
         "action": {
             "uuid": str(action.uuid),
             "name": action.name,

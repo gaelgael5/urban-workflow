@@ -15,8 +15,9 @@ d'expressions. Ici, une valeur de configuration est au choix :
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Union
+from typing import Any
 
 from .exceptions import ResolutionArgumentError
 
@@ -70,7 +71,7 @@ class ContextRef:
     path: str
 
     @classmethod
-    def parse(cls, text: str) -> "ContextRef":
+    def parse(cls, text: str) -> ContextRef:
         return cls(text[1:] if text.startswith("@") else text)
 
     def __call__(self, ctx: Any) -> Any:
@@ -81,7 +82,7 @@ class ContextRef:
 
 
 #: Une valeur de configuration : littéral, référence contextuelle ou callable.
-ContextValue = Union[Any, ContextRef, Callable[[Any], Any]]
+ContextValue = Any | ContextRef | Callable[[Any], Any]
 
 
 def make_value(raw: Any) -> ContextValue:

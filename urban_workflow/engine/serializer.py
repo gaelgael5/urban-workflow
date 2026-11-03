@@ -9,13 +9,14 @@ affectées aux champs typés, tout le reste part dans ``extended_datas``.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Mapping, Union
+from typing import Any
 from uuid import UUID
 
 from ..models import IncomingEvent
 
-Payload = Union[str, Mapping[str, Any]]
+Payload = str | Mapping[str, Any]
 
 
 def _parse_datetime(value: Any) -> datetime:

@@ -18,7 +18,7 @@ Différences assumées avec le source :
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from .. import constants
 from ..config import (
@@ -43,19 +43,17 @@ class WorkflowProcessor:
         config: WorkflowsConfig,
         factory: WorkflowFactory,
         *,
-        translator: Optional[ActionTranslator] = None,
+        translator: ActionTranslator | None = None,
     ) -> None:
         self._config = config
         self.factory = factory
         self.translator = translator or DefaultActionTranslator()
 
         #: Callback de chargement des workflows existants (storage).
-        self.load_existing_workflows_by_external_id: Optional[
-            Callable[[str], List[Workflow]]
-        ] = None
+        self.load_existing_workflows_by_external_id: Callable[[str], list[Workflow]] | None = None
 
         #: Fabrique de la chaîne de sorties (une chaîne neuve par évaluation).
-        self.output_actions: Optional[Callable[[], OutputAction]] = None
+        self.output_actions: Callable[[], OutputAction] | None = None
 
         # Chaîne de responsabilité : où insérer l'événement dans le modèle.
         self._append_event = AppendResultActionEvent(AppendStandardEvent())
@@ -64,7 +62,7 @@ class WorkflowProcessor:
     # Point d'entrée
     # ------------------------------------------------------------------
 
-    def evaluate_event(self, event: IncomingEvent) -> List[RunContext]:
+    def evaluate_event(self, event: IncomingEvent) -> list[RunContext]:
         """Évalue ``event`` ; retourne les contextes impactés (utile aux tests)."""
 
         if event is None:
@@ -75,7 +73,7 @@ class WorkflowProcessor:
         workflows = self._load_existing_workflows(event)
         contexts = list(self._get_existing_contexts(event, workflows))
 
-        existing_by_name: Dict[str, List[RunContext]] = {}
+        existing_by_name: dict[str, list[RunContext]] = {}
         for ctx in contexts:
             existing_by_name.setdefault(ctx.workflow.workflow_name, []).append(ctx)
 
@@ -108,7 +106,7 @@ class WorkflowProcessor:
     # Workflows existants
     # ------------------------------------------------------------------
 
-    def _load_existing_workflows(self, event: IncomingEvent) -> List[Workflow]:
+    def _load_existing_workflows(self, event: IncomingEvent) -> list[Workflow]:
         if self.load_existing_workflows_by_external_id is None:
             return []
 
@@ -121,7 +119,7 @@ class WorkflowProcessor:
 
         return workflows
 
-    def _get_existing_contexts(self, event: IncomingEvent, workflows: List[Workflow]):
+    def _get_existing_contexts(self, event: IncomingEvent, workflows: list[Workflow]):
         for workflow in workflows:
             config = self._check_and_resolve_config(workflow, event)
             if config is None:
@@ -135,7 +133,7 @@ class WorkflowProcessor:
 
     def _check_and_resolve_config(
         self, workflow: Workflow, event: IncomingEvent
-    ) -> Optional[WorkflowConfig]:
+    ) -> WorkflowConfig | None:
         # Un événement ne peut pas être intégré deux fois.
         if workflow.get_event(event.uuid) is not None:
             return None
@@ -156,11 +154,11 @@ class WorkflowProcessor:
     def _evaluate_new_workflows(
         self,
         event: IncomingEvent,
-        existing_by_name: Dict[str, List[RunContext]],
-        workflows: List[Workflow],
-    ) -> List[RunContext]:
+        existing_by_name: dict[str, list[RunContext]],
+        workflows: list[Workflow],
+    ) -> list[RunContext]:
 
-        results: List[RunContext] = []
+        results: list[RunContext] = []
 
         for config in self._config.matching(event):
 
@@ -197,7 +195,7 @@ class WorkflowProcessor:
 
     def _evaluate_if_workflow_must_be_created(
         self, event: IncomingEvent, config: WorkflowConfig
-    ) -> Optional[RunContext]:
+    ) -> RunContext | None:
 
         initializer = config.initializers.get(event.name)
         if initializer is None:
@@ -268,7 +266,7 @@ class WorkflowProcessor:
                 break
 
     def _collect_rule_actions(
-        self, rules: List[ResultRuleConfig], ctx: RunContext
+        self, rules: list[ResultRuleConfig], ctx: RunContext
     ) -> None:
         for rule in rules:
             if self._evaluate(rule, ctx):
@@ -281,7 +279,7 @@ class WorkflowProcessor:
 
     @staticmethod
     def _evaluate(
-        rule: "TransitionConfig | InitializationConfig | ResultRuleConfig",
+        rule: TransitionConfig | InitializationConfig | ResultRuleConfig,
         ctx: RunContext,
     ) -> bool:
         if rule.when_rule is None:
@@ -302,7 +300,7 @@ class WorkflowProcessor:
     # Traduction des actions collectées
     # ------------------------------------------------------------------
 
-    def _translate_actions(self, contexts: List[RunContext]) -> None:
+    def _translate_actions(self, contexts: list[RunContext]) -> None:
         for ctx in contexts:
             for action in ctx.actions:
                 pushed = self.translator.translate(ctx, action)

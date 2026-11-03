@@ -18,8 +18,9 @@ source (cf. ``docs/analyse-portage.md`` §6) :
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any
 
 from antlr4.tree.Tree import ErrorNode
 
@@ -54,7 +55,7 @@ from .generated.WorkflowParserVisitor import WorkflowParserVisitor
 from .parser import _unquote
 
 #: Types DSL (``TEXT | INTEGER | DECIMAL``) → types Python.
-_DSL_TYPES: Dict[str, type] = {"TEXT": str, "INTEGER": int, "DECIMAL": float}
+_DSL_TYPES: dict[str, type] = {"TEXT": str, "INTEGER": int, "DECIMAL": float}
 
 
 @dataclass
@@ -64,7 +65,7 @@ class DeclaredFunction:
     name: str
     kind: str = "action"  # "rule" ou "action" (diagnostics)
     comment: str = ""
-    parameters: Dict[str, type] = field(default_factory=dict)
+    parameters: dict[str, type] = field(default_factory=dict)
 
 
 @dataclass
@@ -82,7 +83,7 @@ def _log(ctx: RunContext, message: str) -> None:
         log.append(message)
 
 
-def _format_kwargs(kwargs: Dict[str, Any]) -> str:
+def _format_kwargs(kwargs: dict[str, Any]) -> str:
     return ", ".join(f"{key}={value!r}" for key, value in kwargs.items())
 
 
@@ -106,27 +107,27 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def __init__(
         self,
-        rules: Optional[FunctionRegistry] = None,
+        rules: FunctionRegistry | None = None,
         filename: str = "",
     ) -> None:
         self._rules = rules if rules is not None else FunctionRegistry("rule")
         self.filename = filename
         self.crc = 0
-        self.errors: List[DslErrorModel] = []
+        self.errors: list[DslErrorModel] = []
 
-        self._workflow: Optional[WorkflowConfig] = None
-        self._constants: Dict[str, ConstantModel] = {}
+        self._workflow: WorkflowConfig | None = None
+        self._constants: dict[str, ConstantModel] = {}
         #: Signatures déclarées — rules et actions partagent l'espace de noms,
         #: comme dans le source.
-        self._declarations: Dict[str, DeclaredFunction] = {}
+        self._declarations: dict[str, DeclaredFunction] = {}
         #: Cibles de ``SWITCH`` à valider une fois tous les états connus.
-        self._pending_switch_targets: List[Tuple[str, Any]] = []
+        self._pending_switch_targets: list[tuple[str, Any]] = []
 
     # ------------------------------------------------------------------
     # API publique
     # ------------------------------------------------------------------
 
-    def add_rule(self, name: str, func: Callable[..., bool]) -> "WorkflowConfigVisitor":
+    def add_rule(self, name: str, func: Callable[..., bool]) -> WorkflowConfigVisitor:
         """Enregistre une règle métier ``(ctx, **kwargs) -> bool`` (API fluide)."""
         self._rules.add(name, func)
         return self
@@ -136,11 +137,11 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         return self._rules
 
     @property
-    def constants(self) -> Dict[str, ConstantModel]:
+    def constants(self) -> dict[str, ConstantModel]:
         return dict(self._constants)
 
     @property
-    def declarations(self) -> Dict[str, DeclaredFunction]:
+    def declarations(self) -> dict[str, DeclaredFunction]:
         return dict(self._declarations)
 
     # ------------------------------------------------------------------
@@ -159,8 +160,8 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                 )
         return super().visit(tree)
 
-    def _collect_error_nodes(self, tree) -> List[DslErrorModel]:
-        errors: List[DslErrorModel] = []
+    def _collect_error_nodes(self, tree) -> list[DslErrorModel]:
+        errors: list[DslErrorModel] = []
 
         def walk(node) -> None:
             if isinstance(node, ErrorNode):
@@ -361,8 +362,8 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         self._declarations[name] = declaration
         return declaration
 
-    def visitParameters(self, ctx: WorkflowParser.ParametersContext) -> Dict[str, type]:
-        result: Dict[str, type] = {}
+    def visitParameters(self, ctx: WorkflowParser.ParametersContext) -> dict[str, type]:
+        result: dict[str, type] = {}
         for parameter in ctx.parameter():
             param_type, param_name = self.visitParameter(parameter)
             if param_name in result:
@@ -376,7 +377,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             result[param_name] = param_type
         return result
 
-    def visitParameter(self, ctx: WorkflowParser.ParameterContext) -> Tuple[type, str]:
+    def visitParameter(self, ctx: WorkflowParser.ParameterContext) -> tuple[type, str]:
         return self.visitType(ctx.type_()), self.visitKey(ctx.key())
 
     def visitType(self, ctx: WorkflowParser.TypeContext) -> type:
@@ -429,7 +430,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitInitializing(
         self, ctx: WorkflowParser.InitializingContext
-    ) -> List[InitializationOnEventConfig]:
+    ) -> list[InitializationOnEventConfig]:
         return [self.visitInitializing_item(item) for item in ctx.initializing_item()]
 
     def visitInitializing_item(
@@ -439,10 +440,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         target_state_name = self.visitKey(ctx.key(1))
         self._pending_switch_targets.append((target_state_name, ctx.key(1)))
 
-        when_rule: Optional[Rule] = None
+        when_rule: Rule | None = None
         when_rule_text = ""
         when_rule_code = ""
-        when_rule_position: Optional[RuleSpan] = None
+        when_rule_position: RuleSpan | None = None
         if ctx.WHEN() is not None:
             condition = ctx.rule_conditions()
             when_rule, when_rule_code = self.visitRule_conditions(condition)
@@ -466,9 +467,9 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitOn_event_statement(
         self, ctx: WorkflowParser.On_event_statementContext
-    ) -> Tuple[IncomingEventConfig, List[Tuple[str, ResultRuleConfig]]]:
-        rule_pairs: List[Tuple[str, ResultRuleConfig]] = []
-        expire_rule: Optional[Rule] = None
+    ) -> tuple[IncomingEventConfig, list[tuple[str, ResultRuleConfig]]]:
+        rule_pairs: list[tuple[str, ResultRuleConfig]] = []
+        expire_rule: Rule | None = None
         expire_rule_text = ""
 
         incoming_event = IncomingEventConfig()
@@ -522,7 +523,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitExecute(
         self, ctx: WorkflowParser.ExecuteContext
-    ) -> Tuple[bool, bool, ResultRuleConfig]:
+    ) -> tuple[bool, bool, ResultRuleConfig]:
         on_enter = ctx.ENTER() is not None
         on_exit = ctx.EXIT() is not None
         rule = self.visitExecute2(ctx.execute2())
@@ -550,8 +551,8 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitExecute3(
         self, ctx: WorkflowParser.Execute3Context
-    ) -> List[ResultActionConfig]:
-        actions: List[ResultActionConfig] = []
+    ) -> list[ResultActionConfig]:
+        actions: list[ResultActionConfig] = []
 
         if ctx.STORE() is not None:
             for matchings in ctx.matchings():
@@ -629,11 +630,11 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitArguments(
         self, ctx: WorkflowParser.ArgumentsContext
-    ) -> List[Tuple[str, str, Any]]:
+    ) -> list[tuple[str, str, Any]]:
         """Retourne ``[(nom, valeur brute, contexte ANTLR), …]``."""
         return [self.visitArgument(argument) for argument in ctx.argument()]
 
-    def visitArgument(self, ctx: WorkflowParser.ArgumentContext) -> Tuple[str, str, Any]:
+    def visitArgument(self, ctx: WorkflowParser.ArgumentContext) -> tuple[str, str, Any]:
         key = self.visitKey(ctx.key())
         value = self.visitArgumentValue(ctx.argumentValue())
         return key, value, ctx
@@ -647,7 +648,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         return ctx.string().getText()
 
     def _make_argument_value(
-        self, raw: str, declared_type: Optional[type], ctx
+        self, raw: str, declared_type: type | None, ctx
     ) -> ContextValue:
         """Interprète une valeur brute d'argument.
 
@@ -667,7 +668,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         return self._convert(raw, declared_type, ctx)
 
-    def _convert(self, value: Any, declared_type: Optional[type], ctx) -> Any:
+    def _convert(self, value: Any, declared_type: type | None, ctx) -> Any:
         if declared_type is None or declared_type is object:
             return value
         if isinstance(value, declared_type):
@@ -687,7 +688,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitRule_conditions(
         self, ctx: WorkflowParser.Rule_conditionsContext
-    ) -> Tuple[Rule, str]:
+    ) -> tuple[Rule, str]:
         """Compile récursivement une condition en ``(closure, code lisible)``."""
 
         key = ctx.key()
@@ -734,7 +735,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         inner, inner_code = self.visitRule_conditions(ctx.rule_conditions(0))
         return inner, f"({inner_code})"
 
-    def _compile_rule_call(self, ctx, name: str) -> Tuple[Rule, str]:
+    def _compile_rule_call(self, ctx, name: str) -> tuple[Rule, str]:
         if name not in self._rules:
             self._raise_positioned(
                 InvalidMethodReferenceError,
@@ -743,7 +744,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             )
         func = self._rules.get(name)
 
-        provided: List[Tuple[str, str, Any]] = []
+        provided: list[tuple[str, str, Any]] = []
         arguments = ctx.arguments()
         if arguments is not None:
             provided = self.visitArguments(arguments)
@@ -755,7 +756,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             self._raise_positioned(type(exc), ctx, str(exc))
 
         declaration = self._declarations.get(name)
-        resolvers: Dict[str, ContextValue] = {}
+        resolvers: dict[str, ContextValue] = {}
         for key, raw_value, argument_ctx in provided:
             declared_type = (
                 declaration.parameters.get(key) if declaration is not None else None
@@ -777,7 +778,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             run_ctx: RunContext,
             _func: Callable[..., bool] = func,
             _name: str = name,
-            _resolvers: Dict[str, ContextValue] = resolvers,
+            _resolvers: dict[str, ContextValue] = resolvers,
         ) -> bool:
             kwargs = {
                 key: resolve_value(value, run_ctx) for key, value in _resolvers.items()
@@ -798,10 +799,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
     def visitMatchings(
         self, ctx: WorkflowParser.MatchingsContext
-    ) -> List[Tuple[str, str]]:
+    ) -> list[tuple[str, str]]:
         return [self.visitMatching(matching) for matching in ctx.matching()]
 
-    def visitMatching(self, ctx: WorkflowParser.MatchingContext) -> Tuple[str, str]:
+    def visitMatching(self, ctx: WorkflowParser.MatchingContext) -> tuple[str, str]:
         return self.visitKey(ctx.key()), self.visitString(ctx.string())
 
     def visitKey(self, ctx: WorkflowParser.KeyContext) -> str:
@@ -855,7 +856,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         prefix = f"{self.filename}:" if self.filename else ""
         return f"{prefix}{token.line}:{token.column}"
 
-    def _raise_positioned(self, exc_type: Type[WorkflowError], ctx, message: str):
+    def _raise_positioned(self, exc_type: type[WorkflowError], ctx, message: str):
         raise exc_type(f"{self._position(ctx)}: {message}")
 
     def _span(self, ctx) -> RuleSpan:
@@ -892,7 +893,7 @@ def _cancel_reminder_when_rule(run_ctx: RunContext) -> bool:
     return run_ctx.incoming_event.name != constants.EXPIRED_EVENT_NAME
 
 
-def _expiration_rule_pairs(delay: int) -> List[Tuple[str, ResultRuleConfig]]:
+def _expiration_rule_pairs(delay: int) -> list[tuple[str, ResultRuleConfig]]:
     """Actions techniques d'un ``EXPIRE AFTER`` (cf. ``AddExpirationActions``).
 
     - à l'entrée de l'état : pousser le rappel différé ``__expired`` ;

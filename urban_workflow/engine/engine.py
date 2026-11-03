@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import threading
 import zlib
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator, List, Mapping, Optional, Union
+from typing import Any
 
 from ..exceptions import InvalidIncomingEventFormatError
 from ..models import IncomingEvent, RunContext
@@ -32,8 +33,8 @@ class WorkflowEngine:
         self,
         processor: WorkflowProcessor,
         *,
-        locker: Optional[LockObject] = None,
-        thread_safe_key: Optional[Callable[[IncomingEvent], str]] = None,
+        locker: LockObject | None = None,
+        thread_safe_key: Callable[[IncomingEvent], str] | None = None,
     ) -> None:
         self.processor = processor
         self.locker = locker if locker is not None else MemoryLocker()
@@ -45,9 +46,9 @@ class WorkflowEngine:
 
     def evaluate_event(
         self,
-        payload: Union[str, Mapping[str, Any], IncomingEvent],
-        incoming_type: Optional[str] = None,
-    ) -> List[RunContext]:
+        payload: str | Mapping[str, Any] | IncomingEvent,
+        incoming_type: str | None = None,
+    ) -> list[RunContext]:
         """Désérialise ``payload`` puis l'évalue sous verrou.
 
         Accepte un JSON (chaîne), un mapping déjà désérialisé ou un

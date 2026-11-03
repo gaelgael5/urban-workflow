@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from ..clock import WorkflowClock
 from ..models import ResultAction, RuleSpan, RunContext
@@ -29,9 +30,9 @@ class ResultActionConfig:
     label: str = ""
     delay: int = 0
     kind: str = ""
-    arguments: Dict[str, ContextValue] = field(default_factory=dict)
+    arguments: dict[str, ContextValue] = field(default_factory=dict)
 
-    def add_argument(self, key: str, value: Any) -> "ResultActionConfig":
+    def add_argument(self, key: str, value: Any) -> ResultActionConfig:
         """Ajoute un argument ; les chaînes ``@a.b.c`` deviennent des références."""
         self.arguments[key] = make_value(value)
         return self
@@ -53,20 +54,20 @@ class ResultActionConfig:
 class ResultRuleConfig:
     """Un bloc ``WHEN règle → actions`` (règle absente = toujours vrai)."""
 
-    when_rule: Optional[Rule] = None
+    when_rule: Rule | None = None
     when_rule_text: str = ""
     when_rule_code: str = ""
     when_rule_position: RuleSpan = field(default_factory=RuleSpan.none)
-    actions: List[ResultActionConfig] = field(default_factory=list)
+    actions: list[ResultActionConfig] = field(default_factory=list)
 
-    def add_actions(self, *actions: ResultActionConfig) -> "ResultRuleConfig":
+    def add_actions(self, *actions: ResultActionConfig) -> ResultRuleConfig:
         self.actions.extend(actions)
         return self
 
 
 def append_rule_actions(
-    rules: List[ResultRuleConfig],
-    when_rule: Optional[Rule],
+    rules: list[ResultRuleConfig],
+    when_rule: Rule | None,
     *actions: ResultActionConfig,
 ) -> ResultRuleConfig:
     """Accroche ``actions`` au bloc portant ``when_rule``, créé au besoin.

@@ -12,7 +12,7 @@ import enum
 import uuid as uuid_module
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
 
 from .values import ContextValue, resolve_value
@@ -35,9 +35,9 @@ class IncomingEvent:
     name: str = ""
     uuid: UUID = field(default_factory=new_uuid)
     external_id: str = ""
-    creation_date: Optional[datetime] = None
-    event_date: Optional[datetime] = None
-    extended_datas: Dict[str, Any] = field(default_factory=dict)
+    creation_date: datetime | None = None
+    event_date: datetime | None = None
+    extended_datas: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -48,10 +48,10 @@ class PushedAction:
     name: str = ""
     kind: str = ""
     change: ChangeEnum = ChangeEnum.NONE
-    execute_message: Optional[Dict[str, Any]] = None
-    result_message: Optional[Dict[str, Any]] = None
-    cancel_message: Optional[Dict[str, Any]] = None
-    result_cancel_message: Optional[Dict[str, Any]] = None
+    execute_message: dict[str, Any] | None = None
+    result_message: dict[str, Any] | None = None
+    cancel_message: dict[str, Any] | None = None
+    result_cancel_message: dict[str, Any] | None = None
 
 
 @dataclass
@@ -60,21 +60,21 @@ class Event:
 
     name: str = ""
     uuid: UUID = field(default_factory=new_uuid)
-    creation_date: Optional[datetime] = None
-    event_date: Optional[datetime] = None
+    creation_date: datetime | None = None
+    event_date: datetime | None = None
     from_state: str = ""
     to_state: str = ""
     change: ChangeEnum = ChangeEnum.NONE
-    actions: List[PushedAction] = field(default_factory=list)
-    extended_datas: Dict[str, Any] = field(default_factory=dict)
+    actions: list[PushedAction] = field(default_factory=list)
+    extended_datas: dict[str, Any] = field(default_factory=dict)
 
-    def get_action(self, action_uuid: UUID) -> Optional[PushedAction]:
+    def get_action(self, action_uuid: UUID) -> PushedAction | None:
         for action in self.actions:
             if action.uuid == action_uuid:
                 return action
         return None
 
-    def add_actions(self, *actions: PushedAction) -> "Event":
+    def add_actions(self, *actions: PushedAction) -> Event:
         self.actions.extend(actions)
         return self
 
@@ -88,28 +88,28 @@ class Workflow:
     uuid: UUID = field(default_factory=new_uuid)
     external_id: str = ""
     concurrency: int = 0
-    creation_date: Optional[datetime] = None
-    last_update_date: Optional[datetime] = None
+    creation_date: datetime | None = None
+    last_update_date: datetime | None = None
     recursive: bool = False
     change: ChangeEnum = ChangeEnum.NONE
-    events: List[Event] = field(default_factory=list)
-    extended_datas: Dict[str, Any] = field(default_factory=dict)
+    events: list[Event] = field(default_factory=list)
+    extended_datas: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def last_event(self) -> Optional[Event]:
+    def last_event(self) -> Event | None:
         return self.events[-1] if self.events else None
 
     @property
     def current_state(self) -> str:
         return self.events[-1].to_state if self.events else ""
 
-    def get_event(self, event_uuid: UUID) -> Optional[Event]:
+    def get_event(self, event_uuid: UUID) -> Event | None:
         for event in self.events:
             if event.uuid == event_uuid:
                 return event
         return None
 
-    def add_events(self, *events: Event) -> "Workflow":
+    def add_events(self, *events: Event) -> Workflow:
         self.events.extend(events)
         return self
 
@@ -128,11 +128,11 @@ class ResultAction:
     label: str = ""
     delay: int = 0
     kind: str = ""
-    event: Optional[Event] = None
-    event_date: Optional[datetime] = None
-    arguments: Dict[str, ContextValue] = field(default_factory=dict)
+    event: Event | None = None
+    event_date: datetime | None = None
+    arguments: dict[str, ContextValue] = field(default_factory=dict)
 
-    def resolve_arguments(self, ctx: "RunContext") -> Dict[str, Any]:
+    def resolve_arguments(self, ctx: RunContext) -> dict[str, Any]:
         """Résout tous les arguments contre le contexte d'exécution."""
         return {key: resolve_value(value, ctx) for key, value in self.arguments.items()}
 
@@ -149,7 +149,7 @@ class RuleSpan:
     stop_index: int = 0
 
     @classmethod
-    def none(cls) -> "RuleSpan":
+    def none(cls) -> RuleSpan:
         return _RULE_SPAN_NONE
 
 
@@ -179,10 +179,10 @@ class RunContext:
     :class:`~urban_workflow.values.ContextRef`.
     """
 
-    workflow: Optional[Workflow] = None
-    incoming_event: Optional[IncomingEvent] = None
-    event: Optional[Event] = None
-    extended_datas: Dict[str, Any] = field(default_factory=dict)
-    actions: List[ResultAction] = field(default_factory=list)
-    functional_log: List[str] = field(default_factory=list)
+    workflow: Workflow | None = None
+    incoming_event: IncomingEvent | None = None
+    event: Event | None = None
+    extended_datas: dict[str, Any] = field(default_factory=dict)
+    actions: list[ResultAction] = field(default_factory=list)
+    functional_log: list[str] = field(default_factory=list)
     current_evaluation: CurrentEvaluation = field(default_factory=CurrentEvaluation)

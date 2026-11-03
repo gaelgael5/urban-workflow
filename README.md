@@ -68,6 +68,10 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 | [docs/guide-tests.md](docs/guide-tests.md) | **Le tester** : règles pures, configuration, templates, scénarios de bout en bout |
 | [docs/analyse-portage.md](docs/analyse-portage.md) | Analyse du projet source et choix structurants du portage |
 
+English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
+[docs/en/integration-guide.md](docs/en/integration-guide.md) ·
+[docs/en/testing-guide.md](docs/en/testing-guide.md)
+
 ## Installation et développement
 
 ```bash
@@ -83,9 +87,10 @@ parseur DSL). Python ≥ 3.10.
 Socle, DSL (grammaires ANTLR reprises du source), moteur, templating
 urban-json et persistance SQL (extra `[sql]`, SQLAlchemy Core) sont
 fonctionnels et testés (scénarios de bout en bout *script DSL →
-événements → états → messages*, cycle de vie persisté en SQL). À venir :
-CI. Les bugs connus du moteur source ne sont pas reproduits — chacun est
-couvert par un test dédié.
+événements → états → messages*, cycle de vie persisté en SQL), avec CI
+GitHub Actions (tests Python 3.10 → 3.13, lint ruff). Les bugs connus du
+moteur source ne sont pas reproduits — chacun est couvert par un test
+dédié.
 
 ## Licence
 

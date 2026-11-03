@@ -9,8 +9,6 @@ différées. Le message produit a la forme ``MessageRaw`` du source :
 
 from __future__ import annotations
 
-from typing import Optional
-
 from .. import constants
 from ..engine.translator import ActionTranslator
 from ..models import ChangeEnum, PushedAction, ResultAction, RunContext
@@ -24,8 +22,8 @@ class JsltActionTranslator(ActionTranslator):
 
     def __init__(
         self,
-        templates: Optional[TemplateRegistry] = None,
-        metadatas: Optional[MetadataRegistry] = None,
+        templates: TemplateRegistry | None = None,
+        metadatas: MetadataRegistry | None = None,
     ) -> None:
         self.templates = templates if templates is not None else TemplateRegistry()
         self.metadatas = metadatas if metadatas is not None else MetadataRegistry()

@@ -43,12 +43,18 @@ commit en français).
   agrégats JSON, upserts idempotents, chaîne `sql_output` sous transaction
   SQL unique) + interface `OutputBus`/`BusOutputAction` dans `outputs/`,
   141 tests verts (SQLite en mémoire, skip propre sans sqlalchemy).
-- [~] **Étape 6 — Finitions** : documentation française faite —
-  `docs/guide-dsl.md` (langage complet), `docs/guide-integration.md`
-  (moteur, templates, sorties), `docs/guide-tests.md` (règles et tests),
-  README réécrit ; le cas d'usage des guides (circuit de validation) est
-  pérennisé dans `tests/test_docs_examples.py` (133 tests verts).
-  Reste : CI GitHub Actions, version anglaise des guides éventuelle.
+- [x] **Étape 6 — Finitions** : guides français (`docs/guide-*.md`) et
+  anglais (`docs/en/*-guide.md`), README, cas d'usage des guides pérennisé
+  dans `tests/test_docs_examples.py` ; CI GitHub Actions
+  (`.github/workflows/ci.yml` : tests 3.10→3.13, job sans sqlalchemy pour
+  vérifier le skip de l'extra `[sql]`, lint ruff) ; annotations modernisées
+  (PEP 585/604) et règles ruff **explicites** dans pyproject
+  (`[tool.ruff.lint] select` — les défauts de ruff changent entre
+  versions). 141 tests verts. Publication PyPI : non faite, à la demande.
+
+**Le plan en 6 étapes est terminé.** Reprises possibles : publication
+PyPI (trusted publisher OIDC), verrou distribué (`LockObject` SQL/Redis),
+adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 
 ## Étape 2 (DSL) — acquis
 

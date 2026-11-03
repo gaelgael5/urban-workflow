@@ -9,7 +9,7 @@ sans doublon).
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from sqlalchemy.engine import Connection
 
@@ -24,7 +24,7 @@ class SqlUnitOfWork:
 
     def __init__(self, storage: SqlWorkflowStorage) -> None:
         self._storage = storage
-        self._connection: Optional[Connection] = None
+        self._connection: Connection | None = None
         self._transaction = None
         self._finished = False
 
@@ -75,7 +75,7 @@ class SqlPushModelOutputAction(OutputAction):
         self,
         storage: SqlWorkflowStorage,
         unit_of_work: SqlUnitOfWork,
-        child: Optional[OutputAction] = None,
+        child: OutputAction | None = None,
     ) -> None:
         super().__init__(child)
         self._storage = storage
@@ -95,7 +95,7 @@ class SqlPushModelOutputAction(OutputAction):
 
 
 def sql_output(
-    storage: SqlWorkflowStorage, bus: Optional[OutputBus] = None
+    storage: SqlWorkflowStorage, bus: OutputBus | None = None
 ) -> Callable[[], OutputAction]:
     """Fabrique de la chaîne SQL standard.
 

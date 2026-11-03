@@ -7,9 +7,9 @@ permet de figer le temps dans les tests (expirations, rappels différés).
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Callable, Iterator
 
 
 def _default_provider() -> datetime:
