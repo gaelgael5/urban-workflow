@@ -176,6 +176,25 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
 
+## Hors plan — Livraison sur machine de test (fait)
+
+- Standard « machines de test » : push sur **`dev`** (branche créée depuis
+  la branche de travail, à resynchroniser à chaque livraison), puis
+  `./dev-deploy.sh` dans le clone `~/urban-workflow` de la machine, puis
+  lecture des journaux réels. Aucune retouche manuelle de la cible.
+- `playground/Dockerfile` (contexte = racine ; socle `[schemas]` +
+  playground installés depuis les sources, non root, HEALTHCHECK sur
+  `GET /healthz`), `docker-compose.yml` (stack/port via `.env`),
+  `dev-deploy.sh` (9 étapes, pas de migration : pas de base),
+  `scripts/declarer-exposition.sh` (copie du script du portail — à
+  resynchroniser, pas à faire diverger).
+- Ressources : `ia_instructions/tests_and_ressources.md` (`test1` =
+  `host-test-37`, port 8777).
+- Poste de dev : pas de clé SSH GitHub → pousser en HTTPS
+  (`git push https://github.com/gaelgael5/urban-workflow.git …`, helper
+  de credentials du portail). Pas de pip local : tests via un conteneur
+  `python:3.12-slim` jetable sur la machine de test.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
