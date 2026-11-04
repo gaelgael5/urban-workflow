@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "urban-workflow"
+version = "0.1.0"
+description = "Moteur de workflow piloté par un DSL métier — portage Python de Black-Beard-Sdk/Workflow, sorties JSON normalisées via urban-json (JSLT)."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = [
+    "urban-json>=0.2.1",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/gaelgael5/urban-workflow"
+Issues = "https://github.com/gaelgael5/urban-workflow/issues"
+
+[project.optional-dependencies]
+sql = [
+    "sqlalchemy>=2.0",
+]
+# Le playground est une distribution séparée : pip install urban-workflow-playground
+# (sous-projet playground/ de ce dépôt).
+dev = [
+    "pytest>=7",
+    "ruff>=0.4",
+    "sqlalchemy>=2.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+include = ["urban_workflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["urban_workflow/dsl/generated"]
+
+[tool.ruff.lint]
+# Jeu de règles explicite : la CI ne dépend pas des défauts de ruff.
+select = ["E4", "E7", "E9", "F", "I", "UP", "RUF100"]
+
+[tool.ruff.lint.per-file-ignores]
+# Imports après pytest.importorskip("sqlalchemy") : voulu.
+"tests/test_storage_sql.py" = ["E402"]
