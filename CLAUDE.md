@@ -191,9 +191,12 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 - Ressources : `ia_instructions/tests_and_ressources.md` (`test1` =
   `host-test-37`, port 8777).
 - Poste de dev : pas de clé SSH GitHub → pousser en HTTPS
-  (`git push https://github.com/gaelgael5/urban-workflow.git …`, helper
-  de credentials du portail). Pas de pip local : tests via un conteneur
-  `python:3.12-slim` jetable sur la machine de test.
+  (`git push https://github.com/gaelgael5/urban-workflow.git …`). Le
+  helper global (`devpod agent git-credentials`) a renvoyé des 500 ; le
+  script du portail marche : `git -c credential.helper=
+  -c credential.helper=$HOME/.config/portal/git-credential-portal.sh push …`.
+  Pas de pip local : tests via un conteneur `python:3.12-slim` jetable sur
+  la machine de test.
 
 ## Étape 2 (DSL) — acquis
 
