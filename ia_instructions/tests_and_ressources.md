@@ -22,3 +22,9 @@ Notes sur `test1` :
 - Services standard : `browserless-chromium` (port 3000), collecteurs
   `devpod-alloy-agent` / `devpod-alloy-metrics`.
 - Accès par rebond `devflow-jump` (bloc `test1` de `~/.ssh/config`).
+
+## Services exposés à l'annuaire
+
+| Service | Cible | URL publique |
+|---|---|---|
+| `urban-workflow-urban-workflow` | 100.74.9.236:8777 | `https://svc-urban-workflow-urban-workflow.yoops.org/` (derrière la session du portail `dev.yoops.org`) |
