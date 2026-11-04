@@ -1,0 +1,20 @@
+# Stack de la machine de test : le playground seul (pas de base, pas d'état).
+# Port publié sur l'hôte : PLAYGROUND_PORT dans .env (complété par dev-deploy.sh).
+# Le nom de stack vient de COMPOSE_PROJECT_NAME (.env) : jamais en dur, pour
+# cohabiter avec les autres projets d'une machine partagée.
+services:
+  playground:
+    build:
+      context: .
+      dockerfile: playground/Dockerfile
+    image: urban-workflow-playground:dev
+    restart: unless-stopped
+    ports:
+      - "${PLAYGROUND_PORT:-8777}:8000"
+    # Rotation des journaux du conteneur : sans plafond, le fichier json-file
+    # grossit sans fin sur une machine qui reste allumée.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -302,3 +302,12 @@ class TestDiagram:
         assert data["ok"] is False
         assert any("EtatInconnu" in e["message"] for e in data["errors"])
         assert "SWITCH EtatInconnu" in data["script"]
+
+
+class TestHealthz:
+    """Sonde de santé visée par dev-deploy.sh et le HEALTHCHECK de l'image."""
+
+    def test_healthz_reports_ok(self):
+        response = client.get("/healthz")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}

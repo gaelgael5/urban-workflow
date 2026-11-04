@@ -297,6 +297,14 @@ def _summary(config) -> dict[str, Any]:
 # ----------------------------------------------------------------------
 
 
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    # Sonde volontairement triviale : le playground n'a ni base ni dépendance
+    # externe, « le process répond » est tout ce qu'il y a à vérifier. Visée
+    # par le HEALTHCHECK de l'image et par l'étape de santé de dev-deploy.sh.
+    return {"status": "ok"}
+
+
 @app.post("/api/analyze")
 def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
