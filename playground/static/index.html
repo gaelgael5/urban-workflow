@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>urban-workflow — playground DSL</title>
+<link rel="stylesheet" href="/static/vendor/codemirror.css">
+<link rel="stylesheet" href="/static/vendor/show-hint.css">
+<link rel="stylesheet" href="/static/vendor/lint.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>urban-workflow <span>playground DSL</span></h1>
+  <div class="header-actions">
+    <select id="example-select" title="Exemples">
+      <option value="">Exemples…</option>
+      <option value="validation">Circuit de validation</option>
+      <option value="minimal">Script minimal</option>
+      <option value="casse">Script avec erreurs</option>
+    </select>
+    <span id="status" class="status">—</span>
+  </div>
+</header>
+
+<main>
+  <section class="editor-pane">
+    <textarea id="editor"></textarea>
+    <div id="diagnostics" class="diagnostics"></div>
+  </section>
+
+  <aside class="side-pane">
+    <nav class="tabs">
+      <button data-tab="rules" class="active">Paramétrage</button>
+      <button data-tab="structure">Structure</button>
+      <button data-tab="simulate">Simulation</button>
+      <button data-tab="help">Aide</button>
+    </nav>
+
+    <div id="tab-rules" class="tab active">
+      <p class="hint-text">Règles métier disponibles pour les conditions
+      <code>WHEN</code> : nom, paramètres typés et résultat simulé.
+      Sauvegardé dans le navigateur.</p>
+      <div id="rules-list"></div>
+      <form id="rule-form">
+        <input id="rule-name" placeholder="NomDeLaRegle" required
+               pattern="[A-Za-z][A-Za-z0-9_]*">
+        <input id="rule-params" placeholder="TEXT champ, DECIMAL seuil">
+        <label class="inline"><input type="checkbox" id="rule-result" checked> vraie</label>
+        <button type="submit">Ajouter</button>
+      </form>
+    </div>
+
+    <div id="tab-structure" class="tab">
+      <div id="structure"></div>
+    </div>
+
+    <div id="tab-simulate" class="tab">
+      <p class="hint-text">Une liste JSON d'événements, rejoués dans
+      l'ordre sur un moteur en mémoire.</p>
+      <textarea id="events-input" spellcheck="false"></textarea>
+      <button id="run-simulation">Rejouer les événements</button>
+      <div id="simulation-result"></div>
+    </div>
+
+    <div id="tab-help" class="tab">
+      <ul class="hint-text">
+        <li><kbd>Ctrl</kbd>+<kbd>Espace</kbd> : complétion (aussi automatique en tapant).</li>
+        <li>La complétion est contextuelle : événements après <code>ON EVENT</code>,
+            états après <code>SWITCH</code>, règles après <code>WHEN</code>/<code>AND</code>/<code>OR</code>/<code>NOT</code>,
+            actions après <code>EXECUTE</code>, chemins après <code>@</code>.</li>
+        <li>Les erreurs (syntaxe et validation) sont soulignées dans l'éditeur
+            et listées sous celui-ci — cliquer pour y aller.</li>
+        <li>Référence du langage : <code>docs/guide-dsl.md</code>.</li>
+      </ul>
+    </div>
+  </aside>
+</main>
+
+<script src="/static/vendor/codemirror.js"></script>
+<script src="/static/vendor/simple.js"></script>
+<script src="/static/vendor/show-hint.js"></script>
+<script src="/static/vendor/lint.js"></script>
+<script src="/static/examples.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

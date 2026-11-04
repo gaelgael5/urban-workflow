@@ -72,6 +72,17 @@ English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
 [docs/en/integration-guide.md](docs/en/integration-guide.md) ·
 [docs/en/testing-guide.md](docs/en/testing-guide.md)
 
+## Playground
+
+Un site web local pour écrire les scripts avec **intellisense**,
+diagnostics positionnés, paramétrage des règles métier et simulation
+d'événements sur le vrai moteur — voir [playground/README.md](playground/README.md) :
+
+```bash
+pip install -e .[playground]
+python -m playground          # http://127.0.0.1:8777
+```
+
 ## Installation et développement
 
 ```bash

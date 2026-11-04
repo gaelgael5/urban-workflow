@@ -56,6 +56,26 @@ commit en français).
 PyPI (trusted publisher OIDC), verrou distribué (`LockObject` SQL/Redis),
 adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 
+## Hors plan — Playground web (demandé ensuite)
+
+- `playground/` (hors paquet distribué, extra `[playground]` =
+  fastapi+uvicorn ; `python -m playground` → port 8777) : éditeur
+  CodeMirror 5.65.18 **vendorisé** (`static/vendor/`, récupéré via le
+  tarball npm — cdnjs bloqué par le proxy), mode DSL, **intellisense
+  contextuelle** (événements/états/règles/actions/chemins `@`/constantes
+  selon le texte avant le curseur, pas dans les chaînes/commentaires),
+  lint asynchrone branché sur `POST /api/analyze`.
+- `playground/app.py` : `/api/analyze` → erreurs positionnées (syntaxe en
+  bloc ; sémantique une par une, position re-parsée du message
+  `fichier:ligne:col`) + symboles (visiteur si script valide, repli regex
+  sinon) + résumé structurel ; `/api/simulate` → vrai moteur mémoire,
+  étapes avec états/actions/journal. Les règles du panneau de paramétrage
+  deviennent des callables à signature exacte (identifiants filtrés).
+- `conftest.py` racine (rend `playground` importable des tests) ;
+  `tests/test_playground.py` (TestClient, skip sans fastapi) ; job CI
+  « sans sqlalchemy » couvre aussi ce skip ; lint CI étendu à
+  `playground` et `conftest.py`.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`

@@ -47,4 +47,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install ruff
-      - run: ruff check urban_workflow tests
+      - run: ruff check urban_workflow tests playground conftest.py
