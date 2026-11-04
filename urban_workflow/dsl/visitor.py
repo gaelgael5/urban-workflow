@@ -44,10 +44,12 @@ from ..exceptions import (
     InvalidMethodReferenceError,
     MissingArgumentNameError,
     MissingStateError,
+    UnknownSchemaError,
     WorkflowError,
 )
 from ..models import RuleSpan, RunContext
 from ..registry import FunctionRegistry
+from ..schemas import SchemaRegistry
 from ..values import ContextRef, ContextValue, resolve_value
 from .errors import DslErrorModel
 from .generated.WorkflowParser import WorkflowParser
@@ -109,8 +111,13 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         self,
         rules: FunctionRegistry | None = None,
         filename: str = "",
+        schemas: SchemaRegistry | None = None,
     ) -> None:
         self._rules = rules if rules is not None else FunctionRegistry("rule")
+        #: Registre des schémas d'événements (chargé à l'initialisation du
+        #: moteur). ``None`` = les références ``AS @…`` sont stockées sans
+        #: résolution ni validation (mode permissif, ex. playground).
+        self._schemas = schemas
         self.filename = filename
         self.crc = 0
         self.errors: list[DslErrorModel] = []
@@ -323,10 +330,22 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
     def visitEvent_declaration_statement(
         self, ctx: WorkflowParser.Event_declaration_statementContext
     ) -> DeclaredEventConfig:
-        return DeclaredEventConfig(
+        declared = DeclaredEventConfig(
             name=self.visitKey(ctx.key()),
             label=self._optional_comment(ctx),
         )
+
+        # Extension urban-workflow : DEFINE EVENT … AS @schema
+        if ctx.AS() is not None:
+            declared.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    declared.schema = self._schemas.get(declared.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx, str(exc))
+                declared.dedup_keys = self._schemas.dedup_keys(declared.schema_ref)
+
+        return declared
 
     def visitAction_declaration_statement(
         self, ctx: WorkflowParser.Action_declaration_statementContext

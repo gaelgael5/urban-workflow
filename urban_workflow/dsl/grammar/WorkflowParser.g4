@@ -147,7 +147,9 @@ rule_conditions :
     ;
 
 event_declaration_statement :
-    EVENT key comment?
+    // (AS ...) : extension urban-workflow — reference un JSON Schema (YAML)
+    // enregistre dans le SchemaRegistry a l'initialisation du moteur.
+    EVENT key comment? (AS schemaRef=compositekey)?
     ;
 
 action_declaration_statement :

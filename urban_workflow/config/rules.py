@@ -16,10 +16,20 @@ Rule = Callable[[RunContext], bool]
 
 @dataclass
 class DeclaredEventConfig:
-    """Événement déclaré (``DEFINE EVENT``) ou technique."""
+    """Événement déclaré (``DEFINE EVENT``) ou technique.
+
+    ``schema_ref`` porte le nom donné après ``AS @…`` ; quand un
+    :class:`~urban_workflow.schemas.SchemaRegistry` est fourni au
+    visiteur, ``schema`` et ``dedup_keys`` sont résolus au chargement et
+    le moteur valide chaque événement entrant (et applique l'anti-doublon
+    ``x-dedup``).
+    """
 
     name: str = ""
     label: str = ""
+    schema_ref: str = ""
+    schema: dict[str, Any] | None = None
+    dedup_keys: list[str] = field(default_factory=list)
 
 
 @dataclass

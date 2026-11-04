@@ -21,6 +21,9 @@ lexer grammar WorkflowLexer;
 ACTION :    'ACTION';
 AFTER :     'AFTER';
 AND :       'AND';
+// Extension urban-workflow (absente du source .NET) : reference de schema
+// dans les declarations d'evenements — DEFINE EVENT X '...' AS @schema;
+AS :        'AS';
 
 BEFORE :    'BEFORE';
 

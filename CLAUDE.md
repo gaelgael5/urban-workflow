@@ -98,12 +98,42 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   « sans sqlalchemy » couvre aussi ce skip ; lint CI étendu à
   `playground` et `conftest.py`.
 
+## Hors plan — Schémas d'événements (en cours)
+
+- **Première extension assumée de la grammaire** (commentée dans les .g4) :
+  `DEFINE EVENT nom 'libellé' AS @nom_schema;` — token `AS` ajouté au lexer,
+  `(AS schemaRef=compositekey)?` dans `event_declaration_statement`.
+  Parseur régénéré. `AS` devient un mot réservé.
+- Les schémas sont **séparés du DSL** (exigence utilisateur) : JSON Schema
+  écrits en YAML, chargés à l'initialisation du moteur dans
+  `urban_workflow/schemas.py` → `SchemaRegistry` (`add_file`/`add_yaml`/
+  `add_directory`/`add_schema`), socle commun `BASE_EVENT_SCHEMA`
+  (Name requis, Uuid/dates avec formats) toujours validé en plus du schéma
+  métier (`include_base`). Extra optionnel `[schemas]` = PyYAML + jsonschema
+  (imports paresseux ; le cœur reste léger).
+- Visiteur : param `schemas=None` — sans registre, la référence `AS` est
+  **stockée sans résolution** (mode permissif, le playground continue de
+  marcher) ; avec registre, référence inconnue = `UnknownSchemaError`
+  positionnée, et `DeclaredEventConfig.schema`/`dedup_keys` sont résolus.
+  `parse_config(..., schemas=...)` ; `event_to_document` dans
+  `engine/serializer.py` (format fil CamelCase pour validation + hash).
+- **EN ATTENTE DE DÉCISION UTILISATEUR — anti-doublon** : il n'est PAS
+  convaincu par `x-dedup` dans le schéma. Alternatives proposées :
+  A) `UNIQUE (Prop, …)` dans le DSL sur DEFINE EVENT ; B) champ réservé
+  `DedupKey` fourni par l'émetteur (idempotency key) ; reco = A+B.
+  Le branchement moteur (validation à l'entrée + rejet des doublons par
+  hash, champ `Event.dedup_hash` + colonne SQL) n'est PAS encore fait —
+  attendre son choix. `compute_dedup_hash` et la lecture `x-dedup` existent
+  déjà dans schemas.py (provisoires, à adapter au mécanisme retenu).
+- Jar ANTLR : Maven Central rate-limite parfois (429) — miroir qui marche :
+  `maven-central.storage-download.googleapis.com/maven2/...`.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
-  **inchangées** par rapport au source ; `regenerate.sh` régénère le parseur
-  (jar ANTLR 4.13.2 téléchargé depuis Maven Central — www.antlr.org peut être
-  bloqué ; même version que le runtime `antlr4-python3-runtime` d'urban-json).
+  reprises du source **+ extension `AS` ci-dessus** ; `regenerate.sh`
+  régénère le parseur (jar ANTLR 4.13.2 — même version que le runtime
+  `antlr4-python3-runtime` d'urban-json).
 - `urban_workflow/dsl/generated/` : code généré commité, ne jamais l'éditer.
   Particularité cible Python : accesseurs `state_()` et `type_()`.
 - `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,

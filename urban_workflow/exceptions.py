@@ -49,6 +49,21 @@ class InvalidArgumentValueError(WorkflowError):
     """Une valeur d'argument n'est pas convertible vers le type déclaré."""
 
 
+class UnknownSchemaError(WorkflowError):
+    """Un ``DEFINE EVENT … AS @schema`` référence un schéma non enregistré."""
+
+
+class EventSchemaError(WorkflowError):
+    """Le payload d'un événement ne respecte pas le schéma déclaré.
+
+    ``errors`` porte la liste lisible des violations.
+    """
+
+    def __init__(self, message: str, errors=None) -> None:
+        super().__init__(message)
+        self.errors = list(errors or [])
+
+
 class DslSyntaxError(WorkflowError):
     """Le script DSL contient des erreurs de syntaxe.
 

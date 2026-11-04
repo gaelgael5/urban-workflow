@@ -32,6 +32,10 @@ Issues = "https://github.com/gaelgael5/urban-workflow/issues"
 sql = [
     "sqlalchemy>=2.0",
 ]
+schemas = [
+    "PyYAML>=6.0",
+    "jsonschema>=4.18",
+]
 # Le playground est une distribution séparée : pip install urban-workflow-playground
 # (sous-projet playground/ de ce dépôt).
 dev = [
@@ -41,6 +45,8 @@ dev = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "httpx>=0.27",
+    "PyYAML>=6.0",
+    "jsonschema>=4.18",
 ]
 
 [tool.setuptools.packages.find]

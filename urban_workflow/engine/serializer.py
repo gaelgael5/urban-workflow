@@ -70,3 +70,21 @@ def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingE
 def parse_incoming_event(payload: Payload) -> IncomingEvent:
     """Construit un :class:`IncomingEvent` depuis un payload JSON."""
     return populate_incoming_event(IncomingEvent(), payload)
+
+
+def event_to_document(event: IncomingEvent) -> dict[str, Any]:
+    """Reconstruit le document « format fil » d'un événement entrant.
+
+    Propriétés du socle en CamelCase + données étendues — c'est ce
+    document que les schémas d'événements valident et sur lequel le hash
+    anti-doublon (``x-dedup``) est calculé.
+    """
+    document: dict[str, Any] = dict(event.extended_datas)
+    document["Name"] = event.name
+    document["Uuid"] = str(event.uuid)
+    document["ExternalId"] = event.external_id
+    if event.creation_date is not None:
+        document["CreationDate"] = event.creation_date.isoformat()
+    if event.event_date is not None:
+        document["EventDate"] = event.event_date.isoformat()
+    return document
