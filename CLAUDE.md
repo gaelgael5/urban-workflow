@@ -56,10 +56,30 @@ commit en français).
 PyPI (trusted publisher OIDC), verrou distribué (`LockObject` SQL/Redis),
 adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 
+## Hors plan — Publication PyPI (demandée ensuite)
+
+- Deux distributions : `urban-workflow` (racine) et
+  `urban-workflow-playground` (sous-projet `playground/` avec son propre
+  `pyproject.toml` ; paquet importable renommé `urban_workflow_playground`,
+  script console `urban-workflow-playground`). Les deux noms étaient
+  libres sur PyPI (vérifié).
+- `.github/workflows/release.yml` : publication par **trusted publishing**
+  (OIDC, environment `pypi`) sur tags `v*` (socle) et `playground-v*`
+  (playground), avec garde tag ↔ version du pyproject. Procédure complète
+  (dont le « pending publisher » à créer côté pypi.org — seule action
+  à la main de l'utilisateur) : `docs/publication-pypi.md`.
+- Wheels vérifiées : parseur ANTLR généré inclus côté socle, `static/`
+  + vendor inclus côté playground (`[tool.setuptools.package-data]`),
+  installation + fumée testées dans un venv vierge
+  (`--find-links dist`). `conftest.py` racine ajoute `playground/` au
+  `sys.path` ; la CI installe `-e ./playground` dans la matrice.
+- L'idée de « paquets par pays » a été abandonnée par l'utilisateur
+  (mauvaise conversation) — ne pas la relancer.
+
 ## Hors plan — Playground web (demandé ensuite)
 
-- `playground/` (hors paquet distribué, extra `[playground]` =
-  fastapi+uvicorn ; `python -m playground` → port 8777) : éditeur
+- `playground/` (sous-projet, distribution `urban-workflow-playground` ;
+  `python -m urban_workflow_playground` → port 8777) : éditeur
   CodeMirror 5.65.18 **vendorisé** (`static/vendor/`, récupéré via le
   tarball npm — cdnjs bloqué par le proxy), mode DSL, **intellisense
   contextuelle** (événements/états/règles/actions/chemins `@`/constantes

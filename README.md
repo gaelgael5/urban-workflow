@@ -76,11 +76,12 @@ English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
 
 Un site web local pour écrire les scripts avec **intellisense**,
 diagnostics positionnés, paramétrage des règles métier et simulation
-d'événements sur le vrai moteur — voir [playground/README.md](playground/README.md) :
+d'événements sur le vrai moteur — distribution séparée
+[`urban-workflow-playground`](playground/README.md) :
 
 ```bash
-pip install -e .[playground]
-python -m playground          # http://127.0.0.1:8777
+pip install urban-workflow-playground
+urban-workflow-playground     # http://127.0.0.1:8777
 ```
 
 ## Installation et développement

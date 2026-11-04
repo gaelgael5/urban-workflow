@@ -1,4 +1,4 @@
-"""API du playground web (extra ``[playground]``) — skip sans fastapi."""
+"""API du playground web (distribution urban-workflow-playground) — skip sans fastapi."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient
-
-from playground.app import app
+from urban_workflow_playground.app import app
 
 client = TestClient(app)
 

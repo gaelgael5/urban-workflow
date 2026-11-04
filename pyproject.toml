@@ -32,10 +32,8 @@ Issues = "https://github.com/gaelgael5/urban-workflow/issues"
 sql = [
     "sqlalchemy>=2.0",
 ]
-playground = [
-    "fastapi>=0.110",
-    "uvicorn>=0.27",
-]
+# Le playground est une distribution séparée : pip install urban-workflow-playground
+# (sous-projet playground/ de ce dépôt).
 dev = [
     "pytest>=7",
     "ruff>=0.4",
