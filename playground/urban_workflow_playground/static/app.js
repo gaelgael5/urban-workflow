@@ -40,6 +40,7 @@
   var symbols = {events: [], rules: [], actions: [], constants: [], states: []};
   var lastErrors = [];
   var ruleSettings = loadRules();
+  var schemaSettings = loadSchemas();
 
   var CONTEXT_PATHS = [
     "@Workflow.ExternalId", "@Workflow.CurrentState", "@Workflow.Uuid",
@@ -56,6 +57,15 @@
   function saveRules() {
     try { localStorage.setItem("uw-playground-rules", JSON.stringify(ruleSettings)); }
     catch (e) { /* stockage indisponible : on continue sans persistance */ }
+  }
+  function loadSchemas() {
+    try {
+      return JSON.parse(localStorage.getItem("uw-playground-schemas")) || [];
+    } catch (e) { return []; }
+  }
+  function saveSchemas() {
+    try { localStorage.setItem("uw-playground-schemas", JSON.stringify(schemaSettings)); }
+    catch (e) { /* idem */ }
   }
 
   // ------------------------------------------------------------------
@@ -75,7 +85,7 @@
     fetch("/api/analyze", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({script: text, rules: ruleSettings}),
+      body: JSON.stringify({script: text, rules: ruleSettings, schemas: schemaSettings}),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -119,6 +129,13 @@
     if (context === "path") {
       return CONTEXT_PATHS.map(function (p) { return {text: p, displayText: p}; });
     }
+    if (context === "schema") {
+      return plain((symbols.schemas || []).map(function (s) { return "@" + s; }));
+    }
+    if (context === "unique") {
+      return plain(symbols.payload_properties ||
+                   ["ExternalId", "EventDate", "DedupKey"]);
+    }
     if (context === "event") { return plain(symbols.events); }
     if (context === "state") { return plain(symbols.states); }
     if (context === "action") { return symbols.actions.map(callCompletion); }
@@ -140,6 +157,8 @@
   }
 
   function detectContext(before) {
+    if (/\bAS\s+@?\w*$/i.test(before)) { return "schema"; }
+    if (/\bUNIQUE\s*\([^)]*$/i.test(before)) { return "unique"; }
     if (/@[\w.]*$/.test(before)) { return "path"; }
     if (/=\s*\w*$/.test(before)) { return "constant"; }
     if (/\bON\s+EVENT\s+\w*$/i.test(before)) { return "event"; }
@@ -224,6 +243,14 @@
     if (Object.keys(summary.filters).length) {
       html += "<p class='hint-text'>MATCHING : " + esc(JSON.stringify(summary.filters)) + "</p>";
     }
+    (summary.events || []).forEach(function (ev) {
+      if (!ev.schema_ref && !(ev.unique || []).length) { return; }
+      html += "<div class='node event-decl'>✉ " + esc(ev.name) +
+        (ev.schema_ref ? " <small>AS @" + esc(ev.schema_ref) + "</small>" : "") +
+        ((ev.unique || []).length
+          ? " <small>UNIQUE(" + esc(ev.unique.join(", ")) + ")</small>" : "") +
+        "</div>";
+    });
     summary.initializers.forEach(function (init) {
       init.switchs.forEach(function (sw) {
         html += "<div class='node init'>⚡ " + esc(init.event) +
@@ -288,6 +315,38 @@
     });
   }
 
+  function renderSchemas() {
+    var el = document.getElementById("schemas-list");
+    el.innerHTML = "";
+    if (!schemaSettings.length) {
+      el.innerHTML = "<p class='hint-text'>Aucun schéma. Les références " +
+        "AS @… resteront non résolues (erreur à l'analyse).</p>";
+    }
+    schemaSettings.forEach(function (schema, index) {
+      var row = document.createElement("div");
+      row.className = "rule-row";
+      row.innerHTML = "<code title=\"" +
+        esc(schema.yaml).replace(/"/g, "&quot;") + "\">@" + esc(schema.name) +
+        "</code><button class='remove' title='Supprimer'>✕</button>";
+      row.querySelector(".remove").onclick = function () {
+        schemaSettings.splice(index, 1);
+        saveSchemas(); renderSchemas(); revalidate();
+      };
+      el.appendChild(row);
+    });
+  }
+
+  document.getElementById("schema-form").onsubmit = function (e) {
+    e.preventDefault();
+    var name = document.getElementById("schema-name").value.trim();
+    var yaml = document.getElementById("schema-yaml").value;
+    if (!name || !yaml.trim()) { return; }
+    schemaSettings = schemaSettings.filter(function (s) { return s.name !== name; });
+    schemaSettings.push({name: name, yaml: yaml});
+    saveSchemas(); renderSchemas(); revalidate();
+    e.target.reset();
+  };
+
   document.getElementById("rule-form").onsubmit = function (e) {
     e.preventDefault();
     var name = document.getElementById("rule-name").value.trim();
@@ -331,7 +390,8 @@
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        script: editor.getValue(), rules: ruleSettings, events: events,
+        script: editor.getValue(), rules: ruleSettings,
+        schemas: schemaSettings, events: events,
       }),
     })
       .then(function (r) { return r.json(); })
@@ -405,6 +465,15 @@
       ruleSettings = example.rules.slice();
       saveRules(); renderRules();
     }
+    if (example.schemas && example.schemas.length) {
+      example.schemas.forEach(function (schema) {
+        schemaSettings = schemaSettings.filter(function (s) {
+          return s.name !== schema.name;
+        });
+        schemaSettings.push(schema);
+      });
+      saveSchemas(); renderSchemas();
+    }
     document.getElementById("events-input").value =
       JSON.stringify(example.events, null, 2);
     e.target.value = "";
@@ -415,10 +484,15 @@
   // ------------------------------------------------------------------
 
   renderRules();
+  renderSchemas();
   var initial = window.PLAYGROUND_EXAMPLES.validation;
   if (!ruleSettings.length) {
     ruleSettings = initial.rules.slice();
     saveRules(); renderRules();
+  }
+  if (!schemaSettings.length && initial.schemas) {
+    schemaSettings = initial.schemas.slice();
+    saveSchemas(); renderSchemas();
   }
   editor.setValue(initial.script);
   document.getElementById("events-input").value =

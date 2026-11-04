@@ -123,6 +123,24 @@ kbd {
   font-size: 11px;
 }
 
+.section-title {
+  margin: 18px 0 4px;
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.section-title small { color: var(--muted); font-weight: normal; }
+#schema-form textarea {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: 12px/1.5 Consolas, monospace;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
 .rule-row {
   display: flex;
   align-items: center;

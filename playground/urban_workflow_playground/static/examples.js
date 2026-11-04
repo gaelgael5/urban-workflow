@@ -5,7 +5,8 @@ window.PLAYGROUND_EXAMPLES = {
 DESCRIPTION 'circuit de validation des demandes d''achat'
 MATCHING (Type = 'achat')
 
-DEFINE EVENT  DemandeSoumise     'une demande est déposée';
+DEFINE EVENT  DemandeSoumise     'une demande est déposée'
+    AS @schema_DemandeSoumise UNIQUE (ExternalId, Montant);
 DEFINE EVENT  PiecesFournies     'le demandeur complète son dossier';
 DEFINE EVENT  ValidationAccordee 'un valideur approuve';
 DEFINE EVENT  ValidationRefusee  'un valideur refuse';
@@ -67,9 +68,21 @@ DEFINE STATE Expiree 'validation expirée sans réponse' ;
       {name: "EstComplet", params: [{name: "champs", type: "TEXT"}], result: true},
       {name: "MontantInferieur", params: [{name: "seuil", type: "DECIMAL"}], result: true},
     ],
+    schemas: [
+      {name: "schema_DemandeSoumise",
+       yaml: "title: DemandeSoumise\n" +
+             "type: object\n" +
+             "properties:\n" +
+             "  Type: {type: string}\n" +
+             "  Montant: {type: number, minimum: 0}\n" +
+             "  Canal: {type: string, enum: [web, mail]}\n" +
+             "required: [Montant]\n"},
+    ],
     events: [
       {Name: "DemandeSoumise", Uuid: "11111111-1111-4111-8111-111111111111",
-       ExternalId: "DA-42", Type: "achat", Montant: 120},
+       ExternalId: "DA-42", Type: "achat", Montant: 120, DedupKey: "cmd-42"},
+      {Name: "DemandeSoumise", Uuid: "33333333-3333-4333-8333-333333333333",
+       ExternalId: "DA-42", Type: "achat", Montant: 120, DedupKey: "cmd-42"},
       {Name: "ValidationAccordee", Uuid: "22222222-2222-4222-8222-222222222222",
        ExternalId: "DA-42", Type: "achat"},
     ],

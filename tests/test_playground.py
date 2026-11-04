@@ -153,3 +153,91 @@ class TestStatic:
     def test_vendor_codemirror_served(self):
         response = client.get("/static/vendor/codemirror.js")
         assert response.status_code == 200
+
+
+SCHEMA_SCRIPT = """
+NAME Demo VERSION 1
+DEFINE EVENT Ouverture 'ouverture'
+    AS @schema_Ouverture UNIQUE (ExternalId, Montant);
+INITIALIZE WORKFLOW
+    ON EVENT Ouverture SWITCH Ouvert
+DEFINE STATE Ouvert 'ouvert' ;
+"""
+
+SCHEMA_YAML = (
+    "title: Ouverture\n"
+    "type: object\n"
+    "properties:\n"
+    "  Montant: {type: number, minimum: 0}\n"
+    "required: [Montant]\n"
+)
+
+
+class TestSchemasInPlayground:
+    @pytest.fixture(autouse=True)
+    def _requires(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+
+    def test_analyze_resolves_schema_and_exposes_symbols(self):
+        data = client.post(
+            "/api/analyze",
+            json={
+                "script": SCHEMA_SCRIPT,
+                "rules": [],
+                "schemas": [{"name": "schema_Ouverture", "yaml": SCHEMA_YAML}],
+            },
+        ).json()
+        assert data["ok"] is True
+        assert data["symbols"]["schemas"] == ["schema_Ouverture"]
+        assert data["symbols"]["event_details"] == [
+            {"name": "Ouverture", "schema_ref": "schema_Ouverture",
+             "unique": ["ExternalId", "Montant"]}
+        ]
+        assert "Montant" in data["symbols"]["payload_properties"]
+        assert "DedupKey" in data["symbols"]["payload_properties"]
+        assert data["summary"]["events"][0]["schema_ref"] == "schema_Ouverture"
+
+    def test_unknown_schema_reference_is_positioned(self):
+        data = client.post(
+            "/api/analyze",
+            json={"script": SCHEMA_SCRIPT, "rules": [],
+                  "schemas": [{"name": "autre", "yaml": "type: object"}]},
+        ).json()
+        assert data["ok"] is False
+        assert "schema_Ouverture" in data["errors"][0]["message"]
+        assert data["errors"][0]["line"] > 1
+
+    def test_invalid_yaml_reported_globally(self):
+        data = client.post(
+            "/api/analyze",
+            json={"script": SCHEMA_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouverture", "yaml": "- [pas: un objet"}]},
+        ).json()
+        assert data["ok"] is False
+        assert "schema_Ouverture" in data["errors"][0]["message"]
+
+    def test_simulate_validates_and_dedups(self):
+        payloads = [
+            # payload invalide : Montant chaîne → EventSchemaError sur l'étape
+            {"Name": "Ouverture", "Uuid": "11111111-1111-4111-8111-111111111111",
+             "ExternalId": "D-1", "Montant": "beaucoup"},
+            # valide
+            {"Name": "Ouverture", "Uuid": "21111111-1111-4111-8111-111111111111",
+             "ExternalId": "D-1", "Montant": 10},
+            # doublon fonctionnel (UNIQUE ExternalId+Montant, uuid différent)
+            {"Name": "Ouverture", "Uuid": "31111111-1111-4111-8111-111111111111",
+             "ExternalId": "D-1", "Montant": 10},
+        ]
+        data = client.post(
+            "/api/simulate",
+            json={"script": SCHEMA_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouverture", "yaml": SCHEMA_YAML}],
+                  "events": payloads},
+        ).json()
+        assert data["ok"] is True
+        assert "EventSchemaError" in data["steps"][0]["error"]
+        assert data["steps"][1]["impacted"][0]["to_state"] == "Ouvert"
+        assert data["steps"][2]["impacted"] == []  # doublon ignoré
+        assert len(data["workflows"]) == 1
+        assert len(data["workflows"][0]["events"]) == 1

@@ -49,6 +49,21 @@
         <label class="inline"><input type="checkbox" id="rule-result" checked> vraie</label>
         <button type="submit">Ajouter</button>
       </form>
+
+      <h4 class="section-title">Schémas d'événements <small>(JSON Schema en YAML)</small></h4>
+      <p class="hint-text">Référencés par <code>DEFINE EVENT … AS @nom;</code> —
+      le payload est validé (socle commun + schéma) à chaque évaluation.</p>
+      <div id="schemas-list"></div>
+      <form id="schema-form">
+        <input id="schema-name" placeholder="schema_MonEvenement" required
+               pattern="[A-Za-z][A-Za-z0-9_]*">
+        <textarea id="schema-yaml" spellcheck="false" rows="5"
+placeholder="type: object
+properties:
+  Montant: {type: number, minimum: 0}
+required: [Montant]"></textarea>
+        <button type="submit">Ajouter le schéma</button>
+      </form>
     </div>
 
     <div id="tab-structure" class="tab">
@@ -71,6 +86,10 @@
             actions après <code>EXECUTE</code>, chemins après <code>@</code>.</li>
         <li>Les erreurs (syntaxe et validation) sont soulignées dans l'éditeur
             et listées sous celui-ci — cliquer pour y aller.</li>
+        <li><code>DEFINE EVENT X '…' AS @schema UNIQUE (Prop, …);</code> :
+            le schéma (panneau Paramétrage) valide le payload ; UNIQUE et la
+            propriété <code>DedupKey</code> de l'émetteur (prioritaire)
+            bloquent les doublons en simulation.</li>
         <li>Référence du langage : <code>docs/guide-dsl.md</code>.</li>
       </ul>
     </div>

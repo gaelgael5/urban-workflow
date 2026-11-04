@@ -98,7 +98,7 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   « sans sqlalchemy » couvre aussi ce skip ; lint CI étendu à
   `playground` et `conftest.py`.
 
-## Hors plan — Schémas d'événements (en cours)
+## Hors plan — Schémas d'événements (terminé)
 
 - **Première extension assumée de la grammaire** (commentée dans les .g4) :
   `DEFINE EVENT nom 'libellé' AS @nom_schema;` — token `AS` ajouté au lexer,
@@ -131,6 +131,16 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   l'historique → ignoré silencieusement (existants ET création).
   Colonne SQL `workflow_events.dedup_hash`. La validation ne s'applique
   que si l'événement serait réellement traité par la config.
+- **Playground à jour schémas/UNIQUE** : panneau « Schémas d'événements »
+  dans Paramétrage (nom + YAML, localStorage `uw-playground-schemas`),
+  `schemas: [{name, yaml}]` envoyé à `/api/analyze` et `/api/simulate`
+  (`_build_schema_registry` — YAML invalide/extra manquant = erreur
+  globale propre), visiteur branché avec `schemas=`, symboles enrichis
+  (`schemas`, `event_details`, `payload_properties` pour l'intellisense
+  `AS @…` et `UNIQUE (…)`), badges AS/UNIQUE dans Structure, exemple
+  « validation » avec schéma + doublon `DedupKey` démontrant l'anti-doublon.
+  Deps du sous-projet : PyYAML + jsonschema (toujours actifs côté
+  playground). `tests/test_playground.py::TestSchemasInPlayground`.
 - Jar ANTLR : Maven Central rate-limite parfois (429) — miroir qui marche :
   `maven-central.storage-download.googleapis.com/maven2/...`.
 

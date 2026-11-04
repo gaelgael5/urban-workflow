@@ -67,14 +67,23 @@ class RuleSetting(BaseModel):
     result: bool = True  # résultat simulé
 
 
+class SchemaSetting(BaseModel):
+    """Un schéma d'événement (JSON Schema en YAML) paramétré dans le panneau."""
+
+    name: str
+    yaml: str
+
+
 class AnalyzeRequest(BaseModel):
     script: str
     rules: list[RuleSetting] = Field(default_factory=list)
+    schemas: list[SchemaSetting] = Field(default_factory=list)
 
 
 class SimulateRequest(BaseModel):
     script: str
     rules: list[RuleSetting] = Field(default_factory=list)
+    schemas: list[SchemaSetting] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -99,6 +108,30 @@ def _build_registry(settings: list[RuleSetting]) -> FunctionRegistry:
         if setting.name not in registry:
             registry.add(setting.name, namespace["_rule"])
     return registry
+
+
+def _build_schema_registry(
+    settings: list[SchemaSetting],
+) -> tuple[Any, list[str]]:
+    """Charge les schémas du panneau ; retourne (registre | None, erreurs)."""
+    if not settings:
+        return None, []
+    try:
+        from urban_workflow.schemas import SchemaRegistry
+        registry = SchemaRegistry()
+    except ImportError:
+        return None, [
+            "Schémas indisponibles : installer l'extra "
+            "urban-workflow[schemas] (PyYAML + jsonschema)."
+        ]
+
+    problems: list[str] = []
+    for setting in settings:
+        try:
+            registry.add_yaml(setting.name, setting.yaml)
+        except Exception as exc:
+            problems.append(f"schéma {setting.name!r} : {exc}")
+    return registry, problems
 
 
 # ----------------------------------------------------------------------
@@ -156,6 +189,15 @@ def _symbols_from_visitor(visitor: WorkflowConfigVisitor, config) -> dict[str, A
 
     return {
         "events": sorted(config.declared_events),
+        "event_details": [
+            {
+                "name": d.name,
+                "schema_ref": d.schema_ref,
+                "unique": list(d.dedup_keys),
+            }
+            for d in config.declared_events.values()
+            if d.schema_ref or d.dedup_keys
+        ],
         "rules": declared("rule"),
         "actions": declared("action"),
         "constants": [
@@ -190,6 +232,16 @@ def _summary(config) -> dict[str, Any]:
         "concurrency": config.concurrency,
         "label": config.label,
         "filters": dict(config.filters),
+        "events": [
+            {
+                "name": d.name,
+                "label": d.label,
+                "schema_ref": d.schema_ref,
+                "unique": list(d.dedup_keys),
+            }
+            for d in config.declared_events.values()
+            if not d.name.startswith(("$_", "__"))
+        ],
         "initializers": [
             {
                 "event": init.event_name,
@@ -232,13 +284,18 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     summary: dict[str, Any] | None = None
     symbols = _symbols_from_text(request.script)
 
+    schema_registry, schema_problems = _build_schema_registry(request.schemas)
+    errors.extend(_error_entry(problem) for problem in schema_problems)
+
     parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
     for error in parser.errors:
         errors.append(_error_entry(error.message, error.line, error.column))
 
     if not errors:
         visitor = WorkflowConfigVisitor(
-            rules=_build_registry(request.rules), filename="playground"
+            rules=_build_registry(request.rules),
+            filename="playground",
+            schemas=schema_registry,
         )
         try:
             config = parser.visit(visitor)
@@ -251,6 +308,19 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
             )
         except WorkflowError as exc:
             errors.append(_positioned(exc))
+
+    symbols["schemas"] = sorted(s.name for s in request.schemas)
+    symbols.setdefault("event_details", [])
+
+    # Propriétés connues pour la complétion de UNIQUE (…) : socle commun +
+    # properties de tous les schémas du panneau.
+    properties = {"ExternalId", "EventDate", "CreationDate", "DedupKey"}
+    if schema_registry is not None:
+        for setting in request.schemas:
+            if setting.name in schema_registry:
+                schema = schema_registry.get(setting.name)
+                properties.update(schema.get("properties", {}))
+    symbols["payload_properties"] = sorted(properties)
 
     return {
         "ok": not errors,
@@ -265,10 +335,18 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
 def simulate(request: SimulateRequest) -> dict[str, Any]:
     registry = _build_registry(request.rules)
 
+    schema_registry, schema_problems = _build_schema_registry(request.schemas)
+    if schema_problems:
+        return {"ok": False, "error": " ; ".join(schema_problems), "steps": []}
+
     parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
     try:
         parser.check()
-        config = parser.visit(WorkflowConfigVisitor(rules=registry, filename="playground"))
+        config = parser.visit(
+            WorkflowConfigVisitor(
+                rules=registry, filename="playground", schemas=schema_registry
+            )
+        )
     except WorkflowError as exc:
         return {"ok": False, "error": str(exc), "steps": []}
 
