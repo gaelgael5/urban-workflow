@@ -17,7 +17,16 @@ Site web local pour écrire et tester des scripts de workflow
   (initialiseurs, états, transitions) ;
 - **simulation** : une liste JSON d'événements rejoués dans l'ordre sur
   le vrai moteur en mémoire — états atteints, actions poussées
-  (messages inclus), journal fonctionnel des règles.
+  (messages inclus), journal fonctionnel des règles ;
+- **diagramme** : vue graphique du workflow (états, transitions,
+  initialiseurs ⚡, expirations ⏰). « Importer le DSL » reconstruit le
+  diagramme depuis l'éditeur ; on déplace les états, « Relier » trace
+  une transition en glissant d'un état (ou de ⚡) vers un état, le clic
+  ouvre les propriétés (événement, garde `WHEN`, blocs
+  `EXECUTE`/`STORE`, cible `SWITCH`, priorité des branches) ;
+  « Générer le DSL → éditeur » rend le script **canonique** et le
+  valide par l'analyse réelle. Les positions sont mémorisées dans le
+  navigateur par nom de workflow.
 
 ## Lancement
 
@@ -40,5 +49,10 @@ Depuis un clone du dépôt : `pip install -e ./playground`.
   remplacée).
 - Le visiteur s'arrête à la première erreur sémantique : les erreurs
   se corrigent donc une par une (la syntaxe, elle, est remontée en bloc).
-- `urban_workflow_playground/static/vendor/` : CodeMirror 5.65.18
-  (licence MIT), embarqué pour fonctionner hors ligne.
+- La vue diagramme travaille sur le **modèle de surface** du script
+  (`urban_workflow.dsl.surface`) : gardes et blocs d'exécution y restent
+  du texte DSL brut ; la génération réécrit le script en forme
+  canonique (commentaires `--` non conservés). Les scripts `FRAGMENT`
+  ou à `INCLUDE` ne sont pas représentables en diagramme.
+- `urban_workflow_playground/static/vendor/` : CodeMirror 5.65.18 et
+  AntV X6 3.1.8 (licences MIT), embarqués pour fonctionner hors ligne.

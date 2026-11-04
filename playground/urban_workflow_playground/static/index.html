@@ -25,8 +25,32 @@
 
 <main>
   <section class="editor-pane">
-    <textarea id="editor"></textarea>
-    <div id="diagnostics" class="diagnostics"></div>
+    <div class="view-toggle">
+      <button id="view-editor" class="active">Éditeur</button>
+      <button id="view-diagram">Diagramme</button>
+      <span id="diagram-tools" hidden>
+        <button id="dg-add-state" title="Ajouter un état">＋ État</button>
+        <button id="dg-link-mode"
+                title="Tracer des transitions en glissant d'un état vers un autre">Relier</button>
+        <button id="dg-layout" title="Réorganiser automatiquement">Réorganiser</button>
+        <button id="dg-import" title="Reconstruire le diagramme depuis le script">⇠ Importer le DSL</button>
+        <button id="dg-generate" class="primary"
+                title="Générer le script canonique et l'ouvrir dans l'éditeur">Générer le DSL → éditeur</button>
+      </span>
+      <span id="diagram-status" class="hint-text"></span>
+    </div>
+    <div id="editor-view" class="view active">
+      <textarea id="editor"></textarea>
+      <div id="diagnostics" class="diagnostics"></div>
+    </div>
+    <div id="diagram-view" class="view">
+      <div id="diagram-canvas"></div>
+      <div id="inspector" hidden></div>
+      <div class="canvas-hint">glisser les états pour les placer ·
+        « Relier » puis glisser d'un état (ou de ⚡) vers un état pour créer
+        une transition · clic sur un état ou une flèche = propriétés ·
+        l'ordre des branches d'un même événement fait la priorité des gardes</div>
+    </div>
   </section>
 
   <aside class="side-pane">
@@ -100,7 +124,9 @@ required: [Montant]"></textarea>
 <script src="/static/vendor/simple.js"></script>
 <script src="/static/vendor/show-hint.js"></script>
 <script src="/static/vendor/lint.js"></script>
+<script src="/static/vendor/x6.min.js"></script>
 <script src="/static/examples.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/diagram.js"></script>
 </body>
 </html>

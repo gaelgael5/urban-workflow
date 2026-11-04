@@ -46,7 +46,85 @@ main { flex: 1; display: flex; min-height: 0; }
   min-width: 0;
   border-right: 1px solid var(--border);
 }
-.editor-pane .CodeMirror {
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.view-toggle button.active { background: var(--accent); color: #0b0e13; }
+.view-toggle .primary { background: var(--accent); color: #0b0e13; font-weight: 600; }
+#dg-link-mode.on { background: var(--ok); color: #0b0e13; }
+#diagram-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+#diagram-status { margin-left: auto; }
+#diagram-status.ko { color: var(--ko); }
+#diagram-status.ok { color: var(--ok); }
+
+.view { display: none; }
+#editor-view.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#diagram-view.active { display: block; flex: 1; min-height: 0; position: relative; }
+#diagram-canvas { position: absolute; inset: 0; }
+.canvas-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 12px;
+  right: 12px;
+  color: var(--muted);
+  font-size: 11.5px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#inspector {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 310px;
+  max-height: calc(100% - 50px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px 12px;
+  z-index: 6;
+  font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+#inspector h3 { margin: 0 0 6px; font-size: 13.5px; }
+#inspector h3 small { color: var(--muted); font-weight: normal; }
+.insp-row { margin: 8px 0 0; }
+.insp-row > label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+.insp-row input, .insp-row select, .insp-row textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.insp-row textarea { font: 11.5px/1.5 Consolas, monospace; resize: vertical; min-height: 36px; }
+.exec-item { display: flex; gap: 4px; margin: 4px 0; align-items: flex-start; }
+.exec-item textarea { flex: 1; }
+.exec-item .remove { background: none; border: none; color: var(--muted); cursor: pointer; }
+.exec-item .remove:hover { color: var(--ko); }
+.insp-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.insp-actions .danger { color: var(--ko); }
+.insp-add {
+  color: var(--accent);
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 5px;
+  font-size: 12.5px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+#editor-view .CodeMirror {
   flex: 1;
   height: auto;
   font: 13px/1.5 "Cascadia Code", "Fira Code", Consolas, monospace;

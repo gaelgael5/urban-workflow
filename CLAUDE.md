@@ -144,6 +144,38 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 - Jar ANTLR : Maven Central rate-limite parfois (429) — miroir qui marche :
   `maven-central.storage-download.googleapis.com/maven2/...`.
 
+## Hors plan — Vue diagramme du playground (fait)
+
+- `urban_workflow/dsl/surface.py` : **modèle de surface** sérialisable
+  (états/transitions/déclarations, gardes et blocs EXECUTE/STORE en texte
+  source brut, `_snippet` désindente les continuations) + `render_script`
+  canonique. Point fixe testé `render(extract(render(m))) == render(m)` +
+  équivalence sémantique via `parse_config`. FRAGMENT/INCLUDE →
+  `SurfaceError`. **Le moteur exige un SWITCH sur chaque branche**
+  (build résout toutes les cibles) — branche sans SWITCH = boucle
+  pointillée dans le diagramme, erreur à l'analyse.
+- Playground : `POST /api/diagram` (script → modèle, erreurs
+  positionnées) et `POST /api/generate` (modèle → script canonique +
+  diagnostics de l'analyse réelle, réutilise `analyze()`).
+- Front `static/diagram.js` : bascule Éditeur/Diagramme au-dessus de
+  l'éditeur, X6 3.1.8 vendorisé (`static/vendor/x6.min.js`, version
+  **ASCII-safe** du prototype — l'original contient des U+00A0 bruts),
+  nœuds états (textWrap), arêtes transitions/initialiseurs/expirations,
+  ordinaux ①② = priorité des branches, inspecteur flottant (événement
+  avec datalist, WHEN, EXECUTE/STORE, SWITCH, ↑↓ priorité, RECURSIVE),
+  « Relier » = drag magnétique, « Réorganiser » = BFS en couches,
+  positions en localStorage par nom de workflow, événements utilisés
+  non déclarés auto-déclarés à la génération. Pont
+  `window.PlaygroundBridge` exposé par app.js ; poignée de test
+  `window.PlaygroundDiagram`.
+- **Piège X6 contourné** : une sélection active (attrs modifiés par le
+  highlight) casse la recherche de cible du drag magnétique → entrer en
+  mode Relier désélectionne, les clics n'y sélectionnent pas, et la
+  création d'un lien sort du mode Relier en sélectionnant la nouvelle
+  branche. Tests Playwright : drags au rythme réel (pauses entre
+  mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
+  intercepte).
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`

@@ -23,17 +23,22 @@ from ..registry import FunctionRegistry
 from .errors import DslErrorModel
 from .loader import load_directory, parse_directory
 from .parser import WorkflowScriptParser
+from .surface import SurfaceError, SurfaceModel, extract_surface, render_script
 from .visitor import ConstantModel, DeclaredFunction, WorkflowConfigVisitor
 
 __all__ = [
     "ConstantModel",
     "DeclaredFunction",
     "DslErrorModel",
+    "SurfaceError",
+    "SurfaceModel",
     "WorkflowConfigVisitor",
     "WorkflowScriptParser",
+    "extract_surface",
     "load_directory",
     "parse_config",
     "parse_directory",
+    "render_script",
 ]
 
 

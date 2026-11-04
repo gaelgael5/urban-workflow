@@ -36,7 +36,14 @@ from urban_workflow import (
     WorkflowProcessor,
     WorkflowsConfig,
 )
-from urban_workflow.dsl import WorkflowConfigVisitor, WorkflowScriptParser
+from urban_workflow.dsl import (
+    SurfaceError,
+    SurfaceModel,
+    WorkflowConfigVisitor,
+    WorkflowScriptParser,
+    extract_surface,
+    render_script,
+)
 from urban_workflow.exceptions import DslSyntaxError, WorkflowError
 from urban_workflow.outputs import default_memory_output
 from urban_workflow.templating.context import json_safe
@@ -85,6 +92,18 @@ class SimulateRequest(BaseModel):
     rules: list[RuleSetting] = Field(default_factory=list)
     schemas: list[SchemaSetting] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DiagramRequest(BaseModel):
+    script: str
+
+
+class GenerateRequest(BaseModel):
+    """Modèle de surface (vue diagramme) → script DSL + validation."""
+
+    model: dict[str, Any]
+    rules: list[RuleSetting] = Field(default_factory=list)
+    schemas: list[SchemaSetting] = Field(default_factory=list)
 
 
 # ----------------------------------------------------------------------
@@ -328,6 +347,39 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
         "errors": errors,
         "symbols": symbols,
         "summary": summary,
+    }
+
+
+@app.post("/api/diagram")
+def diagram(request: DiagramRequest) -> dict[str, Any]:
+    """Script DSL → modèle de surface (structure fidèle pour la vue diagramme)."""
+    try:
+        model = extract_surface(request.script, filename="playground")
+    except DslSyntaxError as exc:
+        return {
+            "ok": False,
+            "errors": [_error_entry(e.message, e.line, e.column) for e in exc.errors],
+            "model": None,
+        }
+    except SurfaceError as exc:
+        return {"ok": False, "errors": [_error_entry(str(exc))], "model": None}
+    return {"ok": True, "errors": [], "model": model.to_dict()}
+
+
+@app.post("/api/generate")
+def generate(request: GenerateRequest) -> dict[str, Any]:
+    """Modèle de surface → script DSL canonique, validé par l'analyse réelle."""
+    script = render_script(SurfaceModel.from_dict(request.model))
+    analysis = analyze(
+        AnalyzeRequest(
+            script=script, rules=request.rules, schemas=request.schemas
+        )
+    )
+    return {
+        "ok": analysis["ok"],
+        "script": script,
+        "errors": analysis["errors"],
+        "summary": analysis["summary"],
     }
 
 

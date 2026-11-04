@@ -480,6 +480,18 @@
   };
 
   // ------------------------------------------------------------------
+  // Pont vers la vue diagramme (diagram.js)
+  // ------------------------------------------------------------------
+
+  window.PlaygroundBridge = {
+    getScript: function () { return editor.getValue(); },
+    setScript: function (value) { editor.setValue(value); },
+    getRules: function () { return ruleSettings; },
+    getSchemas: function () { return schemaSettings; },
+    refreshEditor: function () { editor.refresh(); },
+  };
+
+  // ------------------------------------------------------------------
   // Démarrage
   // ------------------------------------------------------------------
 

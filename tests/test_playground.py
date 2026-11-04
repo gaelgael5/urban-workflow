@@ -154,6 +154,10 @@ class TestStatic:
         response = client.get("/static/vendor/codemirror.js")
         assert response.status_code == 200
 
+    def test_diagram_assets_served(self):
+        assert client.get("/static/vendor/x6.min.js").status_code == 200
+        assert client.get("/static/diagram.js").status_code == 200
+
 
 SCHEMA_SCRIPT = """
 NAME Demo VERSION 1
@@ -241,3 +245,60 @@ class TestSchemasInPlayground:
         assert data["steps"][2]["impacted"] == []  # doublon ignoré
         assert len(data["workflows"]) == 1
         assert len(data["workflows"][0]["events"]) == 1
+
+class TestDiagram:
+    def test_script_to_model(self):
+        data = client.post("/api/diagram", json={"script": SCRIPT}).json()
+        assert data["ok"] is True
+        model = data["model"]
+        assert model["name"] == "Demo"
+        assert [s["name"] for s in model["states"]] == ["Ouvert"]
+        init = model["initializers"][0]
+        assert (init["event"], init["switch"]) == ("Ouverture", "Ouvert")
+        assert init["when"] == "EstComplet(champs = 'Montant')"
+        enter = model["states"][0]["actions"][0]
+        assert enter["trigger"] == "ENTER"
+        assert enter["execute"].startswith("EXECUTE Notifier(")
+
+    def test_schema_fields_survive(self):
+        data = client.post("/api/diagram", json={"script": SCHEMA_SCRIPT}).json()
+        assert data["ok"] is True
+        event = data["model"]["events"][0]
+        assert event["schema_ref"] == "schema_Ouverture"
+        assert event["unique"] == ["ExternalId", "Montant"]
+
+    def test_syntax_error_positioned(self):
+        data = client.post(
+            "/api/diagram", json={"script": "NAME Demo\nDEFINE EVENT X 'x'"}
+        ).json()
+        assert data["ok"] is False
+        assert data["model"] is None
+        assert data["errors"][0]["line"] >= 1
+
+    def test_generate_roundtrip(self):
+        model = client.post("/api/diagram", json={"script": SCRIPT}).json()["model"]
+        data = client.post(
+            "/api/generate", json={"model": model, "rules": RULES}
+        ).json()
+        assert data["ok"] is True, data["errors"]
+        assert "INITIALIZE WORKFLOW" in data["script"]
+        assert data["summary"]["name"] == "Demo"
+        # Le script généré se réimporte à l'identique (point fixe via HTTP).
+        again = client.post(
+            "/api/diagram", json={"script": data["script"]}
+        ).json()
+        assert again["ok"] is True
+        regenerated = client.post(
+            "/api/generate", json={"model": again["model"], "rules": RULES}
+        ).json()
+        assert regenerated["script"] == data["script"]
+
+    def test_generate_reports_validation_errors(self):
+        model = client.post("/api/diagram", json={"script": SCRIPT}).json()["model"]
+        model["initializers"][0]["switch"] = "EtatInconnu"
+        data = client.post(
+            "/api/generate", json={"model": model, "rules": RULES}
+        ).json()
+        assert data["ok"] is False
+        assert any("EtatInconnu" in e["message"] for e in data["errors"])
+        assert "SWITCH EtatInconnu" in data["script"]
