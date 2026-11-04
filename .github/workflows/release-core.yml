@@ -10,6 +10,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: {}  # publication manuelle (la version vient du pyproject)
 
 jobs:
   publish:
@@ -25,6 +26,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Vérification tag ↔ version
+        if: github.event_name == 'push'
         run: |
           version=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "v$version" = "${{ github.ref_name }}" || {
