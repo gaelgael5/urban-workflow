@@ -63,11 +63,13 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   `pyproject.toml` ; paquet importable renommé `urban_workflow_playground`,
   script console `urban-workflow-playground`). Les deux noms étaient
   libres sur PyPI (vérifié).
-- `.github/workflows/release.yml` : publication par **trusted publishing**
-  (OIDC, environment `pypi`) sur tags `v*` (socle) et `playground-v*`
-  (playground), avec garde tag ↔ version du pyproject. Procédure complète
-  (dont le « pending publisher » à créer côté pypi.org — seule action
-  à la main de l'utilisateur) : `docs/publication-pypi.md`.
+- **Un workflow de release par paquet** (PyPI n'accepte pas deux pending
+  publishers identiques, et c'est un meilleur cloisonnement) :
+  `release-core.yml` (tag `v*`, environment `pypi`) et
+  `release-playground.yml` (tag `playground-v*`, environment
+  `pypi-playground`), trusted publishing OIDC, garde tag ↔ version.
+  Procédure complète (pending publishers côté pypi.org — seule action à
+  la main de l'utilisateur) : `docs/publication-pypi.md`.
 - Wheels vérifiées : parseur ANTLR généré inclus côté socle, `static/`
   + vendor inclus côté playground (`[tool.setuptools.package-data]`),
   installation + fumée testées dans un venv vierge

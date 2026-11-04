@@ -1,35 +1,37 @@
 # Publication PyPI
 
-Deux distributions sont publiées depuis ce dépôt, par **trusted
-publishing** (OIDC) — aucun token stocké nulle part :
+Deux distributions sont publiées depuis ce dépôt, chacune par **son
+propre workflow** et son propre environment, via *trusted publishing*
+(OIDC) — aucun token stocké nulle part :
 
-| Distribution | Source | Tag déclencheur |
-|---|---|---|
-| `urban-workflow` | racine du dépôt | `vX.Y.Z` |
-| `urban-workflow-playground` | `playground/` | `playground-vX.Y.Z` |
+| Distribution | Source | Workflow | Environment | Tag déclencheur |
+|---|---|---|---|---|
+| `urban-workflow` | racine | `release-core.yml` | `pypi` | `vX.Y.Z` |
+| `urban-workflow-playground` | `playground/` | `release-playground.yml` | `pypi-playground` | `playground-vX.Y.Z` |
 
-Le workflow [`release.yml`](../.github/workflows/release.yml) construit
-(sdist + wheel), vérifie que le tag correspond à la version du
-`pyproject.toml`, et publie.
+Chaque workflow construit (sdist + wheel), vérifie que le tag correspond
+à la version du `pyproject.toml` concerné, et publie. Un workflow par
+paquet : chaque projet PyPI ne fait confiance qu'au workflow qui le
+publie.
 
 ## Mise en place (une seule fois, par le propriétaire du compte PyPI)
 
 1. Se connecter sur [pypi.org](https://pypi.org) (compte qui possède
    déjà `urban-json`).
 2. *Your account → Publishing → Add a new pending publisher*, **deux
-   fois** (une par projet), avec exactement :
+   fois** :
 
-   | Champ | Valeur |
-   |---|---|
-   | PyPI Project Name | `urban-workflow` puis `urban-workflow-playground` |
-   | Owner | `gaelgael5` |
-   | Repository name | `urban-workflow` |
-   | Workflow name | `release.yml` |
-   | Environment name | `pypi` |
+   | Champ | Publisher 1 | Publisher 2 |
+   |---|---|---|
+   | PyPI Project Name | `urban-workflow` | `urban-workflow-playground` |
+   | Owner | `gaelgael5` | `gaelgael5` |
+   | Repository name | `urban-workflow` | `urban-workflow` |
+   | Workflow name | `release-core.yml` | `release-playground.yml` |
+   | Environment name | `pypi` | `pypi-playground` |
 
-3. (Recommandé) Sur GitHub : *Settings → Environments → New
-   environment* nommé `pypi` — optionnellement avec des *required
-   reviewers* pour approuver chaque publication.
+3. (Recommandé) Sur GitHub : *Settings → Environments* — créer `pypi`
+   et `pypi-playground`, optionnellement avec des *required reviewers*
+   pour approuver chaque publication.
 
 ## Publier une version
 
