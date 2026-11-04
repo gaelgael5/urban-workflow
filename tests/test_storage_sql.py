@@ -64,6 +64,7 @@ def make_workflow() -> Workflow:
         name="Event1",
         from_state="",
         to_state="State1",
+        dedup_hash="f" * 64,
         creation_date=NOW,
         event_date=NOW,
         extended_datas={"Montant": 120},
@@ -98,6 +99,7 @@ class TestRoundTrip:
         event = loaded.events[0]
         assert event.uuid == saved.events[0].uuid
         assert event.extended_datas == {"Montant": 120}
+        assert event.dedup_hash == "f" * 64
 
         action = event.actions[0]
         assert action.name == "Cut"

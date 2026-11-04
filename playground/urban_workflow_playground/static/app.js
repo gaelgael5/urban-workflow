@@ -7,7 +7,7 @@
   // ------------------------------------------------------------------
 
   var KEYWORDS = [
-    "NAME", "VERSION", "CONCURENCY", "DESCRIPTION", "MATCHING",
+    "NAME", "VERSION", "CONCURENCY", "DESCRIPTION", "MATCHING", "AS", "UNIQUE",
     "DEFINE", "EVENT", "RULE", "ACTION", "CONST",
     "INITIALIZE", "WORKFLOW", "ON", "WHEN", "RECURSIVE", "SWITCH",
     "STATE", "ENTER", "EXIT", "AND", "OR", "NOT",

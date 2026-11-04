@@ -70,6 +70,8 @@ STORE :     'STORE';
 
 TEXT :      'TEXT';
 TIME :      'TIME';
+// Extension urban-workflow : cle d'unicite des evenements (anti-doublon).
+UNIQUE :    'UNIQUE';
 VERSION:    'VERSION';
 
 WAITING :   'WAITING';

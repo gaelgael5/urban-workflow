@@ -40,6 +40,7 @@ _KNOWN_FIELDS = {
     "ExternalId": ("external_id", str),
     "CreationDate": ("creation_date", _parse_datetime),
     "EventDate": ("event_date", _parse_datetime),
+    "DedupKey": ("dedup_key", str),
 }
 
 
@@ -87,4 +88,6 @@ def event_to_document(event: IncomingEvent) -> dict[str, Any]:
         document["CreationDate"] = event.creation_date.isoformat()
     if event.event_date is not None:
         document["EventDate"] = event.event_date.isoformat()
+    if event.dedup_key:
+        document["DedupKey"] = event.dedup_key
     return document

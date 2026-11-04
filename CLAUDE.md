@@ -117,14 +117,20 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   positionnée, et `DeclaredEventConfig.schema`/`dedup_keys` sont résolus.
   `parse_config(..., schemas=...)` ; `event_to_document` dans
   `engine/serializer.py` (format fil CamelCase pour validation + hash).
-- **EN ATTENTE DE DÉCISION UTILISATEUR — anti-doublon** : il n'est PAS
-  convaincu par `x-dedup` dans le schéma. Alternatives proposées :
-  A) `UNIQUE (Prop, …)` dans le DSL sur DEFINE EVENT ; B) champ réservé
-  `DedupKey` fourni par l'émetteur (idempotency key) ; reco = A+B.
-  Le branchement moteur (validation à l'entrée + rejet des doublons par
-  hash, champ `Event.dedup_hash` + colonne SQL) n'est PAS encore fait —
-  attendre son choix. `compute_dedup_hash` et la lecture `x-dedup` existent
-  déjà dans schemas.py (provisoires, à adapter au mécanisme retenu).
+- **Anti-doublon : décision utilisateur = A+B, implémenté.** `x-dedup`
+  retiré (schémas = JSON Schema pur). A) extension DSL
+  `UNIQUE (Prop, …)` sur DEFINE EVENT (token `UNIQUE` + règle
+  `unique_keys`, doublon de propriété = erreur positionnée) →
+  `DeclaredEventConfig.dedup_keys`, pur DSL (marche sans registre).
+  B) propriété réservée `DedupKey` du socle (champ typé
+  `IncomingEvent.dedup_key`, mappée dans `_KNOWN_FIELDS`, dans
+  `BASE_EVENT_SCHEMA`) — **prioritaire sur UNIQUE**.
+  Moteur : `processor._event_gate(config, event)` → valide (socle +
+  schéma métier, `EventSchemaError`) et retourne l'empreinte SHA-256 ;
+  `_already_integrated` = rejeu Uuid OU même `Event.dedup_hash` dans
+  l'historique → ignoré silencieusement (existants ET création).
+  Colonne SQL `workflow_events.dedup_hash`. La validation ne s'applique
+  que si l'événement serait réellement traité par la config.
 - Jar ANTLR : Maven Central rate-limite parfois (429) — miroir qui marche :
   `maven-central.storage-download.googleapis.com/maven2/...`.
 

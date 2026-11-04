@@ -7,12 +7,11 @@ les référencent par nom.
 
 Chaque schéma décrit le payload complet de l'événement (socle commun
 ``Name``/``Uuid``/``ExternalId``/``CreationDate``/``EventDate`` + données
-métier). Deux mots-clés propres à urban-workflow :
+métier, dont l'optionnel ``DedupKey``).
 
-- ``x-dedup`` : liste de propriétés du payload dont la concaténation,
-  hachée en SHA-256, identifie fonctionnellement l'événement — un
-  événement entrant dont le hash existe déjà dans l'historique du
-  workflow est ignoré (anti-doublon, en plus de l'anti-rejeu par Uuid).
+Les schémas restent du JSON Schema pur — l'anti-doublon se déclare
+côté DSL (``UNIQUE (…)`` sur ``DEFINE EVENT``) ou côté émetteur
+(propriété ``DedupKey`` du payload, prioritaire quand elle est fournie).
 
 La validation s'appuie sur les paquets optionnels PyYAML et jsonschema :
 ``pip install urban-workflow[schemas]``.
@@ -38,13 +37,10 @@ BASE_EVENT_SCHEMA: dict[str, Any] = {
         "ExternalId": {"type": "string"},
         "CreationDate": {"type": "string", "format": "date-time"},
         "EventDate": {"type": "string", "format": "date-time"},
+        "DedupKey": {"type": "string", "minLength": 1},
     },
     "required": ["Name"],
 }
-
-#: Mot-clé (propre à urban-workflow) listant les propriétés de l'anti-doublon.
-DEDUP_KEYWORD = "x-dedup"
-
 
 def _load_yaml(text: str) -> dict[str, Any]:
     try:
@@ -162,11 +158,6 @@ class SchemaRegistry:
                 f"no schema registered under name {name!r}; "
                 f"known: {self.names()}"
             ) from None
-
-    def dedup_keys(self, name: str) -> list[str]:
-        """Les propriétés ``x-dedup`` du schéma (liste vide si absentes)."""
-        keys = self.get(name).get(DEDUP_KEYWORD, [])
-        return [str(key) for key in keys]
 
     def validate(self, name: str, document: Mapping[str, Any]) -> None:
         """Valide un payload contre le socle commun puis le schéma ``name``."""

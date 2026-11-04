@@ -397,7 +397,7 @@ CONCURENCY n                              -- max instances per subject
 DESCRIPTION 'label'
 MATCHING (K = 'v' …)                      -- event routing
 
-DEFINE EVENT  Name 'label';
+DEFINE EVENT  Name 'label' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Name (TYPE arg, …) 'label';      -- TYPE: TEXT|INTEGER|DECIMAL
 DEFINE ACTION Name (TYPE arg, …) 'label';
 DEFINE CONST  name value 'label';              -- value: 'txt' | 42 | n DAY

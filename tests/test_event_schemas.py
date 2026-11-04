@@ -22,7 +22,8 @@ from urban_workflow.exceptions import (
 
 SCRIPT = """
 NAME Demo
-DEFINE EVENT DemandeSoumise 'une demande est déposée' AS @schema_DemandeSoumise;
+DEFINE EVENT DemandeSoumise 'une demande est déposée'
+    AS @schema_DemandeSoumise UNIQUE (ExternalId, Montant);
 DEFINE EVENT Simple 'sans schéma';
 INITIALIZE WORKFLOW
     ON EVENT DemandeSoumise SWITCH Ouvert
@@ -38,7 +39,20 @@ class TestDslReference:
         declared = config.declared_events["DemandeSoumise"]
         assert declared.schema_ref == "schema_DemandeSoumise"
         assert declared.schema is None
+        # UNIQUE est du pur DSL : résolu même sans registre de schémas.
+        assert declared.dedup_keys == ["ExternalId", "Montant"]
         assert config.declared_events["Simple"].schema_ref == ""
+
+    def test_duplicated_unique_property_is_positioned_error(self):
+        script = SCRIPT.replace(
+            "UNIQUE (ExternalId, Montant)", "UNIQUE (ExternalId, ExternalId)"
+        )
+        from urban_workflow.exceptions import DuplicatedArgumentNameError
+
+        with pytest.raises(
+            DuplicatedArgumentNameError, match=r"x\.wf:\d+:\d+.*ExternalId"
+        ):
+            parse_config(script, rules=FunctionRegistry("rule"), filename="x.wf")
 
     def test_unknown_reference_is_positioned_error(self):
         yaml = pytest.importorskip("yaml")  # noqa: F841
@@ -64,13 +78,12 @@ class TestDslReference:
             properties:
               Montant: {type: number}
             required: [Montant]
-            x-dedup: [ExternalId, Montant]
             """,
         )
         config = parse_config(SCRIPT, rules=FunctionRegistry("rule"), schemas=registry)
         declared = config.declared_events["DemandeSoumise"]
         assert declared.schema["title"] == "DemandeSoumise"
-        assert declared.dedup_keys == ["ExternalId", "Montant"]
+        assert declared.dedup_keys == ["ExternalId", "Montant"]  # vient du DSL
 
 
 class TestSchemaRegistry:
@@ -172,3 +185,137 @@ class TestDedupHash:
         from urban_workflow.schemas import compute_dedup_hash
 
         assert compute_dedup_hash(["X"], {}) == compute_dedup_hash(["X"], {"X": ""})
+
+
+# ----------------------------------------------------------------------
+# Moteur : anti-doublon A (UNIQUE) + B (DedupKey), validation à l'entrée
+# ----------------------------------------------------------------------
+
+
+def make_engine(script: str, schemas=None):
+    from uuid import uuid4  # noqa: F401
+
+    from urban_workflow import (
+        MemoryStorage,
+        Workflow,
+        WorkflowEngine,
+        WorkflowFactory,
+        WorkflowProcessor,
+        WorkflowsConfig,
+    )
+    from urban_workflow.outputs import default_memory_output
+
+    storage = MemoryStorage()
+    configs = WorkflowsConfig().add_document(
+        parse_config(script, rules=FunctionRegistry("rule"), schemas=schemas)
+    )
+    processor = WorkflowProcessor(configs, WorkflowFactory())
+    processor.load_existing_workflows_by_external_id = lambda key: storage.get_by(
+        Workflow, key, "external_id"
+    )
+    processor.output_actions = default_memory_output(storage)
+    return WorkflowEngine(processor), storage
+
+
+UNIQUE_SCRIPT = """
+NAME Demo
+DEFINE EVENT DemandeSoumise 'dépôt' UNIQUE (ExternalId, Montant);
+INITIALIZE WORKFLOW
+    ON EVENT DemandeSoumise SWITCH Ouvert
+DEFINE STATE Ouvert 'ouvert'
+    ON EVENT DemandeSoumise
+        SWITCH Ouvert
+;
+"""
+
+
+class TestEngineDedup:
+    def _payload(self, **extra):
+        from uuid import uuid4
+
+        return {"Name": "DemandeSoumise", "Uuid": str(uuid4()),
+                "ExternalId": "DA-1", **extra}
+
+    def test_unique_properties_block_functional_duplicates(self):
+        from urban_workflow import Workflow
+
+        engine, storage = make_engine(UNIQUE_SCRIPT)
+
+        engine.evaluate_event(self._payload(Montant=120))
+        engine.evaluate_event(self._payload(Montant=120))  # doublon (uuid ≠)
+        workflows = storage.get_by(Workflow, "DA-1", "external_id")
+        assert len(workflows) == 1
+        assert len(workflows[0].events) == 1
+        assert len(workflows[0].events[0].dedup_hash) == 64
+
+        engine.evaluate_event(self._payload(Montant=121))  # valeur différente
+        workflows = storage.get_by(Workflow, "DA-1", "external_id")
+        assert len(workflows[0].events) == 2
+
+    def test_emitter_dedup_key_wins_over_unique(self):
+        from urban_workflow import Workflow
+
+        engine, storage = make_engine(UNIQUE_SCRIPT)
+
+        # Montants différents (UNIQUE dirait « distincts ») mais même
+        # DedupKey émetteur → le second est un doublon.
+        engine.evaluate_event(self._payload(Montant=120, DedupKey="cmd-1"))
+        engine.evaluate_event(self._payload(Montant=999, DedupKey="cmd-1"))
+        workflows = storage.get_by(Workflow, "DA-1", "external_id")
+        assert len(workflows[0].events) == 1
+
+        engine.evaluate_event(self._payload(Montant=999, DedupKey="cmd-2"))
+        workflows = storage.get_by(Workflow, "DA-1", "external_id")
+        assert len(workflows[0].events) == 2
+
+    def test_dedup_key_alone_without_unique(self):
+        from urban_workflow import Workflow
+
+        script = UNIQUE_SCRIPT.replace(" UNIQUE (ExternalId, Montant)", "")
+        engine, storage = make_engine(script)
+
+        engine.evaluate_event(self._payload(Montant=1, DedupKey="x"))
+        engine.evaluate_event(self._payload(Montant=2, DedupKey="x"))
+        engine.evaluate_event(self._payload(Montant=3))  # sans clé : passe
+        workflows = storage.get_by(Workflow, "DA-1", "external_id")
+        assert len(workflows[0].events) == 2
+
+    def test_dedup_key_is_a_typed_base_property(self):
+        from urban_workflow import parse_incoming_event
+
+        event = parse_incoming_event(self._payload(Montant=1, DedupKey="cmd-7"))
+        assert event.dedup_key == "cmd-7"
+        assert "DedupKey" not in event.extended_datas
+
+
+class TestEngineSchemaValidation:
+    @pytest.fixture(autouse=True)
+    def _requires(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+
+    def test_invalid_payload_raises_at_evaluation(self):
+        from urban_workflow.schemas import SchemaRegistry
+
+        registry = SchemaRegistry().add_yaml(
+            "schema_DemandeSoumise",
+            "type: object\nproperties: {Montant: {type: number}}\nrequired: [Montant]",
+        )
+        script = UNIQUE_SCRIPT.replace(
+            "'dépôt' UNIQUE", "'dépôt' AS @schema_DemandeSoumise UNIQUE"
+        )
+        engine, storage = make_engine(script, schemas=registry)
+
+        with pytest.raises(EventSchemaError, match="Montant"):
+            engine.evaluate_event(self._payload(Montant="beaucoup"))
+
+        engine.evaluate_event(self._payload(Montant=12))  # conforme
+        from urban_workflow import Workflow
+
+        assert len(storage.get_by(Workflow, "DA-1", "external_id")) == 1
+
+    def _payload(self, **extra):
+        from uuid import uuid4
+
+        return {"Name": "DemandeSoumise", "Uuid": str(uuid4()),
+                "ExternalId": "DA-1", **extra}

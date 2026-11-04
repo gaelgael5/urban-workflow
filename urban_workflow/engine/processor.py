@@ -30,8 +30,10 @@ from ..config import (
 )
 from ..models import IncomingEvent, RuleSpan, RunContext, Workflow
 from ..outputs.base import OutputAction
+from ..schemas import BASE_EVENT_SCHEMA, compute_dedup_hash, validate_document
 from .append_events import AppendResultActionEvent, AppendStandardEvent
 from .factory import WorkflowFactory
+from .serializer import event_to_document
 from .translator import ActionTranslator, DefaultActionTranslator
 
 
@@ -125,11 +127,59 @@ class WorkflowProcessor:
             if config is None:
                 continue
 
+            dedup_hash = self._event_gate(config, event)
+            if dedup_hash and any(
+                e.dedup_hash == dedup_hash for e in workflow.events
+            ):
+                continue  # doublon fonctionnel : ignoré, comme un rejeu
+
             ctx = self.factory.create_context(workflow, event)
+            ctx.event.dedup_hash = dedup_hash
             ctx.event.to_state = ctx.event.from_state = workflow.current_state
             self._evaluate_event_in_current_workflow(config, ctx)
 
             yield ctx
+
+    def _event_gate(self, config: WorkflowConfig, event: IncomingEvent) -> str:
+        """Valide l'événement contre son schéma déclaré et retourne son
+        empreinte anti-doublon (``""`` si aucun mécanisme ne s'applique).
+
+        Priorité de l'empreinte : ``DedupKey`` fourni par l'émetteur,
+        sinon hash des propriétés ``UNIQUE`` déclarées dans le DSL.
+        La validation (socle commun + schéma métier) lève
+        :class:`~urban_workflow.exceptions.EventSchemaError`.
+        """
+        declared = config.declared_events.get(event.name)
+        if declared is None:
+            return ""
+
+        document = None
+        if declared.schema is not None:
+            document = event_to_document(event)
+            validate_document(BASE_EVENT_SCHEMA, document)
+            validate_document(declared.schema, document)
+
+        if event.dedup_key:
+            return compute_dedup_hash(
+                (constants.DEDUP_KEY_PROPERTY,),
+                {constants.DEDUP_KEY_PROPERTY: event.dedup_key},
+            )
+        if declared.dedup_keys:
+            if document is None:
+                document = event_to_document(event)
+            return compute_dedup_hash(declared.dedup_keys, document)
+        return ""
+
+    @staticmethod
+    def _already_integrated(
+        workflow: Workflow, event: IncomingEvent, dedup_hash: str
+    ) -> bool:
+        """Rejeu technique (même Uuid) ou doublon fonctionnel (même hash)."""
+        if workflow.get_event(event.uuid) is not None:
+            return True
+        return bool(dedup_hash) and any(
+            e.dedup_hash == dedup_hash for e in workflow.events
+        )
 
     def _check_and_resolve_config(
         self, workflow: Workflow, event: IncomingEvent
@@ -162,11 +212,17 @@ class WorkflowProcessor:
 
         for config in self._config.matching(event):
 
-            # Rejeu : un événement déjà intégré par un workflow de cette
+            if config.initializers.get(event.name) is None:
+                continue
+
+            dedup_hash = self._event_gate(config, event)
+
+            # Rejeu (même Uuid) ou doublon fonctionnel (même empreinte) :
+            # un événement déjà intégré par un workflow de cette
             # configuration ne doit pas en recréer un.
             if any(
                 w.workflow_name == config.name
-                and w.get_event(event.uuid) is not None
+                and self._already_integrated(w, event, dedup_hash)
                 for w in workflows
             ):
                 continue
@@ -174,6 +230,7 @@ class WorkflowProcessor:
             ctx = self._evaluate_if_workflow_must_be_created(event, config)
             if ctx is None:
                 continue
+            ctx.event.dedup_hash = dedup_hash
 
             siblings = existing_by_name.get(ctx.workflow.workflow_name, [])
             last = max(siblings, key=lambda c: c.workflow.concurrency, default=None)

@@ -20,3 +20,6 @@ CANCEL_REMINDER_ACTION = "__cancelReminderAction"
 
 # Propriétés réservées des données étendues
 WORKFLOW_ID_PROPERTY = "WorkflowId"
+
+#: Clé d'idempotence optionnelle fournie par l'émetteur (socle commun).
+DEDUP_KEY_PROPERTY = "DedupKey"

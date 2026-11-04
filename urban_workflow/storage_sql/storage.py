@@ -147,6 +147,7 @@ class SqlWorkflowStorage:
                     "to_state": event.to_state,
                     "creation_date": _iso(event.creation_date),
                     "event_date": _iso(event.event_date),
+                    "dedup_hash": event.dedup_hash,
                     "extended_datas": _dump(event.extended_datas),
                 },
             )
@@ -220,6 +221,7 @@ class SqlWorkflowStorage:
                 to_state=event_row["to_state"],
                 creation_date=_parse_date(event_row["creation_date"]),
                 event_date=_parse_date(event_row["event_date"]),
+                dedup_hash=event_row["dedup_hash"] or "",
                 change=ChangeEnum.NONE,
                 extended_datas=json.loads(event_row["extended_datas"] or "{}"),
             )

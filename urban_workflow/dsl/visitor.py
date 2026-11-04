@@ -343,9 +343,26 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                     declared.schema = self._schemas.get(declared.schema_ref)
                 except UnknownSchemaError as exc:
                     self._raise_positioned(UnknownSchemaError, ctx, str(exc))
-                declared.dedup_keys = self._schemas.dedup_keys(declared.schema_ref)
+
+        # Extension urban-workflow : UNIQUE (Prop, …) — anti-doublon.
+        unique = ctx.unique_keys()
+        if unique is not None:
+            declared.dedup_keys = self.visitUnique_keys(unique)
 
         return declared
+
+    def visitUnique_keys(self, ctx: WorkflowParser.Unique_keysContext) -> list[str]:
+        keys: list[str] = []
+        for key_ctx in ctx.key():
+            key = self.visitKey(key_ctx)
+            if key in keys:
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    key_ctx,
+                    f"duplicated UNIQUE property {key!r}",
+                )
+            keys.append(key)
+        return keys
 
     def visitAction_declaration_statement(
         self, ctx: WorkflowParser.Action_declaration_statementContext

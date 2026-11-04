@@ -107,11 +107,26 @@ argument inconnu ou manquant, tout doublon, est une erreur **positionnée**
 ### Événements
 
 ```sql
-DEFINE EVENT DemandeSoumise 'une demande est déposée';
+DEFINE EVENT DemandeSoumise 'une demande est déposée'
+    AS @schema_DemandeSoumise UNIQUE (ExternalId, Montant);
 ```
 
 Déclare un événement métier que le workflow accepte. Un événement reçu
-mais non déclaré est ignoré par ce workflow.
+mais non déclaré est ignoré par ce workflow. Deux clauses optionnelles
+(extensions urban-workflow) :
+
+- **`AS @nom`** — référence un **JSON Schema écrit en YAML**, enregistré
+  à part et chargé à l'initialisation du moteur (voir
+  [guide-integration.md](guide-integration.md) §6) ; chaque événement
+  entrant de ce nom est alors validé contre le socle commun (`Name`,
+  `Uuid`, `ExternalId`, `CreationDate`, `EventDate`, `DedupKey`) **et**
+  contre ce schéma — payload non conforme = `EventSchemaError` ;
+- **`UNIQUE (Prop, …)`** — anti-doublon fonctionnel : le moteur hache la
+  concaténation de ces propriétés du payload (SHA-256) et **ignore** tout
+  événement dont l'empreinte existe déjà dans l'historique du workflow
+  (même mécanique silencieuse que l'anti-rejeu par `Uuid`). Si l'émetteur
+  fournit la propriété réservée **`DedupKey`** dans le payload (clé
+  d'idempotence), elle est **prioritaire** sur `UNIQUE`.
 
 ### Règles
 
@@ -488,7 +503,7 @@ CONCURENCY n                              -- instances max par sujet
 DESCRIPTION 'libellé'
 MATCHING (K = 'v' …)                      -- routage des événements
 
-DEFINE EVENT  Nom 'libellé';
+DEFINE EVENT  Nom 'libellé' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Nom (TYPE arg, …) 'libellé';     -- TYPE : TEXT|INTEGER|DECIMAL
 DEFINE ACTION Nom (TYPE arg, …) 'libellé';
 DEFINE CONST  nom valeur 'libellé';            -- valeur : 'txt' | 42 | n DAY

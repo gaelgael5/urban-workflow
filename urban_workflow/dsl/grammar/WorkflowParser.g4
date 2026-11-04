@@ -147,9 +147,16 @@ rule_conditions :
     ;
 
 event_declaration_statement :
-    // (AS ...) : extension urban-workflow — reference un JSON Schema (YAML)
-    // enregistre dans le SchemaRegistry a l'initialisation du moteur.
-    EVENT key comment? (AS schemaRef=compositekey)?
+    // (AS ...) et (UNIQUE ...) : extensions urban-workflow.
+    // AS reference un JSON Schema (YAML) enregistre dans le SchemaRegistry
+    // a l'initialisation du moteur ; UNIQUE liste les proprietes du payload
+    // dont le hash sert d'anti-doublon (le champ DedupKey fourni par
+    // l'emetteur reste prioritaire quand il est present).
+    EVENT key comment? (AS schemaRef=compositekey)? (UNIQUE unique_keys)?
+    ;
+
+unique_keys :
+    LEFT_PAREN key (COMMA key)* RIGHT_PAREN
     ;
 
 action_declaration_statement :

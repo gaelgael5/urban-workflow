@@ -296,9 +296,37 @@ du format source) :
 | `Uuid` | Identité de l'événement — **la clé du rejeu sans doublon** |
 | `ExternalId` | Identifiant du sujet : regroupe les instances |
 | `CreationDate`, `EventDate` | Dates ISO 8601 |
+| `DedupKey` | Clé d'idempotence optionnelle fournie par l'émetteur — deux événements portant la même clé ne sont intégrés qu'une fois (prioritaire sur `UNIQUE`) |
 | *tout le reste* | Données métier (`extended_datas`), visibles des règles, des `MATCHING` et des templates |
 
 Un payload invalide lève `InvalidIncomingEventFormatError`.
+
+### Schémas d'événements (extra `[schemas]`)
+
+Les schémas (JSON Schema **écrits en YAML**) vivent à part des scripts et
+se chargent **à l'initialisation du moteur** — fichier, répertoire ou
+contenu brut :
+
+```python
+from urban_workflow.schemas import SchemaRegistry
+
+schemas = (
+    SchemaRegistry()
+    .add_directory("schemas/")                 # un .yaml par schéma
+    .add_file("schemas/commun.yaml", name="schema_Commun")
+    .add_yaml("schema_Ping", "type: object")   # contenu brut
+)
+config = parse_config(script, rules=rules, schemas=schemas)
+```
+
+Le nom d'un schéma (nom de fichier par défaut) est celui que le DSL
+référence : `DEFINE EVENT X '…' AS @schema_X;`. Référence inconnue =
+erreur positionnée au chargement ; payload non conforme à l'exécution =
+`EventSchemaError` (liste complète des violations). Le socle commun est
+toujours validé en plus du schéma métier. Sans registre fourni, les
+références `AS` sont conservées mais rien n'est validé (mode permissif).
+
+`pip install urban-workflow[schemas]` (PyYAML + jsonschema).
 
 ### Verrouillage
 

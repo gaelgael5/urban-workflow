@@ -129,6 +129,11 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#unique_keys.
+    def visitUnique_keys(self, ctx:WorkflowParser.Unique_keysContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#action_declaration_statement.
     def visitAction_declaration_statement(self, ctx:WorkflowParser.Action_declaration_statementContext):
         return self.visitChildren(ctx)

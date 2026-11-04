@@ -37,6 +37,9 @@ class IncomingEvent:
     external_id: str = ""
     creation_date: datetime | None = None
     event_date: datetime | None = None
+    #: Clé d'idempotence fournie par l'émetteur (propriété ``DedupKey``
+    #: du payload) — prioritaire sur les clés ``UNIQUE`` du DSL.
+    dedup_key: str = ""
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
 
@@ -65,6 +68,9 @@ class Event:
     from_state: str = ""
     to_state: str = ""
     change: ChangeEnum = ChangeEnum.NONE
+    #: Empreinte anti-doublon (SHA-256) : ``DedupKey`` émetteur si fourni,
+    #: sinon hash des propriétés ``UNIQUE`` déclarées — vide si aucun des deux.
+    dedup_hash: str = ""
     actions: list[PushedAction] = field(default_factory=list)
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
