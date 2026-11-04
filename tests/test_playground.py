@@ -311,3 +311,16 @@ class TestHealthz:
         response = client.get("/healthz")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
+
+
+class TestFavicon:
+    """Le navigateur réclame /favicon.ico : sans réponse, 404 dans la console."""
+
+    def test_favicon_ico_is_served_as_svg(self):
+        response = client.get("/favicon.ico")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/svg+xml")
+        assert response.text.lstrip().startswith("<svg")
+
+    def test_index_declares_the_icon(self):
+        assert 'rel="icon"' in client.get("/").text

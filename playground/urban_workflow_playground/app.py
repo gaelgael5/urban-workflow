@@ -479,4 +479,13 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    # La page déclare /static/favicon.svg, mais certains clients (onglets
+    # ouverts sur une autre route, lecteurs de flux, outils) réclament quand
+    # même /favicon.ico à la racine : on y sert le même SVG plutôt que de
+    # maintenir un .ico binaire en double.
+    return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
