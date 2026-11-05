@@ -112,11 +112,16 @@ class GenerateRequest(BaseModel):
 # ----------------------------------------------------------------------
 
 
-def _build_registry(settings: list[RuleSetting]) -> FunctionRegistry:
-    """Fabrique des callables à la signature exacte des règles paramétrées."""
+def _build_registry(settings: list[RuleSetting], script: str = "") -> FunctionRegistry:
+    """Fabrique des callables à la signature exacte des règles paramétrées.
+
+    Les règles dont le script écrit le corps (``DEFINE RULE … AS …``) sont
+    évaluées par le moteur : leur entrée éventuelle dans le panneau est
+    ignorée, sinon le visiteur refuserait « corps ET code »."""
     registry = FunctionRegistry("rule")
+    with_body = set(_RE_RULE_BODY.findall(script))
     for setting in settings:
-        if not _IDENTIFIER.match(setting.name):
+        if not _IDENTIFIER.match(setting.name) or setting.name in with_body:
             continue
         params = [p.name for p in setting.params if _IDENTIFIER.match(p.name)]
         signature = ", ".join(["ctx", *params])
@@ -217,6 +222,9 @@ _RE_STATE_SCHEMA = re.compile(
 )
 _RE_RULE = re.compile(r"\bDEFINE\s+RULE\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
 _RE_ACTION = re.compile(r"\bDEFINE\s+ACTION\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
+_RE_RULE_BODY = re.compile(
+    r"\bDEFINE\s+RULE\s+(\w+)\s*\([^)]*\)\s*(?:'(?:[^']|'')*')?\s*AS\b"
+)
 _RE_CONST = re.compile(r"\bDEFINE\s+CONST\s+(\w+)", re.IGNORECASE)
 _RE_STATE = re.compile(r"\bDEFINE\s+STATE\s+(\w+)", re.IGNORECASE)
 _RE_PARAM = re.compile(r"(TEXT|INTEGER|DECIMAL)\s+(\w+)", re.IGNORECASE)
@@ -233,7 +241,11 @@ def _symbols_from_text(script: str) -> dict[str, Any]:
     return {
         "events": sorted(set(_RE_EVENT.findall(script))),
         "rules": [
-            {"name": name, "params": _params_from_text(params)}
+            {
+                "name": name,
+                "params": _params_from_text(params),
+                "body": "…" if name in set(_RE_RULE_BODY.findall(script)) else "",
+            }
             for name, params in _RE_RULE.findall(script)
         ],
         "actions": [
@@ -267,6 +279,9 @@ def _symbols_from_visitor(
                     for n, t in d.parameters.items()
                 ],
                 "comment": d.comment,
+                # Corps DSL (règle évaluée par le moteur) : le panneau
+                # Paramétrage n'a pas à la simuler.
+                "body": d.body_text,
             }
             for d in visitor.declarations.values()
             if d.kind == kind
@@ -460,7 +475,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
 
     if not errors:
         visitor = WorkflowConfigVisitor(
-            rules=_build_registry(request.rules),
+            rules=_build_registry(request.rules, request.script),
             filename="playground",
             schemas=schema_registry,
         )
@@ -547,7 +562,7 @@ def generate(request: GenerateRequest) -> dict[str, Any]:
 
 @app.post("/api/simulate")
 def simulate(request: SimulateRequest) -> dict[str, Any]:
-    registry = _build_registry(request.rules)
+    registry = _build_registry(request.rules, request.script)
 
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     if schema_problems:

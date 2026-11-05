@@ -60,6 +60,7 @@ from ..values import (
     resolve_value,
 )
 from .errors import DslErrorModel
+from .expressions import ExpressionCompiler
 from .generated.WorkflowParser import WorkflowParser
 from .generated.WorkflowParserVisitor import WorkflowParserVisitor
 from .parser import _unquote
@@ -76,6 +77,11 @@ class DeclaredFunction:
     kind: str = "action"  # "rule" ou "action" (diagnostics)
     comment: str = ""
     parameters: dict[str, type] = field(default_factory=dict)
+    #: Corps ``AS <expression>`` d'une règle écrite dans le DSL (arbre
+    #: ANTLR, compilé à chaque site d'appel) ; ``None`` = fonction
+    #: enregistrée côté code.
+    body: Any = None
+    body_text: str = ""
 
 
 @dataclass
@@ -145,6 +151,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         #: notamment dans INITIALIZE WORKFLOW où aucun état n'existe encore) :
         #: ``@state`` y désigne une instance de CET état.
         self._current_state: StateConfig | None = None
+        #: Vrai pendant le contrôle d'un corps de règle à sa déclaration :
+        #: le bloc d'appel (événement, état) n'est pas encore connu, les
+        #: chemins y sont seulement analysés (contrôlés à chaque appel).
+        self._checking_rule_body = False
 
     # ------------------------------------------------------------------
     # API publique
@@ -255,6 +265,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             self._register_declaration(
                 self.visitDefine_referenciel_statement(statement), statement
             )
+
+        # Corps de règles contrôlés une fois TOUTES les déclarations vues :
+        # une constante peut être déclarée après la règle qui l'utilise.
+        self._check_rule_bodies()
 
         for statement in ctx.define_state_statement():
             state = self.visitDefine_state_statement(statement)
@@ -411,8 +425,46 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         if parameters is not None:
             declaration.parameters.update(self.visitParameters(parameters))
 
+        body = getattr(ctx, "ruleBody", None)
+        if body is not None:
+            if name in self._rules:
+                # Coexistence décidée : corps DSL OU fonction de code, jamais
+                # les deux (laquelle ferait foi serait arbitraire).
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    ctx,
+                    f"rule {name!r} has a body (AS ...) and is also registered "
+                    "in code; keep only one",
+                )
+            declaration.body = body
+            declaration.body_text = self._source_text(body)
+
         self._declarations[name] = declaration
         return declaration
+
+    def _check_rule_bodies(self) -> None:
+        self._checking_rule_body = True
+        try:
+            for declaration in self._declarations.values():
+                if declaration.body is not None:
+                    self._compile_rule_body(declaration)
+        finally:
+            self._checking_rule_body = False
+
+    def _compile_rule_body(self, declaration: DeclaredFunction) -> Callable[..., Any]:
+        """Corps de règle → callable ``(ctx, **params)``, comme une règle de
+        code : l'appel (journal, conversion des arguments) reste commun."""
+        compiled = ExpressionCompiler(
+            parameters=declaration.parameters,
+            constants={k: c.value for k, c in self._constants.items()},
+            make_path=self._make_path,
+            error=self._raise_positioned,
+        ).compile(declaration.body)
+
+        def body_rule(run_ctx: RunContext, **params: Any) -> Any:
+            return compiled(run_ctx, params)
+
+        return body_rule
 
     def visitParameters(self, ctx: WorkflowParser.ParametersContext) -> dict[str, type]:
         result: dict[str, type] = {}
@@ -764,7 +816,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         if kind == "incomingevent":
             path = EventPath(segments)
-            if self._current_event is not None:
+            if self._current_event is not None and not self._checking_rule_body:
                 declared = self._workflow.declared_events.get(self._current_event)
                 if declared is not None:
                     self._check_document_path(
@@ -774,6 +826,8 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             return path
 
         if kind == "state":
+            if self._checking_rule_body:
+                return StatePath(segments, "")
             state = self._current_state
             if state is None:
                 self._raise_positioned(
@@ -913,26 +967,48 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         return inner, f"({inner_code})"
 
     def _compile_rule_call(self, ctx, name: str) -> tuple[Rule, str]:
-        if name not in self._rules:
-            self._raise_positioned(
-                InvalidMethodReferenceError,
-                ctx,
-                f"rule {name!r} is not registered",
-            )
-        func = self._rules.get(name)
+        declaration = self._declarations.get(name)
+        has_body = declaration is not None and declaration.body is not None
 
         provided: list[tuple[str, str, Any]] = []
         arguments = ctx.arguments()
         if arguments is not None:
             provided = self.visitArguments(arguments)
 
-        # Validation contre la signature du callable enregistré.
-        try:
-            self._rules.validate_call(name, [key for key, _, _ in provided])
-        except WorkflowError as exc:
-            self._raise_positioned(type(exc), ctx, str(exc))
+        if has_body:
+            # Recompilé ICI : @state et le contrôle des chemins @IncomingEvent
+            # dépendent du bloc appelant ; l'erreur pointe le corps et cite
+            # l'appel.
+            try:
+                func = self._compile_rule_body(declaration)
+            except WorkflowError as exc:
+                raise type(exc)(
+                    f"{exc} (in rule {name!r} called at {self._position(ctx)})"
+                ) from None
+            missing = [
+                p for p in declaration.parameters
+                if p not in {key for key, _, _ in provided}
+            ]
+            if missing:
+                self._raise_positioned(
+                    MissingArgumentNameError,
+                    ctx,
+                    f"missing argument(s) {missing} in call to rule {name!r}",
+                )
+        else:
+            if name not in self._rules:
+                self._raise_positioned(
+                    InvalidMethodReferenceError,
+                    ctx,
+                    f"rule {name!r} is not registered",
+                )
+            func = self._rules.get(name)
 
-        declaration = self._declarations.get(name)
+            # Validation contre la signature du callable enregistré.
+            try:
+                self._rules.validate_call(name, [key for key, _, _ in provided])
+            except WorkflowError as exc:
+                self._raise_positioned(type(exc), ctx, str(exc))
         resolvers: dict[str, ContextValue] = {}
         for key, raw_value, argument_ctx in provided:
             declared_type = (

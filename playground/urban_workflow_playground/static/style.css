@@ -227,6 +227,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .cm-number { color: #f78c6c; }
 .cm-variable-2 { color: #7fdbca; }
 .cm-variable { color: #d8dee9; }
+.cm-builtin { color: #82aaff; }
+.cm-operator { color: #89ddff; }
 
 .CodeMirror-hints {
   background: var(--panel);
@@ -332,6 +334,9 @@ kbd {
   font-size: 13px;
 }
 .rule-row code { flex: 1; word-break: break-all; }
+.rule-row.dsl-rule small { color: var(--muted); }
+.rule-row.overridden { opacity: .5; }
+.rule-row.overridden code { text-decoration: line-through; }
 .rule-row .remove {
   background: none; border: none; color: var(--muted); cursor: pointer;
 }

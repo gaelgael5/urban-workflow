@@ -41,13 +41,19 @@ EQUAL :     '=';
 EXIT  :     'EXIT';
 EXPIRE :    'EXPIRE';
 
+// Extension urban-workflow : litteraux et operateurs des expressions de
+// regle (DEFINE RULE ... AS <expression>;). Mots reserves en MAJUSCULES.
+FALSE :     'FALSE';
+
 FRAGMENT :  'FRAGMENT';
 
 HOUR :      'HOUR';
 
+IN :        'IN';
 INCLUDE :   'INCLUDE';
 INITIALIZE :'INITIALIZE';
 INTEGER :   'INTEGER';
+IS :        'IS';
 
 MATCHING :  'MATCHING';
 MINUTE :    'MINUTE';
@@ -55,6 +61,7 @@ MINUTE :    'MINUTE';
 NAME :      'NAME';
 
 NOT :       'NOT';
+NULL :      'NULL';
 
 ON :        'ON';
 OR :        'OR';
@@ -70,6 +77,7 @@ STORE :     'STORE';
 
 TEXT :      'TEXT';
 TIME :      'TIME';
+TRUE :      'TRUE';
 // Extension urban-workflow : cle d'unicite des evenements (anti-doublon).
 UNIQUE :    'UNIQUE';
 VERSION:    'VERSION';
@@ -94,6 +102,18 @@ AROBASE :               '@';
 // des chemins @IncomingEvent... / @state... (documents JSON).
 LEFT_BRACKET :          '[';
 RIGHT_BRACKET :         ']';
+// Extension urban-workflow : operateurs des expressions de regle. '/' et
+// '-' ne collisionnent pas avec les commentaires '/*' et '--' (le lexer
+// retient la correspondance la plus longue).
+NOT_EQUAL :             '!=' | '<>';
+LESS_EQUAL :            '<=';
+GREATER_EQUAL :         '>=';
+LESS :                  '<';
+GREATER :               '>';
+PLUS :                  '+';
+MINUS :                 '-';
+STAR :                  '*';
+SLASH :                 '/';
 SPACES: [ \t\r\n]+ -> skip;
     
 // Rule #504 <SIMPLE_LETTER> - simple_latin _letter was generalised into SIMPLE_LETTER

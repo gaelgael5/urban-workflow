@@ -67,11 +67,13 @@ class SurfaceEvent:
 
 @dataclass
 class SurfaceFunction:
-    """``DEFINE RULE|ACTION nom (TYPE param, …) 'libellé';``"""
+    """``DEFINE RULE|ACTION nom (TYPE param, …) 'libellé' [AS corps];``"""
 
     name: str
     params: list[dict[str, str]] = field(default_factory=list)  # {type, name}
     label: str = ""
+    #: Corps d'une règle écrite dans le DSL (texte source brut), "" sinon.
+    body: str = ""
 
 
 @dataclass
@@ -168,6 +170,7 @@ class SurfaceModel:
                         for p in f.get("params", [])
                     ],
                     label=str(f.get("label", "")),
+                    body=str(f.get("body", "") or ""),
                 )
                 for f in items or []
             ]
@@ -285,6 +288,9 @@ def _function(ctx) -> SurfaceFunction:
             {"type": p.type_().getText(), "name": p.key().getText()}
             for p in parameters.parameter()
         ]
+    body = getattr(ctx, "ruleBody", None)
+    if body is not None:
+        declared.body = _snippet(body)
     return declared
 
 
@@ -478,6 +484,10 @@ def render_script(model: SurfaceModel) -> str:
         head = f"DEFINE {keyword} {declared.name} ({signature})"
         if declared.label:
             head += f" {_quote(declared.label)}"
+        if declared.body:
+            # Corps multi-lignes : continuations réindentées sous la règle.
+            body = declared.body.replace("\n", "\n        ")
+            head += f"\n    AS {body}"
         lines.append(f"{head};")
 
     for rule in model.rules:

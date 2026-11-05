@@ -79,7 +79,8 @@
     <div id="tab-rules" class="tab active">
       <p class="hint-text">Règles métier disponibles pour les conditions
       <code>WHEN</code> : nom, paramètres typés et résultat simulé.
-      Sauvegardé dans le navigateur.</p>
+      Sauvegardé dans le navigateur. Les règles écrites dans le script
+      (<code>AS …</code>) sont évaluées pour de vrai.</p>
       <div id="rules-list"></div>
       <form id="rule-form">
         <input id="rule-name" placeholder="NomDeLaRegle" required
@@ -141,6 +142,14 @@ required: [Montant]"></textarea>
             <code>Uuid</code>, <code>CreationDate</code>, <code>EventId</code>
             + champs du schéma de l'état). Une instance est créée à chaque
             <code>SWITCH</code> ; indisponible dans <code>INITIALIZE WORKFLOW</code>.</li>
+        <li><code>DEFINE RULE R (DECIMAL seuil) '…' AS @IncomingEvent.Montant &gt; seuil;</code> :
+            règle écrite dans le script, évaluée par le moteur (pas d'entrée
+            dans Paramétrage). Opérateurs <code>= != &lt; &lt;= &gt; &gt;=</code>,
+            <code>+ - * /</code>, <code>IN (…)</code>, <code>IS [NOT] NULL</code>,
+            <code>AND/OR/NOT</code> ; fonctions <code>NOW()</code>,
+            <code>DAYS_BETWEEN(a, b)</code>, <code>HOURS_BETWEEN</code>,
+            <code>MINUTES_BETWEEN</code>, <code>LENGTH(x)</code>,
+            <code>CONTAINS(x, y)</code>. Valeur absente = <code>NULL</code>.</li>
         <li>Vues <b>Événements</b> et <b>États</b> : liste des objets du
             script ; pour chacun, le socle commun (non modifiable) et l'éditeur
             visuel du schéma métier, synchronisé avec son YAML et le panneau

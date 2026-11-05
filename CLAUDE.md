@@ -219,6 +219,29 @@ calcul de ses champs métier est À CADRER), le workflow (hors cadrage).
   + repli regex `state_schema_refs` ; contrôle « pas de redéfinition du
   socle » selon l'USAGE du schéma (événement ou état), après le parse.
 
+## Hors plan — Règles écrites dans le DSL (fait)
+
+Cadrage du 2026-11-05 : corps dans le `DEFINE RULE`, langage complet dès
+la v1, coexistence avec les règles Python.
+- Grammaire : `RULE key (…) comment? (AS ruleBody=expression)?` ; règle
+  `expression` récursive à gauche (priorité = ordre des alternatives :
+  moins unaire, `* /`, `+ -`, comparaisons/IN/IS NULL, NOT, AND, OR) ;
+  tokens `IN IS NULL TRUE FALSE` (mots réservés) et opérateurs.
+- `dsl/expressions.py` : `ExpressionCompiler` → closures
+  `(run_ctx, params)` ; `FUNCTIONS` (NOW, LENGTH, CONTAINS, *_BETWEEN) —
+  miroir `RULE_FUNCTIONS` dans `static/app.js`. Sémantique « jamais
+  d'exception » : NULL, comparaison impossible = faux, calcul impossible =
+  NULL.
+- Visiteur : `DeclaredFunction.body` ; contrôle des corps après TOUTES les
+  déclarations (`_check_rule_bodies`, mode `_checking_rule_body` sans
+  contrôle de chemins) puis **recompilation à chaque site d'appel**
+  (`@state`/schéma de l'événement du bloc appelant ; erreur « … (in rule X
+  called at …) »). Corps + fonction enregistrée = erreur.
+- Surface : `SurfaceFunction.body`. Playground : règles à corps ignorées
+  du panneau (`_RE_RULE_BODY`), `symbols.rules[].body`, complétion dans le
+  corps (`enclosingRuleBody`), exemple « validation » avec
+  `MontantInferieur` écrite dans le script.
+
 ## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 
 - **Troisième extension de grammaire** (commentée dans les .g4) : tokens

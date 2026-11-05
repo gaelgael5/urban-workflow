@@ -13,7 +13,17 @@
     "STATE", "ENTER", "EXIT", "AND", "OR", "NOT",
     "EXECUTE", "STORE", "EXPIRE", "AFTER", "WAITING", "BEFORE",
     "MINUTE", "HOUR", "DAY", "TEXT", "INTEGER", "DECIMAL",
-    "INCLUDE", "FRAGMENT",
+    "INCLUDE", "FRAGMENT", "IN", "IS", "NULL", "TRUE", "FALSE",
+  ];
+
+  // Fonctions du langage d'expressions des règles (DEFINE RULE … AS …) —
+  // miroir de urban_workflow.dsl.expressions.FUNCTIONS.
+  var RULE_FUNCTIONS = [
+    {name: "NOW", args: ""}, {name: "LENGTH", args: "valeur"},
+    {name: "CONTAINS", args: "conteneur, element"},
+    {name: "DAYS_BETWEEN", args: "debut, fin"},
+    {name: "HOURS_BETWEEN", args: "debut, fin"},
+    {name: "MINUTES_BETWEEN", args: "debut, fin"},
   ];
 
   CodeMirror.defineSimpleMode("workflow-dsl", {
@@ -25,8 +35,11 @@
       {regex: /@[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*|\[\d+\]|\['(?:[^'\n]|'')*'\])*/, token: "variable-2"},
       {regex: /'(?:[^'\n]|'')*'/, token: "string"},
       {regex: new RegExp("\\b(?:" + KEYWORDS.join("|") + ")\\b"), token: "keyword"},
-      {regex: /\b\d+\b/, token: "number"},
+      {regex: new RegExp("\\b(?:" + RULE_FUNCTIONS.map(function (f) {
+        return f.name; }).join("|") + ")(?=\\s*\\()", "i"), token: "builtin"},
+      {regex: /\b\d+(?:\.\d+)?\b/, token: "number"},
       {regex: /[A-Za-z][\w$#]*/, token: "variable"},
+      {regex: /!=|<>|<=|>=|[<>+*\/-]/, token: "operator"},
       {regex: /[();=,.\[\]]/, token: "punctuation"},
     ],
     comment: [
@@ -104,6 +117,7 @@
         renderStatus(data);
         renderDiagnostics();
         renderStructure(data.summary);
+        renderRules();
         updateLinting(lastErrors.map(function (e) {
           var line = Math.max(0, (e.line || 1) - 1);
           var ch = Math.max(0, e.column || 0);
@@ -156,6 +170,42 @@
     return last && last[1] ? last[1] : null;
   }
 
+  /** Règle dont le curseur est dans le corps (``DEFINE RULE X (…) 'l' AS …``
+   * pas encore terminé par « ; ») : {name, params} ou null. */
+  function enclosingRuleBody(textBefore) {
+    var text = textBefore.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/'(?:[^'\n]|'')*'/g, "''");
+    var re = /\bDEFINE\s+RULE\s+([A-Za-z][\w$#]*)\s*\(([^)]*)\)\s*(?:'')?\s*AS\b/gi;
+    var last = null, m;
+    while ((m = re.exec(text)) !== null) { last = m; }
+    if (!last || text.slice(last.index + last[0].length).indexOf(";") >= 0) { return null; }
+    var params = [];
+    last[2].replace(/(?:TEXT|INTEGER|DECIMAL)\s+([A-Za-z][\w$#]*)/gi, function (_, n) {
+      params.push(n);
+    });
+    return {name: last[1], params: params};
+  }
+
+  function ruleBodyCompletions(rule) {
+    var items = rule.params.map(function (p) {
+      return {text: p, displayText: p + "  ·  paramètre"};
+    });
+    (symbols.constants || []).forEach(function (c) {
+      var name = c.name || c;
+      items.push({text: name, displayText: name + "  ·  constante"});
+    });
+    RULE_FUNCTIONS.forEach(function (f) {
+      items.push({text: f.name + "(" + (f.args ? "" : ")"),
+                  displayText: f.name + "(" + f.args + ")  ·  fonction"});
+    });
+    ["@IncomingEvent.", "@state."].forEach(function (p) {
+      items.push({text: p, displayText: p});
+    });
+    ["AND ", "OR ", "NOT ", "IN (", "IS NULL", "IS NOT NULL", "TRUE", "FALSE"]
+      .forEach(function (k) { items.push({text: k, displayText: k.trim()}); });
+    return items;
+  }
+
   // Chemins @IncomingEvent. / @state. : propriétés de l'objet du bloc
   // courant (métier d'abord, puis socle — ordre fourni par le serveur).
   var PATH_KINDS = {
@@ -172,8 +222,11 @@
       owner: enclosingState,
       byName: function () { return symbols.state_properties || {}; },
       // Hors d'un bloc DEFINE STATE, @state n'existe pas (refusé à
-      // l'analyse) : rien à proposer.
-      fallback: function () { return []; },
+      // l'analyse) : rien à proposer — sauf dans le corps d'une règle, où
+      // il désignera l'état du bloc APPELANT : seul le socle est certain.
+      fallback: function (before) {
+        return enclosingRuleBody(before) ? (symbols.base_state_paths || []) : [];
+      },
     },
   };
 
@@ -181,7 +234,7 @@
     var spec = PATH_KINDS[context];
     var before = cm.getRange(CodeMirror.Pos(0, 0), cm.getCursor());
     var owner = spec.owner(before);
-    var paths = (owner && spec.byName()[owner]) || spec.fallback();
+    var paths = (owner && spec.byName()[owner]) || spec.fallback(before);
     return paths.map(function (p) {
       return {
         text: spec.prefix + p.path,
@@ -258,7 +311,13 @@
     var start = cursor.ch - (match ? match[0].length : 0);
     var typed = (match ? match[0] : "").toLowerCase();
 
-    var list = completionsFor(context).filter(function (item) {
+    // Corps d'une règle : paramètres, constantes, fonctions, opérateurs —
+    // prioritaire sur « AS @schema » et « = constante » qui s'y tromperaient.
+    var rule = enclosingRuleBody(cm.getRange(CodeMirror.Pos(0, 0), cursor));
+    var candidates = rule && context !== "path" ? ruleBodyCompletions(rule)
+                                                : completionsFor(context);
+
+    var list = candidates.filter(function (item) {
       return !typed || item.text.toLowerCase().indexOf(typed) === 0 ||
              item.displayText.toLowerCase().indexOf(typed) === 0;
     });
@@ -370,6 +429,20 @@
   function renderRules() {
     var el = document.getElementById("rules-list");
     el.innerHTML = "";
+    // Règles écrites dans le script (DEFINE RULE … AS …) : évaluées par le
+    // moteur, rien à simuler ; une entrée homonyme du panneau est ignorée.
+    var withBody = {};
+    (symbols.rules || []).forEach(function (rule) {
+      if (!rule.body) { return; }
+      withBody[rule.name] = true;
+      var row = document.createElement("div");
+      row.className = "rule-row dsl-rule";
+      row.title = rule.body;
+      row.innerHTML = "<code>" + esc(rule.name + "(" + (rule.params || []).map(function (p) {
+        return p.type + " " + p.name; }).join(", ") + ")") + "</code>" +
+        "<small>écrite dans le script</small>";
+      el.appendChild(row);
+    });
     if (!ruleSettings.length) {
       el.innerHTML = "<p class='hint-text'>Aucune règle paramétrée. " +
         "Les conditions WHEN exigeront leur enregistrement.</p>";
@@ -380,6 +453,10 @@
       var signature = rule.name + "(" + rule.params.map(function (p) {
         return p.type + " " + p.name;
       }).join(", ") + ")";
+      if (withBody[rule.name]) {
+        row.className += " overridden";
+        row.title = "Ignorée : le script écrit le corps de cette règle (AS …)";
+      }
       row.innerHTML = "<code>" + esc(signature) + "</code>" +
         "<label class='inline'><input type='checkbox' " +
         (rule.result ? "checked" : "") + "> vraie</label>" +

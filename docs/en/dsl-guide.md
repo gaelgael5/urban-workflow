@@ -107,8 +107,49 @@ DEFINE RULE AmountBelow (DECIMAL threshold) 'amount is below the threshold';
 A rule is a **business predicate** used in `WHEN` conditions. Its signature
 (`TEXT`, `INTEGER`, `DECIMAL`) types the arguments: a `'500'` literal passed
 to a `DECIMAL` parameter reaches Python as a `float`. The implementation is
-a Python callable registered under the same name (see
-[integration-guide.md](integration-guide.md) §2).
+either a Python callable registered under the same name (see
+[integration-guide.md](integration-guide.md) §2), or a **body written in
+the DSL** (below).
+
+#### Rules written in the DSL (`AS <expression>`)
+
+urban-workflow extension: a simple rule can carry its logic in its
+declaration, without code.
+
+```sql
+DEFINE RULE AmountBelow (DECIMAL threshold) 'amount is below the threshold'
+    AS @IncomingEvent.Amount < threshold;
+DEFINE RULE CanRemind (INTEGER days) 'state open long enough'
+    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= days
+       AND @IncomingEvent.Channel IN ('web', 'mobile');
+```
+
+It is called exactly like a code rule. A rule has a body OR a registered
+function: both for the same name are rejected at load time. Every declared
+parameter must be given at the call.
+
+| Element | Syntax |
+|---|---|
+| values | `42`, `1.5`, `'text'`, `TRUE`, `FALSE`, `NULL` |
+| references | rule parameters, constants, `@IncomingEvent.…`, `@state.…`, `@Workflow.…` paths |
+| arithmetic | `-x`, `*`, `/`, `+`, `-` |
+| comparisons | `=`, `!=` (or `<>`), `<`, `<=`, `>`, `>=`, `x [NOT] IN (a, b…)`, `x IS [NOT] NULL` |
+| logic | `NOT`, `AND`, `OR`, parentheses |
+| functions | `NOW()`, `DAYS_BETWEEN(start, end)`, `HOURS_BETWEEN`, `MINUTES_BETWEEN`, `LENGTH(x)`, `CONTAINS(container, item)` |
+
+Usual precedence, strongest first: unary minus, `* /`, `+ -`,
+comparisons, `NOT`, `AND`, `OR`. Text takes quotes: an unknown bare name is
+an error. `IN`, `IS`, `NULL`, `TRUE`, `FALSE` become reserved words.
+
+**A rule never makes processing fail.** A missing value is `NULL`; an
+impossible ordering comparison is false; an impossible computation
+(`NULL`, division by zero) yields `NULL`; `AND`/`OR`/`NOT` read `NULL` as
+false. Document dates (ISO 8601 text) compare with `NOW()`.
+
+**Checked at load time, per call.** The body is compiled where the rule is
+called: `@state` is the calling block's state (rejected from `INITIALIZE
+WORKFLOW`), and `@IncomingEvent.…` paths are checked against the calling
+event's schema. The error points at the body and names the call.
 
 ### Actions
 
@@ -461,6 +502,7 @@ MATCHING (K = 'v' …)                      -- event routing
 
 DEFINE EVENT  Name 'label' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Name (TYPE arg, …) 'label';      -- TYPE: TEXT|INTEGER|DECIMAL
+DEFINE RULE   Name (TYPE arg, …) 'label' AS expression;   -- body in the DSL
 DEFINE ACTION Name (TYPE arg, …) 'label';
 DEFINE CONST  name value 'label';              -- value: 'txt' | 42 | n DAY
 

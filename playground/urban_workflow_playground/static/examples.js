@@ -12,7 +12,10 @@ DEFINE EVENT  ValidationAccordee 'un valideur approuve';
 DEFINE EVENT  ValidationRefusee  'un valideur refuse';
 
 DEFINE RULE   EstComplet (TEXT champs)         'les champs requis sont présents';
-DEFINE RULE   MontantInferieur (DECIMAL seuil) 'montant sous le seuil';
+-- Règle écrite dans le script (AS …) : évaluée par le moteur, sans
+-- entrée dans le panneau Paramétrage.
+DEFINE RULE   MontantInferieur (DECIMAL seuil) 'montant sous le seuil'
+    AS @IncomingEvent.Montant < seuil;
 
 DEFINE ACTION NotifierValideur (TEXT niveau, TEXT dossier)  'demande d''approbation';
 DEFINE ACTION NotifierDemandeur (TEXT motif, TEXT dossier)  'information du demandeur';
@@ -66,7 +69,6 @@ DEFINE STATE Expiree 'validation expirée sans réponse' ;
 `,
     rules: [
       {name: "EstComplet", params: [{name: "champs", type: "TEXT"}], result: true},
-      {name: "MontantInferieur", params: [{name: "seuil", type: "DECIMAL"}], result: true},
     ],
     schemas: [
       {name: "schema_DemandeSoumise",

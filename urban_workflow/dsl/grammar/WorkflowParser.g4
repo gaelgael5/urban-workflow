@@ -186,7 +186,41 @@ action_declaration_statement :
     ;
 
 rule_declaration_statement :
-    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment?
+    // (AS ...) : extension urban-workflow -- corps de la regle ecrit dans le
+    // DSL, evalue par le moteur. Sans corps, la regle reste une fonction
+    // enregistree cote code (FunctionRegistry), comme dans le source.
+    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS ruleBody=expression)?
+    ;
+
+// Extension urban-workflow : langage d'expressions des regles. Dans une
+// regle recursive a gauche, ANTLR donne la priorite aux alternatives les
+// plus HAUTES : moins unaire, puis * /, + -, comparaisons / IN / IS NULL,
+// NOT, AND, OR -- l'ordre usuel (NOT a = b se lit NOT (a = b)).
+expression :
+      MINUS expression                                                  #negateExpression
+    | expression op=(STAR | SLASH) expression                           #multiplyExpression
+    | expression op=(PLUS | MINUS) expression                           #addExpression
+    | expression op=(EQUAL | NOT_EQUAL | LESS | LESS_EQUAL | GREATER | GREATER_EQUAL) expression
+                                                                        #compareExpression
+    | expression NOT? IN LEFT_PAREN expression (COMMA expression)* RIGHT_PAREN
+                                                                        #inExpression
+    | expression IS NOT? NULL                                           #nullExpression
+    | NOT expression                                                    #notExpression
+    | expression AND expression                                         #andExpression
+    | expression OR expression                                          #orExpression
+    | primaryExpression                                                 #primary
+    ;
+
+primaryExpression :
+      numeric                                                           #numericLiteral
+    | number                                                            #integerLiteral
+    | string                                                            #stringLiteral
+    | (TRUE | FALSE)                                                    #booleanLiteral
+    | NULL                                                              #nullLiteral
+    | contextPath                                                       #pathValue
+    | key LEFT_PAREN (expression (COMMA expression)*)? RIGHT_PAREN      #functionCall
+    | key                                                               #identifier
+    | LEFT_PAREN expression RIGHT_PAREN                                 #parenthesized
     ;
 
 parameters : 

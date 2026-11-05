@@ -551,3 +551,54 @@ class TestStatesInPlayground:
                   "schemas": [{"name": "schema_Ouvert", "yaml": yaml_text}]},
         ).json()
         assert data["ok"] is True, data["errors"]
+
+
+BODY_SCRIPT = """
+NAME Demo
+DEFINE EVENT Ouverture 'ouverture';
+DEFINE RULE MontantEleve (DECIMAL seuil) 'montant élevé'
+    AS @IncomingEvent.Montant > seuil;
+INITIALIZE WORKFLOW
+    ON EVENT Ouverture WHEN MontantEleve(seuil = '1000') SWITCH Ouvert
+DEFINE STATE Ouvert 'ouvert' ;
+"""
+
+
+class TestRuleBodies:
+    """Règles écrites dans le script (``AS <expression>``) : évaluées par
+    le moteur, sans entrée dans le panneau Paramétrage."""
+
+    def test_analyze_without_panel_entry(self):
+        data = client.post("/api/analyze", json={"script": BODY_SCRIPT}).json()
+        assert data["ok"] is True, data["errors"]
+        (rule,) = data["symbols"]["rules"]
+        assert rule["body"] == "@IncomingEvent.Montant > seuil"
+
+    def test_panel_entry_with_the_same_name_is_ignored(self):
+        rules = [{"name": "MontantEleve", "params": [{"name": "seuil", "type": "DECIMAL"}],
+                  "result": False}]
+        data = client.post(
+            "/api/analyze", json={"script": BODY_SCRIPT, "rules": rules}
+        ).json()
+        assert data["ok"] is True, data["errors"]
+
+    def test_simulation_really_evaluates_the_body(self):
+        def run(montant):
+            data = client.post(
+                "/api/simulate",
+                json={"script": BODY_SCRIPT, "events": [
+                    {"Name": "Ouverture", "ExternalId": "K", "Montant": montant}
+                ]},
+            ).json()
+            assert data["ok"] is True, data
+            return data["workflows"]
+
+        assert run(1500)[0]["state"] == "Ouvert"
+        assert run(500) == []
+
+    def test_regex_fallback_flags_bodies_while_typing(self):
+        broken = BODY_SCRIPT + "\nDEFINE STATE"  # script invalide pendant la frappe
+        data = client.post("/api/analyze", json={"script": broken}).json()
+        assert data["ok"] is False
+        (rule,) = data["symbols"]["rules"]
+        assert rule["body"]
