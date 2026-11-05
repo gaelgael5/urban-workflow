@@ -290,14 +290,22 @@ Ici l'instance naît dans `Tri`, et la demande est immédiatement redirigée
 vers `Incomplete`, `Approuvee` ou `EnValidation` selon les règles (deux
 instances d'état : `Tri`, puis la cible).
 
-**Switch viable.** Avec `RECURSIVE`, un switch n'est retenu que si l'état
-cible **offre ensuite une route** pour l'événement réévalué : une branche
-qui passe (`WHEN` vrai ou branche sans `WHEN`), ou aucun `ON EVENT` pour
-cet événement. Si `Tri` gère `DemandeSoumise` mais qu'aucune de ses
-branches ne passe, tout se passe **comme si ce switch n'avait pas été
-rencontré** : pas d'instance `Tri`, pas de workflow créé, aucune action (la
-raison est tracée dans le journal fonctionnel). Le moteur .NET d'origine
-laissait au contraire l'instance bloquée dans `Tri`, sans le signaler.
+**Switch viable.** Tout switch (initialisation ou transition, avec ou
+sans `RECURSIVE`) n'est retenu que si l'état cible **offre ensuite une
+route** pour l'événement courant : une branche qui passe (`WHEN` vrai ou
+branche sans `WHEN`), ou aucun `ON EVENT` pour cet événement. Si `Tri` gère
+`DemandeSoumise` mais qu'aucune de ses branches ne passe, tout se passe
+**comme si ce switch n'avait pas été rencontré** : pas d'instance `Tri`,
+aucune action, on reste dans l'état courant (ou pas de workflow créé, pour
+un initialiseur) et la branche suivante est essayée ; la raison est tracée
+dans le journal fonctionnel. Le moteur .NET d'origine laissait au
+contraire l'instance bloquée dans `Tri`, sans le signaler.
+
+La route trouvée n'est **suivie** qu'avec `RECURSIVE` ; sans, elle sert
+seulement au contrôle. Le regard porte sur un seul niveau (la cible de la
+route trouvée n'est pas contrôlée à son tour), et les gardes de la cible
+peuvent être évaluées deux fois : les règles doivent rester des prédicats
+sans effet de bord.
 Sans `RECURSIVE`, l'événement n'est pas réévalué dans la cible : aucun
 contrôle de route n'a lieu.
 

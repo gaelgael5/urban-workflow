@@ -9,8 +9,8 @@ Décisions de cadrage (2026-11-05) :
   le même état) ;
 - ``@state`` = l'état courant, celui du bloc ``DEFINE STATE`` où l'on écrit ;
 - un switch n'est valide que si l'état cible offre ensuite une route pour
-  l'événement réévalué (RECURSIVE) ; sinon tout se passe comme si ce switch
-  n'avait pas été rencontré.
+  l'événement courant, avec ou sans RECURSIVE ; sinon tout se passe comme si
+  ce switch n'avait pas été rencontré.
 """
 
 from __future__ import annotations
@@ -135,7 +135,9 @@ class TestStatePathResolution:
         engine, storage = _engine(BASE_SCRIPT.format(path="@state.Name"), _rules(captured))
         _send(engine, "Ouverture")
         _send(engine, "Relance")
-        assert captured == ["Ouvert"]
+        # Boucle Ouvert → Ouvert : la garde est évaluée pour la branche, puis
+        # une seconde fois par le contrôle de viabilité dans la cible.
+        assert captured == ["Ouvert", "Ouvert"]
 
     def test_uuid_and_creation_date_come_from_the_instance(self):
         from datetime import datetime, timezone
@@ -146,7 +148,7 @@ class TestStatePathResolution:
         with WorkflowClock.frozen(entry):
             _send(engine, "Ouverture")
         _send(engine, "Relance")
-        (document,) = captured
+        document = captured[0]  # garde de la branche, instance d'origine
         instance = storage.get_by(Workflow, "K", "external_id")[0].states[0]
         assert document["Name"] == "Ouvert"
         assert document["Uuid"] == str(instance.uuid)
@@ -259,13 +261,61 @@ class TestViableSwitch:
         workflow = storage.get_by(Workflow, "K", "external_id")[0]
         assert [s.name for s in workflow.states] == ["Tri"]
 
-    def test_no_lookahead_without_recursive(self):
-        # Sans RECURSIVE, l'événement n'est pas réévalué dans Tri : la cible
-        # n'a pas à offrir de route pour CET événement.
+    def test_dead_end_without_recursive_too(self):
+        # Le contrôle vaut même sans RECURSIVE (décision utilisateur) : Tri
+        # gère Depot sans branche passante → pas de workflow.
         engine, storage = _engine(ROUTING_SCRIPT.replace(" RECURSIVE", ""), _rules([], {}))
+        _send(engine, "Depot")
+        assert storage.get_all(Workflow) == []
+
+    def test_without_recursive_the_route_is_not_executed(self):
+        engine, storage = _engine(
+            ROUTING_SCRIPT.replace(" RECURSIVE", ""), _rules([], {"a": True})
+        )
         _send(engine, "Depot")
         workflow = storage.get_by(Workflow, "K", "external_id")[0]
         assert [s.name for s in workflow.states] == ["Tri"]
+        assert workflow.current_state == "Tri"
+
+
+EXISTING_SCRIPT = """
+NAME Demo
+DEFINE EVENT Ouverture 'o';
+DEFINE EVENT Relance 'r';
+DEFINE RULE Condition (TEXT nom) 'condition';
+INITIALIZE WORKFLOW
+    ON EVENT Ouverture SWITCH A
+DEFINE STATE A 'a'
+    ON EVENT Relance
+        WHEN Condition(nom = 'vers_b') SWITCH B
+        WHEN Condition(nom = 'vers_c') SWITCH C
+;
+DEFINE STATE B 'b'
+    ON EVENT Relance WHEN Condition(nom = 'sortie_b') SWITCH C
+;
+DEFINE STATE C 'c' ;
+"""
+
+
+class TestViableSwitchInExistingWorkflow:
+    def _states(self, results):
+        engine, storage = _engine(EXISTING_SCRIPT, _rules([], results))
+        _send(engine, "Ouverture")
+        _send(engine, "Relance")
+        workflow = storage.get_by(Workflow, "K", "external_id")[0]
+        return [s.name for s in workflow.states], workflow.current_state
+
+    def test_dead_end_keeps_the_current_state(self):
+        # B gère Relance mais sortie_b ne passe pas : le switch vers B est
+        # ignoré, on reste en A, sans instance pour B.
+        assert self._states({"vers_b": True}) == (["A"], "A")
+
+    def test_next_branch_is_tried(self):
+        assert self._states({"vers_b": True, "vers_c": True}) == (["A", "C"], "C")
+
+    def test_route_in_target_makes_the_switch_valid(self):
+        # Sans RECURSIVE, la route de B n'est pas suivie : on s'arrête en B.
+        assert self._states({"vers_b": True, "sortie_b": True}) == (["A", "B"], "B")
 
 
 class TestBaseStateSchema:

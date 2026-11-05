@@ -207,10 +207,12 @@ calcul de ses champs métier est À CADRER), le workflow (hors cadrage).
 - `@state` = `StatePath` liée au chargement au NOM de l'état du bloc
   (`_current_state` du visiteur) → instance la plus récente de cet état ;
   erreur positionnée dans INITIALIZE. Contrôle contre le schéma de l'état.
-- **Switch viable** (RECURSIVE seulement) : `_find_route` ; état cible qui
-  gère l'événement sans branche passante → comme si le switch n'avait pas
-  été rencontré (pas de workflow). Route présélectionnée réutilisée (gardes
-  évaluées une fois).
+- **Switch viable — TOUT switch, avec ou sans RECURSIVE** (décision
+  utilisateur) : `_find_route` ; état cible qui gère l'événement sans
+  branche passante → comme si le switch n'avait pas été rencontré (pas
+  d'instance ni d'action, état courant conservé ou pas de workflow, branche
+  suivante essayée). Route suivie seulement avec RECURSIVE (présélectionnée,
+  gardes évaluées une fois) ; regard à un niveau.
 - Playground : `models.js` = UN composant pour les vues Événements et États
   (`OBJECT_KINDS`), éléments repérés par `data-ref` scopés à la vue (deux
   vues dans la page) ; `state_details`/`state_properties`/`base_state_paths`

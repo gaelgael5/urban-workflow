@@ -250,12 +250,19 @@ The instance is born in `Dispatch` and the request is immediately routed to
 `Incomplete`, `Approved` or `UnderReview` according to the rules (two state
 instances: `Dispatch`, then the target).
 
-**Viable switch.** With `RECURSIVE`, a switch only counts if the target state
-then **offers a route** for the re-evaluated event: a passing branch, or no
-`ON EVENT` for that event. If `Dispatch` handles the event but no branch
-passes, everything happens **as if that switch had not been met**: no
-`Dispatch` instance, no workflow created, no action (logged in the
-functional log). Without `RECURSIVE` there is no route check.
+**Viable switch.** Every switch (initializer or transition, with or
+without `RECURSIVE`) only counts if the target state then **offers a route**
+for the current event: a passing branch, or no `ON EVENT` for that event.
+If `Dispatch` handles the event but no branch passes, everything happens
+**as if that switch had not been met**: no `Dispatch` instance, no action,
+the workflow stays in its current state (or is not created, for an
+initializer) and the next branch is tried; the reason is logged in the
+functional log.
+
+The route found is only **followed** with `RECURSIVE`; without it, it is
+used for the check alone. The look-ahead is one level deep, and the
+target's guards may be evaluated twice: rules must stay side-effect-free
+predicates.
 
 ## 6. States and transitions (`SWITCH`)
 

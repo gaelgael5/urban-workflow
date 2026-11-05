@@ -268,12 +268,12 @@ class WorkflowProcessor:
     ) -> tuple[RunContext, TransitionConfig | None] | None:
         """Contexte du workflow à créer et route présélectionnée, ou None.
 
-        Un switch d'initialisation n'est retenu que s'il est VIABLE : avec
-        RECURSIVE, l'événement est réévalué dans l'état cible, qui doit alors
-        offrir une route (une branche qui passe, ou aucun ``ON EVENT`` pour
-        cet événement). Sinon tout se passe comme si ce switch n'avait pas
-        été rencontré : branche suivante, et au bout aucune création — le
-        source laissait le workflow bloqué dans l'état cible, sans le dire.
+        Un switch d'initialisation n'est retenu que s'il est VIABLE (voir
+        ``_find_route``), avec ou sans RECURSIVE. Sinon tout se passe comme
+        si ce switch n'avait pas été rencontré : branche suivante, et au bout
+        aucune création — le source laissait le workflow bloqué dans l'état
+        cible, sans le dire. La route trouvée n'est exécutée qu'avec
+        RECURSIVE.
         """
 
         initializer = config.initializers.get(event.name)
@@ -297,18 +297,12 @@ class WorkflowProcessor:
             instance = self._enter_state(ctx, target)
             ctx.event.to_state = ctx.event.from_state = target
 
-            route: TransitionConfig | None = None
-            if initializer.recursive:
-                found = self._find_route(config, target, ctx)
-                if found is _DEAD_END:
-                    ctx.pending_states.remove(instance)
-                    ctx.event.to_state = ctx.event.from_state = ""
-                    ctx.functional_log.append(
-                        f"SWITCH {target} ignored: no route for "
-                        f"{event.name} in {target}"
-                    )
-                    continue
-                route = found
+            route = self._find_route(config, target, ctx)
+            if route is _DEAD_END:
+                ctx.pending_states.remove(instance)
+                ctx.event.to_state = ctx.event.from_state = ""
+                self._log_dead_end(ctx, target)
+                continue
 
             ctx.workflow.recursive = initializer.recursive
             return ctx, route
@@ -318,10 +312,21 @@ class WorkflowProcessor:
     def _find_route(
         self, config: WorkflowConfig, state_name: str, ctx: RunContext
     ) -> TransitionConfig | None | object:
-        """Première branche de ``state_name`` qui passe pour l'événement.
+        """Contrôle de viabilité d'un switch vers ``state_name``.
+
+        Décision de cadrage : un switch n'est valide que si, une fois dans
+        l'état cible, l'événement courant y trouve une route — qu'il y soit
+        ensuite réévalué (RECURSIVE) ou non.
 
         ``None`` = l'état ne gère pas cet événement (viable, rien à faire) ;
-        ``_DEAD_END`` = il le gère mais aucune branche ne passe.
+        une branche = la première qui passe ; ``_DEAD_END`` = il le gère
+        mais aucune branche ne passe.
+
+        Regard à UN niveau : la cible de la branche trouvée n'est pas
+        contrôlée à son tour (une boucle sur le même état ferait sinon
+        tourner le contrôle sans fin). Sans RECURSIVE, les gardes de la
+        cible sont donc évaluées pour le seul contrôle : les règles doivent
+        rester des prédicats sans effet de bord.
         """
         handler = config.states[state_name].events.get(ctx.incoming_event.name)
         if handler is None:
@@ -330,6 +335,13 @@ class WorkflowProcessor:
             if self._evaluate(transition, ctx):
                 return transition
         return _DEAD_END
+
+    @staticmethod
+    def _log_dead_end(ctx: RunContext, target: str) -> None:
+        ctx.functional_log.append(
+            f"SWITCH {target} ignored: no route for "
+            f"{ctx.incoming_event.name} in {target}"
+        )
 
     @staticmethod
     def _enter_state(ctx: RunContext, state_name: str) -> StateInstance:
@@ -390,13 +402,30 @@ class WorkflowProcessor:
         for transition in candidates:
             if preselected is not _UNSET or self._evaluate(transition, ctx):
 
+                target = transition.target_state
+                instance = self._enter_state(ctx, target.name)
+                # La route présélectionnée (après création RECURSIVE) n'est
+                # pas recontrôlée : regard à un niveau, cf. _find_route.
+                viable = preselected is not _UNSET or (
+                    self._find_route(config, target.name, ctx) is not _DEAD_END
+                )
+                # L'instance n'existait que pour le contrôle (les gardes de la
+                # cible voient déjà @state) ; retirée pour que les règles de
+                # sortie lisent encore l'instance de l'état quitté.
+                ctx.pending_states.remove(instance)
+                if not viable:
+                    # Comme si ce switch n'avait pas été rencontré : aucune
+                    # action, on reste dans l'état courant, branche suivante.
+                    self._log_dead_end(ctx, target.name)
+                    continue
+
                 # Actions de la transition, puis sortie d'état.
                 self._collect_rule_actions(transition.rule_actions, ctx)
                 self._collect_rule_actions(state.outcoming_rules, ctx)
 
-                state = transition.target_state
+                state = target
                 ctx.event.to_state = state.name
-                self._enter_state(ctx, state.name)
+                ctx.pending_states.append(instance)
 
                 # Entrée dans le nouvel état.
                 self._collect_rule_actions(state.incoming_rules, ctx)
