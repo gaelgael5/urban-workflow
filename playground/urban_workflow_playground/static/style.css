@@ -189,6 +189,24 @@ li.CodeMirror-hint-active { background: var(--accent); color: #0b0e13; }
   border-bottom: 2px solid var(--accent);
 }
 
+/* Repli du panneau de droite : il reste une bande étroite portant le seul
+   bouton de réouverture, pour laisser toute la largeur au diagramme (X6 en
+   autoResize suit tout seul). */
+.tabs .side-toggle {
+  flex: 0 0 34px;
+  font-size: 16px;
+  line-height: 1;
+}
+.tabs .side-toggle:hover { color: var(--text); }
+.side-pane.collapsed {
+  flex: 0 0 36px;
+  min-width: 36px;
+  max-width: 36px;
+}
+.side-pane.collapsed .tabs { border-bottom: none; }
+.side-pane.collapsed .tabs button[data-tab],
+.side-pane.collapsed .tab { display: none; }
+
 .tab { display: none; padding: 12px; overflow: auto; flex: 1; }
 .tab.active { display: block; }
 
@@ -304,4 +322,7 @@ button:hover { background: #3a4656; }
 @media (max-width: 900px) {
   main { flex-direction: column; }
   .side-pane { max-width: none; border-top: 1px solid var(--border); }
+  /* Empilé : le panneau replié devient une barre basse pleine largeur. */
+  .side-pane.collapsed { flex: 0 0 auto; min-width: 0; max-width: none; }
+  .side-pane.collapsed .tabs { justify-content: flex-end; }
 }

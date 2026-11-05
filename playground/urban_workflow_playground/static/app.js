@@ -446,9 +446,11 @@
   // Onglets + exemples
   // ------------------------------------------------------------------
 
-  document.querySelectorAll(".tabs button").forEach(function (button) {
+  // [data-tab] : le bouton de repli vit dans la même barre mais n'est pas un
+  // onglet — sans ce filtre il désactiverait l'onglet courant.
+  document.querySelectorAll(".tabs button[data-tab]").forEach(function (button) {
     button.onclick = function () {
-      document.querySelectorAll(".tabs button").forEach(function (b) {
+      document.querySelectorAll(".tabs button[data-tab]").forEach(function (b) {
         b.classList.toggle("active", b === button);
       });
       document.querySelectorAll(".tab").forEach(function (tab) {
@@ -456,6 +458,30 @@
       });
     };
   });
+
+  // Repli du panneau de droite, mémorisé par navigateur (préférence
+  // d'affichage, pas une donnée : un localStorage indisponible = déplié).
+  var SIDE_KEY = "uw-playground-side-collapsed";
+  var sidePane = document.querySelector(".side-pane");
+  var sideToggle = document.getElementById("side-collapse");
+  function setSideCollapsed(collapsed) {
+    sidePane.classList.toggle("collapsed", collapsed);
+    var label = collapsed ? "Déplier le panneau" : "Replier le panneau";
+    sideToggle.textContent = collapsed ? "«" : "»";
+    sideToggle.title = label;
+    sideToggle.setAttribute("aria-label", label);
+    sideToggle.setAttribute("aria-expanded", String(!collapsed));
+    try { localStorage.setItem(SIDE_KEY, collapsed ? "1" : "0"); } catch (err) { /* privé */ }
+    // CodeMirror mesure sa largeur au rendu : sans refresh, l'éditeur garde
+    // l'ancienne largeur jusqu'à la prochaine frappe. X6 suit seul (autoResize).
+    editor.refresh();
+  }
+  sideToggle.onclick = function () {
+    setSideCollapsed(!sidePane.classList.contains("collapsed"));
+  };
+  try {
+    if (localStorage.getItem(SIDE_KEY) === "1") { setSideCollapsed(true); }
+  } catch (err) { /* privé */ }
 
   document.getElementById("example-select").onchange = function (e) {
     var example = window.PLAYGROUND_EXAMPLES[e.target.value];

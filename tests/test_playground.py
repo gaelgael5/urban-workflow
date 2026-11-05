@@ -324,3 +324,8 @@ class TestFavicon:
 
     def test_index_declares_the_icon(self):
         assert 'rel="icon"' in client.get("/").text
+
+    def test_index_offers_the_side_pane_collapse_toggle(self):
+        # Bouton de repli du panneau de droite (le comportement lui-même est
+        # éprouvé dans un vrai navigateur sur la machine de test).
+        assert 'id="side-collapse"' in client.get("/").text
