@@ -13,3 +13,4 @@ tests
 **/dist
 .env
 deploy-logs
+playground/schema-editor

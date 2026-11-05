@@ -145,12 +145,28 @@ def _build_schema_registry(
             "urban-workflow[schemas] (PyYAML + jsonschema)."
         ]
 
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+    reserved = set(BASE_EVENT_SCHEMA["properties"])
     problems: list[str] = []
     for setting in settings:
         try:
             registry.add_yaml(setting.name, setting.yaml)
         except Exception as exc:
             problems.append(f"schéma {setting.name!r} : {exc}")
+            continue
+        # Les champs du socle sont validés par BASE_EVENT_SCHEMA sur TOUT
+        # événement : un schéma métier qui les redéfinit ajouterait une
+        # contrainte contradictoire (Uuid entier vs format uuid) que plus
+        # aucun événement ne pourrait satisfaire. Refusé ici, côté serveur,
+        # pour que l'éditeur visuel ne soit pas la seule barrière.
+        clash = sorted(reserved & set(registry.get(setting.name).get("properties", {})))
+        if clash:
+            problems.append(
+                f"schéma {setting.name!r} : {', '.join(clash)} "
+                "appartien(nen)t au socle commun des événements et ne se "
+                "redéfini(ssen)t pas dans un schéma métier"
+            )
     return registry, problems
 
 
@@ -192,7 +208,14 @@ def _symbols_from_text(script: str) -> dict[str, Any]:
 _DSL_TYPE_NAMES = {str: "TEXT", int: "INTEGER", float: "DECIMAL"}
 
 
-def _symbols_from_visitor(visitor: WorkflowConfigVisitor, config) -> dict[str, Any]:
+def _symbols_from_visitor(
+    visitor: WorkflowConfigVisitor, config, script: str
+) -> dict[str, Any]:
+    # build() ajoute aux événements déclarés ceux qui ne sont qu'utilisés
+    # (ON EVENT sans DEFINE EVENT) : on les distingue par le texte pour que
+    # la vue « Événements » propose de les déclarer.
+    declared_in_text = set(_RE_EVENT.findall(script))
+
     def declared(kind: str) -> list[dict[str, Any]]:
         return [
             {
@@ -212,11 +235,16 @@ def _symbols_from_visitor(visitor: WorkflowConfigVisitor, config) -> dict[str, A
         "event_details": [
             {
                 "name": d.name,
+                "label": d.label,
                 "schema_ref": d.schema_ref,
                 "unique": list(d.dedup_keys),
+                "declared": d.name in declared_in_text,
             }
+            # Tous les événements métier (et non plus seulement ceux qui
+            # portent AS/UNIQUE) : la vue « Événements » les liste tous. Les
+            # techniques ($_result, __expired) ne sont pas éditables.
             for d in config.declared_events.values()
-            if d.schema_ref or d.dedup_keys
+            if not d.name.startswith(("$", "__"))
         ],
         "rules": declared("rule"),
         "actions": declared("action"),
@@ -306,6 +334,15 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/base-event-schema")
+def base_event_schema() -> dict[str, Any]:
+    # Source unique du socle : la vue « Événements » l'affiche en lecture
+    # seule sans en garder une copie côté navigateur qui divergerait.
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+    return BASE_EVENT_SCHEMA
+
+
 @app.post("/api/analyze")
 def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
@@ -329,7 +366,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
             config = parser.visit(visitor)
             if not parser.is_fragment:
                 summary = _summary(config)
-            symbols = _symbols_from_visitor(visitor, config)
+            symbols = _symbols_from_visitor(visitor, config, request.script)
         except DslSyntaxError as exc:
             errors.extend(
                 _error_entry(e.message, e.line, e.column) for e in exc.errors

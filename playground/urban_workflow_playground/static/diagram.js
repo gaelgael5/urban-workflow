@@ -831,25 +831,27 @@
   // Barre d'outils + bascule de vue
   // ------------------------------------------------------------------
 
+  var VIEWS = ["editor", "diagram", "events"];
+
   function showView(which) {
-    document.getElementById("view-editor").classList
-      .toggle("active", which === "editor");
-    document.getElementById("view-diagram").classList
-      .toggle("active", which === "diagram");
-    document.getElementById("editor-view").classList
-      .toggle("active", which === "editor");
-    document.getElementById("diagram-view").classList
-      .toggle("active", which === "diagram");
+    VIEWS.forEach(function (name) {
+      document.getElementById("view-" + name).classList.toggle("active", name === which);
+      document.getElementById(name + "-view").classList.toggle("active", name === which);
+    });
     document.getElementById("diagram-tools").hidden = which !== "diagram";
     if (which === "editor") {
       bridge.refreshEditor();
-    } else if (!model) {
+    } else if (which === "diagram" && !model) {
       importFromEditor();
     }
+    // Les autres vues (events.js) se branchent sur cet événement plutôt que
+    // d'être connues d'ici.
+    document.dispatchEvent(new CustomEvent("uw:view", {detail: which}));
   }
 
-  document.getElementById("view-editor").onclick = function () { showView("editor"); };
-  document.getElementById("view-diagram").onclick = function () { showView("diagram"); };
+  VIEWS.forEach(function (name) {
+    document.getElementById("view-" + name).onclick = function () { showView(name); };
+  });
   document.getElementById("dg-import").onclick = importFromEditor;
   document.getElementById("dg-generate").onclick = generateToEditor;
   document.getElementById("dg-layout").onclick = function () {

@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/vendor/codemirror.css">
 <link rel="stylesheet" href="/static/vendor/show-hint.css">
 <link rel="stylesheet" href="/static/vendor/lint.css">
+<link rel="stylesheet" href="/static/vendor/schema-editor.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -29,6 +30,7 @@
     <div class="view-toggle">
       <button id="view-editor" class="active">Éditeur</button>
       <button id="view-diagram">Diagramme</button>
+      <button id="view-events" title="Lister les événements et éditer leur structure">Événements</button>
       <span id="diagram-tools" hidden>
         <button id="dg-add-state" title="Ajouter un état">＋ État</button>
         <button id="dg-link-mode"
@@ -43,6 +45,10 @@
     <div id="editor-view" class="view active">
       <textarea id="editor"></textarea>
       <div id="diagnostics" class="diagnostics"></div>
+    </div>
+    <div id="events-view" class="view">
+      <nav id="ev-list" class="ev-list" aria-label="Événements du script"></nav>
+      <section id="ev-detail" class="ev-detail"></section>
     </div>
     <div id="diagram-view" class="view">
       <div id="diagram-canvas"></div>
@@ -118,6 +124,11 @@ required: [Montant]"></textarea>
             le schéma (panneau Paramétrage) valide le payload ; UNIQUE et la
             propriété <code>DedupKey</code> de l'émetteur (prioritaire)
             bloquent les doublons en simulation.</li>
+        <li>Vue <b>Événements</b> : liste des événements du script ; pour
+            chacun, le socle commun (non modifiable) et l'éditeur visuel du
+            schéma métier, synchronisé avec son YAML et le panneau
+            Paramétrage. « Créer le schéma métier » ajoute
+            <code>AS @schema_…</code> à la déclaration.</li>
         <li>Référence du langage : <code>docs/guide-dsl.md</code>.</li>
       </ul>
     </div>
@@ -132,5 +143,7 @@ required: [Montant]"></textarea>
 <script src="/static/examples.js"></script>
 <script src="/static/app.js"></script>
 <script src="/static/diagram.js"></script>
+<script src="/static/vendor/schema-editor.js"></script>
+<script src="/static/events.js"></script>
 </body>
 </html>

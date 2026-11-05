@@ -195,8 +195,9 @@ class TestSchemasInPlayground:
         assert data["ok"] is True
         assert data["symbols"]["schemas"] == ["schema_Ouverture"]
         assert data["symbols"]["event_details"] == [
-            {"name": "Ouverture", "schema_ref": "schema_Ouverture",
-             "unique": ["ExternalId", "Montant"]}
+            {"name": "Ouverture", "label": "ouverture",
+             "schema_ref": "schema_Ouverture", "unique": ["ExternalId", "Montant"],
+             "declared": True}
         ]
         assert "Montant" in data["symbols"]["payload_properties"]
         assert "DedupKey" in data["symbols"]["payload_properties"]
@@ -354,3 +355,52 @@ class TestAssetVersioning:
 
     def test_index_is_revalidated_on_each_load(self):
         assert client.get("/").headers["cache-control"] == "no-cache"
+
+
+class TestEventsView:
+    """Vue « Événements » : socle exposé, tous les événements listés,
+    champs du socle protégés contre la redéfinition."""
+
+    def test_base_event_schema_is_served_from_the_core(self):
+        from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+        response = client.get("/api/base-event-schema")
+        assert response.status_code == 200
+        assert response.json() == BASE_EVENT_SCHEMA
+
+    def test_event_details_list_every_declared_event(self):
+        data = client.post(
+            "/api/analyze", json={"script": SCRIPT, "rules": RULES}
+        ).json()
+        assert data["symbols"]["event_details"] == [
+            {"name": "Ouverture", "label": "ouverture", "schema_ref": "",
+             "unique": [], "declared": True}
+        ]
+
+    def test_used_but_undeclared_event_is_flagged(self):
+        script = SCRIPT.replace(
+            "EXECUTE Notifier(cible = @Workflow.ExternalId)\n;",
+            "EXECUTE Notifier(cible = @Workflow.ExternalId)\n"
+            "    ON EVENT Cloture SWITCH Ferme\n;\n"
+            "DEFINE STATE Ferme 'fermé' ;",
+        )
+        assert "Cloture" in script
+        data = client.post(
+            "/api/analyze", json={"script": script, "rules": RULES}
+        ).json()
+        assert data["ok"] is True, data["errors"]
+        details = {d["name"]: d["declared"] for d in data["symbols"]["event_details"]}
+        assert details == {"Ouverture": True, "Cloture": False}
+
+    def test_business_schema_cannot_redefine_a_base_field(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        yaml_text = "type: object\nproperties:\n  Uuid: {type: integer}\n  Montant: {type: number}\n"
+        data = client.post(
+            "/api/analyze",
+            json={"script": SCHEMA_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouverture", "yaml": yaml_text}]},
+        ).json()
+        assert data["ok"] is False
+        message = data["errors"][0]["message"]
+        assert "schema_Ouverture" in message and "Uuid" in message and "socle" in message

@@ -67,6 +67,92 @@ main { flex: 1; display: flex; min-height: 0; }
 #editor-view.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 #diagram-view.active { display: block; flex: 1; min-height: 0; position: relative; }
 #diagram-canvas { position: absolute; inset: 0; }
+[hidden] { display: none !important; }
+
+/* Vue « Événements » : liste à gauche, détail (socle + schéma métier) à droite. */
+#events-view.active { display: flex; flex: 1; min-height: 0; }
+.ev-list {
+  flex: 0 0 230px;
+  overflow: auto;
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ev-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ev-item.active { border-color: var(--accent); background: #1d2836; }
+.ev-name { font-weight: 600; color: var(--text); }
+.ev-label { font-size: 12px; color: var(--muted); }
+.ev-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.ev-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #22364a;
+  color: var(--accent);
+  font-family: Consolas, monospace;
+}
+.ev-badge.muted { background: var(--border); color: var(--muted); }
+.ev-badge.warn { background: #4a3a1a; color: #f0b45f; }
+.ev-detail { flex: 1; overflow: auto; padding: 10px 16px 24px; min-width: 0; }
+.ev-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ev-head h3 { margin: 4px 0; }
+.ev-editor { border: 1px solid var(--border); border-radius: 8px; }
+/* Le socle ne se modifie pas : on le montre en retrait plutôt que d'en
+   masquer les détails (ses formats uuid/date-time renseignent l'émetteur). */
+.ev-editor.locked { opacity: .78; border-style: dashed; }
+.ev-yaml { margin-top: 10px; }
+.ev-yaml textarea {
+  width: 100%;
+  min-height: 160px;
+  box-sizing: border-box;
+  font: 12px/1.5 Consolas, monospace;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  resize: vertical;
+}
+.notice { color: var(--muted); font-size: 12.5px; }
+.notice.ko { color: var(--ko); }
+.ev-detail button.primary { background: var(--accent); color: #0b0e13; font-weight: 600; }
+
+/* Thème de l'éditeur de schémas (jsonjoy-builder) aligné sur la palette du
+   playground. Variables posées sur .jsonjoy elle-même, hors couche : elles
+   l'emportent sur celles du paquet (déclarées en @layer) et s'appliquent
+   aussi aux boîtes de dialogue, rendues en portail sur <body>. */
+.jsonjoy {
+  --jsonjoy-background: #1a2029;
+  --jsonjoy-foreground: #d8dee9;
+  --jsonjoy-card: #1a2029;
+  --jsonjoy-card-foreground: #d8dee9;
+  --jsonjoy-popover: #1a2029;
+  --jsonjoy-popover-foreground: #d8dee9;
+  --jsonjoy-primary: #5fb3f0;
+  --jsonjoy-primary-foreground: #0b0e13;
+  --jsonjoy-secondary: #2b3442;
+  --jsonjoy-secondary-foreground: #d8dee9;
+  --jsonjoy-muted: #242c38;
+  --jsonjoy-muted-foreground: #7f8ea3;
+  --jsonjoy-accent: #2b3442;
+  --jsonjoy-accent-foreground: #d8dee9;
+  --jsonjoy-destructive: #e5484d;
+  --jsonjoy-destructive-foreground: #f8fafc;
+  --jsonjoy-border: #2b3442;
+  --jsonjoy-input: #2b3442;
+  --jsonjoy-ring: #5fb3f0;
+  color-scheme: dark;
+}
 .canvas-hint {
   position: absolute;
   bottom: 6px;
@@ -262,7 +348,12 @@ kbd {
 }
 label.inline { display: flex; align-items: center; gap: 4px; font-size: 13px; }
 
-button, select {
+/* :not(.jsonjoy…) : ces règles globales, hors @layer, écraseraient sinon les
+   boutons de l'éditeur de schémas (ses styles Tailwind sont en @layer et un
+   style non rangé en couche l'emporte toujours, quelle que soit la
+   spécificité). :where() garde la spécificité nulle : les règles à classe
+   (.tabs button, .ev-item…) continuent de primer. */
+:where(button, select):where(:not(.jsonjoy, .jsonjoy *)) {
   background: var(--border);
   color: var(--text);
   border: none;
@@ -271,7 +362,7 @@ button, select {
   cursor: pointer;
   font-size: 13px;
 }
-button:hover { background: #3a4656; }
+:where(button):where(:not(.jsonjoy, .jsonjoy *)):hover { background: #3a4656; }
 
 #events-input {
   width: 100%;

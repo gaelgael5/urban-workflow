@@ -41,6 +41,8 @@
   var lastErrors = [];
   var ruleSettings = loadRules();
   var schemaSettings = loadSchemas();
+  // Abonnés à chaque analyse (vue « Événements » : la liste suit le script).
+  var analyzeListeners = [];
 
   var CONTEXT_PATHS = [
     "@Workflow.ExternalId", "@Workflow.CurrentState", "@Workflow.Uuid",
@@ -91,6 +93,7 @@
       .then(function (data) {
         symbols = data.symbols || symbols;
         lastErrors = data.errors || [];
+        analyzeListeners.forEach(function (fn) { fn(data); });
         renderStatus(data);
         renderDiagnostics();
         renderStructure(data.summary);
@@ -515,6 +518,24 @@
     getRules: function () { return ruleSettings; },
     getSchemas: function () { return schemaSettings; },
     refreshEditor: function () { editor.refresh(); },
+    getSymbols: function () { return symbols; },
+    onAnalyze: function (fn) { analyzeListeners.push(fn); },
+    // Création/remplacement d'un schéma du panneau, puis ré-analyse : même
+    // effet que le formulaire « Ajouter le schéma », sans passer par lui.
+    setSchema: function (name, yaml) {
+      var found = schemaSettings.some(function (s) {
+        if (s.name === name) { s.yaml = yaml; return true; }
+        return false;
+      });
+      if (!found) { schemaSettings.push({name: name, yaml: yaml}); }
+      saveSchemas(); renderSchemas(); revalidate();
+    },
+    // Insertion ponctuelle dans le script (index = position dans le texte) :
+    // replaceRange garde le curseur et l'historique d'annulation, là où un
+    // setValue complet les perdrait.
+    insertText: function (index, text) {
+      editor.replaceRange(text, editor.posFromIndex(index));
+    },
   };
 
   // ------------------------------------------------------------------
