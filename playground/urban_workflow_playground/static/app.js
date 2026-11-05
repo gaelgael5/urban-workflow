@@ -572,7 +572,8 @@
         html += "<div class='diag'>" + esc(step.error) + "</div>";
       } else if (!step.impacted.length) {
         html += "<p class='hint-text'>Aucun workflow impacté (filtre MATCHING, " +
-          "événement non déclaré ou pas d'initialiseur).</p>";
+          "événement non déclaré, pas d'initialiseur, switch sans route " +
+          "ou doublon).</p>";
       }
       (step.impacted || []).forEach(function (ctx) {
         html += "<div class='sim-ctx'><b>" + esc(ctx.workflow) + "</b> [" +
