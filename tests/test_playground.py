@@ -107,6 +107,9 @@ class TestSimulate:
         assert data["ok"] is True
         integrated = data["workflows"][0]["events"][0]["integration_date"]
         assert integrated and not integrated.startswith("2000")
+        (state,) = data["workflows"][0]["states"]
+        assert state["name"] == "Ouvert"
+        assert state["event_id"] == "11111111-1111-4111-8111-111111111111"
 
         step = data["steps"][0]
         assert step["impacted"][0]["to_state"] == "Ouvert"
@@ -411,7 +414,7 @@ class TestEventsView:
 
 
 class TestEventPathsInPlayground:
-    """Intellisense après $ : chemins de chaque événement (socle + schéma)."""
+    """Intellisense après @IncomingEvent. : chemins de chaque événement (socle + schéma)."""
 
     def test_event_properties_flatten_schema_paths(self):
         pytest.importorskip("yaml")
@@ -446,19 +449,21 @@ class TestEventPathsInPlayground:
         assert "IntegrationDate" in base and "Montant" not in base
 
     def test_rule_argument_accepts_an_event_path(self):
-        script = SCRIPT.replace("EstComplet(champs = 'Montant')", "EstComplet(champs = $.Name)")
-        assert "$.Name" in script
+        script = SCRIPT.replace(
+            "EstComplet(champs = 'Montant')", "EstComplet(champs = @IncomingEvent.Name)"
+        )
+        assert "@IncomingEvent.Name" in script
         data = client.post("/api/analyze", json={"script": script, "rules": RULES}).json()
         assert data["ok"] is True, data["errors"]
 
     def test_event_paths_survive_a_script_being_typed(self):
-        # Pendant la frappe de « $. » le script ne compile pas : la
+        # Pendant la frappe de « @IncomingEvent. » le script ne compile pas : la
         # complétion doit quand même connaître le schéma de l'événement.
         pytest.importorskip("yaml")
         pytest.importorskip("jsonschema")
         script = SCHEMA_SCRIPT.replace(
             "ON EVENT Ouverture SWITCH Ouvert",
-            "ON EVENT Ouverture WHEN EstComplet(champs = $.) SWITCH Ouvert",
+            "ON EVENT Ouverture WHEN EstComplet(champs = @IncomingEvent.) SWITCH Ouvert",
         )
         data = client.post(
             "/api/analyze",
@@ -468,3 +473,81 @@ class TestEventPathsInPlayground:
         assert data["ok"] is False
         paths = [p["path"] for p in data["symbols"]["event_properties"]["Ouverture"]]
         assert "Montant" in paths
+
+
+
+STATE_SCRIPT = """
+NAME Demo VERSION 1
+DEFINE EVENT Ouverture 'ouverture';
+INITIALIZE WORKFLOW
+    ON EVENT Ouverture SWITCH Ouvert
+DEFINE STATE Ouvert 'ouvert' AS @schema_Ouvert ;
+"""
+
+STATE_YAML = "type: object\nproperties:\n  Decision: {type: string}\n"
+
+
+class TestStatesInPlayground:
+    """Vue « États » : socle d'état servi, détails et chemins @state."""
+
+    def test_base_state_schema_is_served_from_the_core(self):
+        from urban_workflow.schemas import BASE_STATE_SCHEMA
+
+        assert client.get("/api/base-state-schema").json() == BASE_STATE_SCHEMA
+
+    def test_state_details_and_paths(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        data = client.post(
+            "/api/analyze",
+            json={"script": STATE_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouvert", "yaml": STATE_YAML}]},
+        ).json()
+        assert data["ok"] is True, data["errors"]
+        assert data["symbols"]["state_details"] == [
+            {"name": "Ouvert", "label": "ouvert", "schema_ref": "schema_Ouvert"}
+        ]
+        listed = [p["path"] for p in data["symbols"]["state_properties"]["Ouvert"]]
+        assert listed[0] == "Decision"  # métier d'abord
+        assert {"Name", "Uuid", "CreationDate", "EventId"} <= set(listed)
+        base = [p["path"] for p in data["symbols"]["base_state_paths"]]
+        assert "EventId" in base and "Decision" not in base
+
+    def test_state_details_survive_a_script_being_typed(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        script = STATE_SCRIPT.replace("SWITCH Ouvert\n", "SWITCH Ouvert\nDEFINE ;\n", 1)
+        data = client.post(
+            "/api/analyze",
+            json={"script": script, "rules": [],
+                  "schemas": [{"name": "schema_Ouvert", "yaml": STATE_YAML}]},
+        ).json()
+        assert data["ok"] is False
+        listed = [p["path"] for p in data["symbols"]["state_properties"]["Ouvert"]]
+        assert "Decision" in listed
+
+    def test_state_schema_cannot_redefine_a_base_state_field(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        yaml_text = "type: object\nproperties:\n  EventId: {type: integer}\n"
+        data = client.post(
+            "/api/analyze",
+            json={"script": STATE_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouvert", "yaml": yaml_text}]},
+        ).json()
+        assert data["ok"] is False
+        message = " ".join(e["message"] for e in data["errors"])
+        assert "schema_Ouvert" in message and "EventId" in message and "socle" in message
+
+    def test_a_state_schema_may_use_an_event_base_name(self):
+        # « ExternalId » appartient au socle des ÉVÉNEMENTS, pas des états :
+        # un schéma d'état peut l'employer.
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        yaml_text = "type: object\nproperties:\n  ExternalId: {type: string}\n"
+        data = client.post(
+            "/api/analyze",
+            json={"script": STATE_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouvert", "yaml": yaml_text}]},
+        ).json()
+        assert data["ok"] is True, data["errors"]

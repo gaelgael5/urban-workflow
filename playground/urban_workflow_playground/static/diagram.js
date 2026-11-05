@@ -831,7 +831,7 @@
   // Barre d'outils + bascule de vue
   // ------------------------------------------------------------------
 
-  var VIEWS = ["editor", "diagram", "events"];
+  var VIEWS = ["editor", "diagram", "events", "states"];
 
   function showView(which) {
     VIEWS.forEach(function (name) {
@@ -844,7 +844,7 @@
     } else if (which === "diagram" && !model) {
       importFromEditor();
     }
-    // Les autres vues (events.js) se branchent sur cet événement plutôt que
+    // Les autres vues (models.js) se branchent sur cet événement plutôt que
     // d'être connues d'ici.
     document.dispatchEvent(new CustomEvent("uw:view", {detail: which}));
   }

@@ -144,9 +144,8 @@ forms:
 | Form | Example | Semantics |
 |---|---|---|
 | Literal | `reason = 'incomplete file'` | Fixed value, converted to the declared parameter type |
-| `@` path | `target = @Workflow.ExternalId` | **Lazy reference**, resolved at run time against the context |
+| `@` path | `target = @Workflow.ExternalId`, `amount = @IncomingEvent.Amount` | **Lazy reference**, resolved at run time against the context |
 | Bare name | `threshold = auto_threshold` | `DEFINE CONST` constant if it exists, otherwise a text literal |
-| `$` path | `amount = $.Amount` | **JSONPath** into the incoming event document (urban-workflow extension, see below) |
 
 ### `@` paths
 
@@ -155,41 +154,50 @@ A path navigates the execution context, segment by segment:
 - `@Workflow.…` — the instance: `Uuid`, `ExternalId`, `CurrentState`,
   `WorkflowName`, `Version`, plus any key of its extended data (whatever
   `STORE` wrote there, plus the creating event's data);
-- `@IncomingEvent.…` — the incoming event: `Name`, `Uuid`, `ExternalId`,
-  `EventDate`, plus any payload key (`@IncomingEvent.Amount`);
-- `@Event.…` — the event being integrated into the history: `Name`,
-  `FromState`, `ToState`, plus the data copied from the incoming event.
+- `@IncomingEvent.…` — the **incoming event** (see below);
+- `@state.…` — the **current state instance** (see below);
+- `@Event.…` — legacy path to the event being written to the history,
+  still resolved but no longer suggested: source/target states are not
+  event properties (one event may be processed by several workflows in
+  parallel); the state references the event instead (`@state.EventId`).
 
 Paths accept the DSL's CamelCase even though the Python attributes are
 snake_case (`@Workflow.ExternalId` → `workflow.external_id`), falling back
 to extended data when the segment is not an attribute.
 
-### `$` paths (JSONPath on the event)
+### `@IncomingEvent` and `@state`: JSON documents
 
-`$` is the **incoming event document**, the one event schemas validate:
-the common base (`Name`, `Uuid`, `ExternalId`, `CreationDate`,
-`EventDate`, `DedupKey`, `IntegrationDate`) plus the payload's business
-data — the same names as in the schema YAML:
+These two roots point to **documents** — the same objects as in the
+playground's Events and States views and in the schema YAML — and also
+accept list indexes `[n]` and keys `['name']`:
 
 ```
-ON EVENT RequestSubmitted
-    WHEN AmountBelow(threshold = $.Amount)
-     AND CountryAllowed(country = $.Customer.Country)
-    SWITCH UnderReview
+DEFINE STATE Dispatch 'routing' AS @schema_Dispatch
+    ON EVENT RequestSubmitted
+        WHEN AmountBelow(threshold = @IncomingEvent.Amount)
+         AND CountryAllowed(country = @IncomingEvent.Customer.Country)
+        SWITCH UnderReview
 ```
 
-- Segments: `.Prop`, list index `[n]`, and `['name']` for names that are
-  not identifiers (or are keywords). `$` alone passes the whole document.
-  No filters or wildcards: a rule receives **one** value.
-- The value keeps its JSON type (no conversion to the declared type, as
-  with `@`). A missing path yields `None`.
-- **Checked at load time**: inside `ON EVENT X …`, when X declares a schema
-  (`AS @…`) and the schema registry is supplied, an unknown path
-  (`$.Amonut`) is a positioned error (`file:line:col`). The check stops
-  silently where the schema cannot decide (`$ref`, `allOf`/`anyOf`/`oneOf`,
-  `patternProperties`, schema-valued `additionalProperties`).
-- In the playground, typing `$.` suggests the properties of the event of
-  the enclosing `ON EVENT` block (the base only outside such a block).
+- **`@IncomingEvent`**: the document event schemas validate — base
+  (`Name`, `Uuid`, `ExternalId`, `CreationDate`, `EventDate`, `DedupKey`,
+  `IntegrationDate` set by the engine) plus payload business data. Nothing
+  workflow-specific.
+- **`@state`**: the instance of the state whose `DEFINE STATE` block you
+  are writing in — base `Name`, `Uuid`, `CreationDate` (entry time),
+  `EventId` (the event that created it) plus the state schema's fields.
+  **Not available in `INITIALIZE WORKFLOW`** (no state yet): positioned
+  error.
+- The root alone passes the whole document. No filters or wildcards. The
+  value keeps its JSON type; a missing path yields `None`. `[n]`/`['name']`
+  segments are only accepted on these two roots.
+- **Checked at load time** when the object declares a schema (`AS @…`) and
+  the schema registry is supplied: an unknown path is a positioned error.
+  The check stops silently where the schema cannot decide (`$ref`,
+  combinators, `patternProperties`, schema-valued `additionalProperties`).
+- In the playground, `@IncomingEvent.` / `@state.` suggest the properties of
+  the enclosing `ON EVENT` / `DEFINE STATE` block's object — business fields
+  first, then the base.
 
 ## 5. Creating an instance to handle a subject (`INITIALIZE WORKFLOW`)
 
@@ -239,7 +247,15 @@ DEFINE STATE Dispatch 'routing at creation'
 ```
 
 The instance is born in `Dispatch` and the request is immediately routed to
-`Incomplete`, `Approved` or `UnderReview` according to the rules.
+`Incomplete`, `Approved` or `UnderReview` according to the rules (two state
+instances: `Dispatch`, then the target).
+
+**Viable switch.** With `RECURSIVE`, a switch only counts if the target state
+then **offers a route** for the re-evaluated event: a passing branch, or no
+`ON EVENT` for that event. If `Dispatch` handles the event but no branch
+passes, everything happens **as if that switch had not been met**: no
+`Dispatch` instance, no workflow created, no action (logged in the
+functional log). Without `RECURSIVE` there is no route check.
 
 ## 6. States and transitions (`SWITCH`)
 
@@ -254,6 +270,17 @@ DEFINE STATE UnderReview 'waiting for an approver'
         SWITCH Rejected
 ;
 ```
+
+`DEFINE STATE X 'label' AS @schema_X` (urban-workflow extension) links the
+state to the YAML schema of its business fields (same registry as event
+schemas). The state base (`Name`, `Uuid`, `CreationDate`, `EventId`) is set
+by the engine and cannot be redefined. Computing the business fields is a
+later step; today they are modelled (schema, checks, intellisense).
+
+**A state instance is created on every `SWITCH`**, even to the current state,
+with a fresh `Uuid`, its entry date and the `Uuid` of the event that created
+it — kept in the workflow history (`workflow.states`, SQL table
+`workflow_states`).
 
 An `ON EVENT name` block lists **branches**. When the event arrives,
 branches are evaluated **in order**; the **first** whose `WHEN` holds (or

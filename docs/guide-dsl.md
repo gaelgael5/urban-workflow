@@ -169,15 +169,14 @@ nombre, délai (`n MINUTE|HOUR|DAY`, converti en minutes), identifiant.
 
 ## 4. Les arguments d'appel
 
-Dans `regle(arg = …)` comme dans `action(arg = …)`, quatre formes de
+Dans `regle(arg = …)` comme dans `action(arg = …)`, trois formes de
 valeur :
 
 | Forme | Exemple | Sémantique |
 |---|---|---|
 | Littéral | `motif = 'dossier incomplet'` | Valeur fixe, convertie au type déclaré du paramètre |
-| Chemin `@` | `cible = @Workflow.ExternalId` | **Référence paresseuse** résolue à l'exécution contre le contexte |
+| Chemin `@` | `cible = @Workflow.ExternalId`, `montant = @IncomingEvent.Montant` | **Référence paresseuse** résolue à l'exécution contre le contexte |
 | Nom nu | `seuil = seuil_auto` | Constante `DEFINE CONST` si elle existe, sinon littéral texte |
-| Chemin `$` | `montant = $.Montant` | **JSONPath** dans le document de l'événement entrant (extension urban-workflow, voir ci-dessous) |
 
 ### Les chemins `@`
 
@@ -186,46 +185,58 @@ Un chemin navigue dans le contexte d'exécution, segment par segment :
 - `@Workflow.…` — l'instance : `Uuid`, `ExternalId`, `CurrentState`,
   `WorkflowName`, `Version`, et toute clé de ses données étendues
   (ce que `STORE` y a écrit, plus les données de l'événement créateur) ;
-- `@IncomingEvent.…` — l'événement entrant : `Name`, `Uuid`,
-  `ExternalId`, `EventDate`, et toute clé de son payload
-  (`@IncomingEvent.Montant`) ;
-- `@Event.…` — l'événement en cours d'intégration dans l'historique :
-  `Name`, `FromState`, `ToState`, et les données copiées de l'entrant.
+- `@IncomingEvent.…` — l'**événement entrant** (voir ci-dessous) ;
+- `@state.…` — l'**instance de l'état courant** (voir ci-dessous) ;
+- `@Event.…` — ancien chemin vers l'événement en cours d'historisation,
+  conservé pour les scripts existants mais plus proposé : les états de
+  départ et d'arrivée ne sont pas des propriétés de l'événement (un même
+  événement peut être traité en parallèle par plusieurs workflows) ; c'est
+  l'état qui référence l'événement (`@state.EventId`).
 
 Les chemins acceptent le CamelCase du DSL même si les attributs Python
 sont en snake_case (`@Workflow.ExternalId` → `workflow.external_id`), et
 retombent sur les données étendues quand le segment n'est pas un attribut.
 
-### Les chemins `$` (JSONPath sur l'événement)
+### `@IncomingEvent` et `@state` : des documents JSON
 
-`$` désigne le **document de l'événement entrant**, celui que valident
-les schémas : socle commun (`Name`, `Uuid`, `ExternalId`, `CreationDate`,
-`EventDate`, `DedupKey`, `IntegrationDate`) + données métier du payload.
-On y écrit donc les mêmes noms que dans le YAML du schéma :
+Ces deux racines désignent des **documents** — les mêmes objets que dans
+les vues Événements et États du playground et que dans le YAML des
+schémas — et acceptent, en plus des `.Prop`, les index de liste `[n]` et
+les clés `['nom']` (nom qui n'est pas un identifiant, ou mot-clé) :
 
 ```
-ON EVENT DemandeSoumise
-    WHEN MontantInferieur(seuil = $.Montant)
-     AND PaysAutorise(pays = $.Client.Pays)
-     AND QuantiteValide(qte = $.Lignes[0].Qte)
-    SWITCH EnValidation
+DEFINE STATE Tri 'aiguillage' AS @schema_Tri
+    ON EVENT DemandeSoumise
+        WHEN MontantInferieur(seuil = @IncomingEvent.Montant)
+         AND PaysAutorise(pays = @IncomingEvent.Client.Pays)
+         AND QuantiteValide(qte = @IncomingEvent.Lignes[0].Qte)
+        SWITCH EnValidation
 ```
 
-- Segments : `.Prop`, index de liste `[n]`, et `['nom']` pour un nom qui
-  n'est pas un identifiant (ou qui est un mot-clé). `$` seul passe le
-  document entier. Pas de filtres ni de jokers : une règle reçoit
-  **une** valeur.
-- La valeur garde son type JSON (pas de conversion vers le type déclaré,
-  comme pour `@`). Un chemin absent donne `None` : un champ facultatif
-  manquant est un cas métier normal, que la règle tranche.
-- **Vérifié au chargement** : dans `ON EVENT X …`, si X est déclaré avec
-  un schéma (`AS @…`) et que le moteur reçoit le registre de schémas, un
-  chemin inconnu (`$.Montnt`) est une erreur positionnée
+- **`@IncomingEvent`** : le document que valident les schémas
+  d'événements — socle (`Name`, `Uuid`, `ExternalId`, `CreationDate`,
+  `EventDate`, `DedupKey`, `IntegrationDate` posée par le moteur) +
+  données métier du payload. Il ne porte rien de propre à un workflow.
+- **`@state`** : l'instance de l'état du bloc `DEFINE STATE` où l'on écrit
+  — socle `Name`, `Uuid`, `CreationDate` (entrée dans l'état), `EventId`
+  (l'événement qui a créé l'instance) + champs du schéma de l'état. Dans
+  `ON EVENT`, c'est l'état courant ; dans `ON ENTER`, l'instance qui vient
+  d'être créée. **Indisponible dans `INITIALIZE WORKFLOW`** (aucun état
+  n'existe encore) : erreur positionnée.
+- `@IncomingEvent` (ou `@state`) seul passe le document entier. Pas de
+  filtres ni de jokers : une règle reçoit **une** valeur. La valeur garde
+  son type JSON (pas de conversion vers le type déclaré). Un chemin absent
+  donne `None` : un champ facultatif manquant est un cas métier normal.
+- Les segments `[n]` / `['nom']` ne sont acceptés que sur ces deux racines.
+- **Vérifié au chargement** : si l'objet désigné a un schéma (`AS @…`) et
+  que le moteur reçoit le registre de schémas, un chemin inconnu
+  (`@IncomingEvent.Montnt`, `@state.Decisoin`) est une erreur positionnée
   (`fichier:ligne:col`). Le contrôle s'arrête sans erreur là où le schéma
   ne permet pas de trancher (`$ref`, `allOf`/`anyOf`/`oneOf`,
   `patternProperties`, `additionalProperties` décrit par un schéma).
-- Dans le playground, taper `$.` propose les propriétés de l'événement du
-  bloc `ON EVENT` courant (le socle seul hors d'un tel bloc).
+- Dans le playground, `@IncomingEvent.` propose les propriétés de
+  l'événement du bloc `ON EVENT` courant, `@state.` celles de l'état du
+  bloc `DEFINE STATE` courant — champs métier d'abord, socle ensuite.
 
 ## 5. Créer une instance pour traiter un sujet (`INITIALIZE WORKFLOW`)
 
@@ -276,7 +287,19 @@ DEFINE STATE Tri 'aiguillage à la création'
 ```
 
 Ici l'instance naît dans `Tri`, et la demande est immédiatement redirigée
-vers `Incomplete`, `Approuvee` ou `EnValidation` selon les règles.
+vers `Incomplete`, `Approuvee` ou `EnValidation` selon les règles (deux
+instances d'état : `Tri`, puis la cible).
+
+**Switch viable.** Avec `RECURSIVE`, un switch n'est retenu que si l'état
+cible **offre ensuite une route** pour l'événement réévalué : une branche
+qui passe (`WHEN` vrai ou branche sans `WHEN`), ou aucun `ON EVENT` pour
+cet événement. Si `Tri` gère `DemandeSoumise` mais qu'aucune de ses
+branches ne passe, tout se passe **comme si ce switch n'avait pas été
+rencontré** : pas d'instance `Tri`, pas de workflow créé, aucune action (la
+raison est tracée dans le journal fonctionnel). Le moteur .NET d'origine
+laissait au contraire l'instance bloquée dans `Tri`, sans le signaler.
+Sans `RECURSIVE`, l'événement n'est pas réévalué dans la cible : aucun
+contrôle de route n'a lieu.
 
 ## 6. États et transitions (`SWITCH`)
 
@@ -291,6 +314,19 @@ DEFINE STATE EnValidation 'en attente d''un valideur'
         SWITCH Rejetee
 ;
 ```
+
+`DEFINE STATE X 'libellé' AS @schema_X` (extension urban-workflow) relie
+l'état au schéma YAML de ses champs métier, dans le même registre que les
+schémas d'événements. Le socle de l'état (`Name`, `Uuid`, `CreationDate`,
+`EventId`) est posé par le moteur et ne se redéfinit pas. Le **calcul**
+des champs métier d'un état reste à venir : aujourd'hui ils sont modélisés
+(schéma, contrôles, intellisense).
+
+**Une instance d'état est créée à chaque passage par un `SWITCH`**, même
+vers l'état courant (`Approuvee → Approuvee` crée une nouvelle instance),
+avec un `Uuid` neuf, sa date d'entrée et l'`Uuid` de l'événement qui l'a
+créée. Les instances sont conservées dans l'historique du workflow
+(`workflow.states`, table SQL `workflow_states`).
 
 Un bloc `ON EVENT nom` liste des **branches** (`switch_state`). À
 l'arrivée de l'événement, les branches sont évaluées **dans l'ordre** ; la

@@ -72,7 +72,9 @@ value :
     ;
 
 state :
-    STATE key comment?
+    // (AS ...) : extension urban-workflow -- schema (YAML) des champs metier
+    // de l'etat, meme registre que les schemas d'evenements.
+    STATE key comment? (AS schemaRef=compositekey)?
     execute*
     on_event_statement*
     ;
@@ -135,16 +137,21 @@ argument :
 
 argumentValue :
       string 
+    | contextPath
     | compositekey
-    | jsonPath
     ;
 
-// Extension urban-workflow : acces JSONPath au document de l'evenement
-// entrant (socle + donnees metier). Sous-ensemble volontaire : racine $,
-// proprietes (.Prop ou ['prop'] pour les noms hors identifiant) et index
-// de liste [n] -- pas de filtres ni de jokers (une regle recoit UNE valeur).
-jsonPath :
-    DOLLAR jsonPathSegment*
+// Extension urban-workflow : chemin @Racine suivi de segments. Les racines
+// @IncomingEvent (evenement entrant : socle + donnees metier) et @state
+// (instance de l'etat courant) designent des documents JSON et acceptent
+// en plus les index de liste [n] et les cles ['prop'] ; les autres racines
+// (@Workflow, @Event) restent des references a proprietes simples.
+// Place AVANT compositekey : sur un chemin a points seuls, ambigu entre les
+// deux, ANTLR retient la premiere alternative -- tout chemin @ passe ici.
+// Sous-ensemble volontaire : pas de filtres ni de jokers (une regle recoit
+// UNE valeur).
+contextPath :
+    AROBASE key jsonPathSegment*
     ;
 
 jsonPathSegment :

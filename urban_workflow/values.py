@@ -86,16 +86,34 @@ _PATH_TOKEN_RE = re.compile(
     r"|\[(?P<index>\d+)\]"
     r"|\['(?P<quoted>(?:[^']|'')*)'\]"
 )
+_PATH_ROOT_RE = re.compile(r"@(?P<root>[A-Za-z][A-Za-z0-9_$#]*)")
+
+
+def parse_path_segments(text: str) -> tuple[str, tuple[str | int, ...]]:
+    """``@Racine.a[0]['b']`` → ``("Racine", ("a", 0, "b"))``."""
+    text = text.replace(" ", "")
+    root = _PATH_ROOT_RE.match(text)
+    if root is None:
+        raise ValueError(f"a path starts with '@Root': {text!r}")
+    segments: list[str | int] = []
+    position = root.end()
+    while position < len(text):
+        match = _PATH_TOKEN_RE.match(text, position)
+        if match is None:
+            raise ValueError(f"invalid path {text!r} at {position}")
+        if match.group("key") is not None:
+            segments.append(match.group("key"))
+        elif match.group("index") is not None:
+            segments.append(int(match.group("index")))
+        else:
+            segments.append(match.group("quoted").replace("''", "'"))
+        position = match.end()
+    return root.group("root"), tuple(segments)
 
 
 @dataclass(frozen=True)
-class EventPath:
-    """Chemin JSONPath ``$.a.b[0]`` vers le document de l'événement entrant.
-
-    Extension DSL urban-workflow (``WHEN Regle(p = $.Montant)``). Le
-    document est celui que valident les schémas : socle CamelCase
-    (``Name``, ``IntegrationDate``…) + données métier — l'auteur d'un
-    script raisonne donc sur le même objet que dans le YAML du schéma.
+class DocumentPath:
+    """Chemin JSONPath ``@Racine.a.b[0]`` dans un document JSON du contexte.
 
     Sous-ensemble volontaire : propriétés et index de liste, pas de filtres
     ni de jokers (une règle reçoit UNE valeur). Un chemin absent donne
@@ -104,31 +122,13 @@ class EventPath:
     facultatif absent est un cas métier normal, que la règle tranche.
     """
 
+    ROOT = ""
+
     #: Segments : ``str`` pour une propriété, ``int`` pour un index.
     segments: tuple[str | int, ...] = ()
 
-    @classmethod
-    def parse(cls, text: str) -> EventPath:
-        text = text.replace(" ", "")
-        if not text.startswith("$"):
-            raise ValueError(f"an event path starts with '$': {text!r}")
-        segments: list[str | int] = []
-        position = 1
-        while position < len(text):
-            match = _PATH_TOKEN_RE.match(text, position)
-            if match is None:
-                raise ValueError(f"invalid event path {text!r} at {position}")
-            if match.group("key") is not None:
-                segments.append(match.group("key"))
-            elif match.group("index") is not None:
-                segments.append(int(match.group("index")))
-            else:
-                segments.append(match.group("quoted").replace("''", "'"))
-            position = match.end()
-        return cls(tuple(segments))
-
     def __str__(self) -> str:
-        parts = ["$"]
+        parts = ["@" + self.ROOT]
         for segment in self.segments:
             if isinstance(segment, int):
                 parts.append(f"[{segment}]")
@@ -151,7 +151,32 @@ class EventPath:
                 current = current[segment]
         return current
 
+    def document(self, ctx: Any) -> Any:  # pragma: no cover - abstrait
+        raise NotImplementedError
+
     def __call__(self, ctx: Any) -> Any:
+        return self.resolve(self.document(ctx))
+
+
+@dataclass(frozen=True)
+class EventPath(DocumentPath):
+    """``@IncomingEvent.…`` : le document de l'événement entrant.
+
+    Le document est celui que valident les schémas (socle CamelCase +
+    données métier) : l'auteur d'un script raisonne sur le même objet que
+    dans le YAML du schéma et la vue Événements. Il ne porte rien de propre
+    à un workflow (pas d'état de départ/d'arrivée) : un même événement peut
+    être traité en parallèle par plusieurs workflows.
+    """
+
+    ROOT = "IncomingEvent"
+
+    @classmethod
+    def parse(cls, text: str) -> EventPath:
+        _, segments = parse_path_segments(text)
+        return cls(segments)
+
+    def document(self, ctx: Any) -> Any:
         # Import local : values est un module de base, le serializer (moteur)
         # en dépend déjà — l'inverse au niveau module ferait un cycle.
         from .engine.serializer import event_to_document
@@ -159,7 +184,57 @@ class EventPath:
         incoming = getattr(ctx, "incoming_event", None)
         if incoming is None:
             return None
-        return self.resolve(event_to_document(incoming))
+        return event_to_document(incoming)
+
+
+@dataclass(frozen=True)
+class StatePath(DocumentPath):
+    """``@state.…`` : l'instance de l'état du bloc ``DEFINE STATE`` courant.
+
+    Liée au chargement au NOM de l'état du bloc où elle est écrite : dans
+    ``DEFINE STATE X``, ``@state`` est toujours une instance de X — la plus
+    récente, qu'on évalue une règle de ``ON EVENT`` (X est l'état courant)
+    ou une action de ``ON ENTER`` (l'instance qui vient d'être créée).
+    """
+
+    ROOT = "state"
+
+    state_name: str = ""
+
+    @classmethod
+    def parse(cls, text: str, state_name: str) -> StatePath:
+        _, segments = parse_path_segments(text)
+        return cls(segments, state_name)
+
+    def document(self, ctx: Any) -> Any:
+        instance = find_state_instance(ctx, self.state_name)
+        if instance is None:
+            # Workflow antérieur aux instances d'état : seul le nom est sûr.
+            return {"Name": self.state_name}
+        return state_document(instance)
+
+
+def find_state_instance(ctx: Any, state_name: str) -> Any:
+    """Instance la plus récente de ``state_name`` (en attente d'abord)."""
+    pending = list(getattr(ctx, "pending_states", None) or [])
+    workflow = getattr(ctx, "workflow", None)
+    history = list(getattr(workflow, "states", None) or [])
+    for instance in reversed(history + pending):
+        if instance.name == state_name:
+            return instance
+    return None
+
+
+def state_document(instance: Any) -> dict[str, Any]:
+    """Document « format fil » d'une instance d'état (socle + métier)."""
+    document: dict[str, Any] = dict(instance.extended_datas)
+    document["Name"] = instance.name
+    document["Uuid"] = str(instance.uuid)
+    if instance.creation_date is not None:
+        document["CreationDate"] = instance.creation_date.isoformat()
+    if instance.event_id is not None:
+        document["EventId"] = str(instance.event_id)
+    return document
 
 
 #: Une valeur de configuration : littéral, référence contextuelle ou callable.

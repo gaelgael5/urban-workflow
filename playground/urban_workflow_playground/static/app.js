@@ -20,12 +20,11 @@
     start: [
       {regex: /--.*/, token: "comment"},
       {regex: /\/\*/, token: "comment", next: "comment"},
-      // Chemin JSONPath vers l'événement entrant ($.Prop, $.Liste[0], $['p']) —
-      // avant la règle des chaînes, qui avalerait le ['p'].
-      {regex: /\$(?:\.[A-Za-z][\w$#]*|\[\d+\]|\['(?:[^'\n]|'')*'\])*/, token: "variable-3"},
+      // Chemins @ (@IncomingEvent.Liste[0], @state['p'], @Workflow.X) — avant
+      // la règle des chaînes, qui avalerait le ['p'].
+      {regex: /@[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*|\[\d+\]|\['(?:[^'\n]|'')*'\])*/, token: "variable-2"},
       {regex: /'(?:[^'\n]|'')*'/, token: "string"},
       {regex: new RegExp("\\b(?:" + KEYWORDS.join("|") + ")\\b"), token: "keyword"},
-      {regex: /@[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*/, token: "variable-2"},
       {regex: /\b\d+\b/, token: "number"},
       {regex: /[A-Za-z][\w$#]*/, token: "variable"},
       {regex: /[();=,.\[\]]/, token: "punctuation"},
@@ -47,11 +46,16 @@
   // Abonnés à chaque analyse (vue « Événements » : la liste suit le script).
   var analyzeListeners = [];
 
+  // Racines proposées après « @ ». @IncomingEvent. et @state. ouvrent
+  // ensuite la complétion contextuelle de leurs propriétés. L'ancien
+  // @Event.FromState/ToState n'est plus proposé : les états de départ et
+  // d'arrivée ne sont pas des propriétés de l'événement (un événement peut
+  // être traité par plusieurs workflows) — c'est l'état qui référence
+  // l'événement (@state.EventId). Il reste résolu pour les scripts existants.
   var CONTEXT_PATHS = [
+    "@IncomingEvent.", "@state.",
     "@Workflow.ExternalId", "@Workflow.CurrentState", "@Workflow.Uuid",
     "@Workflow.WorkflowName", "@Workflow.Version",
-    "@IncomingEvent.Name", "@IncomingEvent.ExternalId", "@IncomingEvent.EventDate",
-    "@Event.Name", "@Event.FromState", "@Event.ToState",
   ];
 
   function loadRules() {
@@ -142,22 +146,47 @@
     return last && last[1] ? last[1] : null;
   }
 
-  function eventPathCompletions(cm) {
+  /** État du bloc DEFINE STATE qui contient le curseur (null ailleurs,
+   * notamment dans INITIALIZE WORKFLOW où aucun état n'existe encore). */
+  function enclosingState(textBefore) {
+    var re = /\bDEFINE\s+STATE\s+([A-Za-z][\w$#]*)|\bINITIALIZE\s+WORKFLOW\b|\bDEFINE\s+(?:EVENT|RULE|ACTION|CONST)\b/gi;
+    var last = null, m;
+    var text = textBefore.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    while ((m = re.exec(text)) !== null) { last = m; }
+    return last && last[1] ? last[1] : null;
+  }
+
+  // Chemins @IncomingEvent. / @state. : propriétés de l'objet du bloc
+  // courant (métier d'abord, puis socle — ordre fourni par le serveur).
+  var PATH_KINDS = {
+    eventpath: {
+      prefix: "@IncomingEvent.",
+      owner: enclosingEvent,
+      byName: function () { return symbols.event_properties || {}; },
+      // Hors d'un bloc ON EVENT : seul le socle, commun à tous les
+      // événements, est certain (source unique BASE_EVENT_SCHEMA).
+      fallback: function () { return symbols.base_paths || []; },
+    },
+    statepath: {
+      prefix: "@state.",
+      owner: enclosingState,
+      byName: function () { return symbols.state_properties || {}; },
+      // Hors d'un bloc DEFINE STATE, @state n'existe pas (refusé à
+      // l'analyse) : rien à proposer.
+      fallback: function () { return []; },
+    },
+  };
+
+  function pathCompletions(cm, context) {
+    var spec = PATH_KINDS[context];
     var before = cm.getRange(CodeMirror.Pos(0, 0), cm.getCursor());
-    var eventName = enclosingEvent(before);
-    var byEvent = symbols.event_properties || {};
-    var paths = (eventName && byEvent[eventName]) || null;
-    if (!paths) {
-      // Hors d'un bloc ON EVENT (ou événement inconnu) : seul le socle,
-      // commun à tous les événements, est certain (fourni par le serveur,
-      // source unique BASE_EVENT_SCHEMA).
-      paths = symbols.base_paths || [];
-    }
+    var owner = spec.owner(before);
+    var paths = (owner && spec.byName()[owner]) || spec.fallback();
     return paths.map(function (p) {
       return {
-        text: "$." + p.path,
-        displayText: "$." + p.path + "  ·  " + p.type +
-          (eventName ? "" : "  (socle)"),
+        text: spec.prefix + p.path,
+        displayText: spec.prefix + p.path + "  ·  " + p.type +
+          (owner ? "" : "  (socle)"),
       };
     });
   }
@@ -194,7 +223,8 @@
   }
 
   function detectContext(before) {
-    if (/\$[\w.\[\]']*$/.test(before)) { return "eventpath"; }
+    if (/@IncomingEvent\.[\w.\[\]']*$/i.test(before)) { return "eventpath"; }
+    if (/@state\.[\w.\[\]']*$/i.test(before)) { return "statepath"; }
     if (/\bAS\s+@?\w*$/i.test(before)) { return "schema"; }
     if (/\bUNIQUE\s*\([^)]*$/i.test(before)) { return "unique"; }
     if (/@[\w.]*$/.test(before)) { return "path"; }
@@ -212,11 +242,11 @@
     if (token.type === "string" || token.type === "comment") { return null; }
     var lineText = cm.getLine(cursor.line).slice(0, cursor.ch);
     var context = detectContext(lineText);
-    if (context === "eventpath") {
-      var pathMatch = /\$[\w.\[\]']*$/.exec(lineText);
+    if (PATH_KINDS[context]) {
+      var pathMatch = /@(?:IncomingEvent|state)\.[\w.\[\]']*$/i.exec(lineText);
       var typedPath = pathMatch[0].toLowerCase();
       return {
-        list: eventPathCompletions(cm).filter(function (item) {
+        list: pathCompletions(cm, context).filter(function (item) {
           return item.text.toLowerCase().indexOf(typedPath) === 0;
         }),
         from: CodeMirror.Pos(cursor.line, cursor.ch - pathMatch[0].length),
@@ -246,9 +276,9 @@
     if (cm.state.completionActive) { return; }
     var token = cm.getTokenAt(cm.getCursor());
     if (token.type === "string" || token.type === "comment") { return; }
-    // $ et . ouvrent aussi la complétion : « $. » doit proposer les
-    // propriétés de l'événement sans attendre une lettre.
-    if (/[\w@$.\[]/.test(change.text[0])) {
+    // « . » et « [ » ouvrent aussi la complétion : « @IncomingEvent. » doit
+    // proposer les propriétés de l'événement sans attendre une lettre.
+    if (/[\w@.\[]/.test(change.text[0])) {
       cm.showHint({hint: dslHint, completeSingle: false});
     }
   });
@@ -493,6 +523,12 @@
           return esc(e.name) + " : " + esc(e.from || "∅") + " → " + esc(e.to || "∅") +
             (e.integration_date ? " · intégré le " + esc(e.integration_date) : "");
         }).join("<br>") + "</div>" +
+        (w.states && w.states.length
+          ? "<div class='sim-log'>États : " + w.states.map(function (s) {
+              return esc(s.name) + " <small>(" + esc(s.uuid.slice(0, 8)) +
+                "…, évt " + esc((s.event_id || "∅").slice(0, 8)) + "…)</small>";
+            }).join(" → ") + "</div>"
+          : "") +
         "<pre>" + esc(JSON.stringify(w.extended_datas, null, 1)) + "</pre></div>";
     });
     out.innerHTML = html;

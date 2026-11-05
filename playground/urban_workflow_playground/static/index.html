@@ -31,6 +31,7 @@
       <button id="view-editor" class="active">Éditeur</button>
       <button id="view-diagram">Diagramme</button>
       <button id="view-events" title="Lister les événements et éditer leur structure">Événements</button>
+      <button id="view-states" title="Lister les états et éditer leur structure">États</button>
       <span id="diagram-tools" hidden>
         <button id="dg-add-state" title="Ajouter un état">＋ État</button>
         <button id="dg-link-mode"
@@ -49,6 +50,10 @@
     <div id="events-view" class="view">
       <nav id="ev-list" class="ev-list" aria-label="Événements du script"></nav>
       <section id="ev-detail" class="ev-detail"></section>
+    </div>
+    <div id="states-view" class="view">
+      <nav id="st-list" class="ev-list" aria-label="États du script"></nav>
+      <section id="st-detail" class="ev-detail"></section>
     </div>
     <div id="diagram-view" class="view">
       <div id="diagram-canvas"></div>
@@ -124,14 +129,20 @@ required: [Montant]"></textarea>
             le schéma (panneau Paramétrage) valide le payload ; UNIQUE et la
             propriété <code>DedupKey</code> de l'émetteur (prioritaire)
             bloquent les doublons en simulation.</li>
-        <li><code>regle(p = $.Montant)</code> : chemin JSONPath dans
-            l'événement entrant (socle + payload, <code>$.Client.Pays</code>,
-            <code>$.Lignes[0].Qte</code>). Taper <code>$.</code> propose les
-            propriétés de l'événement du bloc <code>ON EVENT</code> courant ;
-            un chemin absent du schéma est signalé.</li>
-        <li>Vue <b>Événements</b> : liste des événements du script ; pour
-            chacun, le socle commun (non modifiable) et l'éditeur visuel du
-            schéma métier, synchronisé avec son YAML et le panneau
+        <li><code>regle(p = @IncomingEvent.Montant)</code> : chemin dans
+            l'événement entrant (socle + payload, <code>@IncomingEvent.Client.Pays</code>,
+            <code>@IncomingEvent.Lignes[0].Qte</code>). Taper
+            <code>@IncomingEvent.</code> propose les propriétés de l'événement du
+            bloc <code>ON EVENT</code> courant ; un chemin absent du schéma est
+            signalé.</li>
+        <li><code>@state.…</code> : l'instance de l'état du bloc
+            <code>DEFINE STATE</code> courant (socle <code>Name</code>,
+            <code>Uuid</code>, <code>CreationDate</code>, <code>EventId</code>
+            + champs du schéma de l'état). Une instance est créée à chaque
+            <code>SWITCH</code> ; indisponible dans <code>INITIALIZE WORKFLOW</code>.</li>
+        <li>Vues <b>Événements</b> et <b>États</b> : liste des objets du
+            script ; pour chacun, le socle commun (non modifiable) et l'éditeur
+            visuel du schéma métier, synchronisé avec son YAML et le panneau
             Paramétrage. « Créer le schéma métier » ajoute
             <code>AS @schema_…</code> à la déclaration.</li>
         <li>Référence du langage : <code>docs/guide-dsl.md</code>.</li>
@@ -149,6 +160,6 @@ required: [Montant]"></textarea>
 <script src="/static/app.js"></script>
 <script src="/static/diagram.js"></script>
 <script src="/static/vendor/schema-editor.js"></script>
-<script src="/static/events.js"></script>
+<script src="/static/models.js"></script>
 </body>
 </html>

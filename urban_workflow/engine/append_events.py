@@ -42,6 +42,9 @@ class AppendStandardEvent(AppendEventResponsibility):
 
     def execute(self, ctx: RunContext) -> None:
         ctx.workflow.events.append(ctx.event)
+        # Instances d'état créées par les SWITCH de cette évaluation.
+        ctx.workflow.states.extend(ctx.pending_states)
+        ctx.pending_states = []
 
 
 class AppendResultActionEvent(AppendEventResponsibility):

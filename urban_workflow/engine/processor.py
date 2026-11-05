@@ -29,13 +29,18 @@ from ..config import (
     WorkflowConfig,
     WorkflowsConfig,
 )
-from ..models import IncomingEvent, RuleSpan, RunContext, Workflow
+from ..models import IncomingEvent, RuleSpan, RunContext, StateInstance, Workflow
 from ..outputs.base import OutputAction
 from ..schemas import BASE_EVENT_SCHEMA, compute_dedup_hash, validate_document
 from .append_events import AppendResultActionEvent, AppendStandardEvent
 from .factory import WorkflowFactory
 from .serializer import event_to_document
 from .translator import ActionTranslator, DefaultActionTranslator
+
+# Sentinelles internes : « l'état cible gère l'événement mais aucune branche
+# ne passe » (switch non viable) et « pas de route présélectionnée ».
+_DEAD_END = object()
+_UNSET = object()
 
 
 class WorkflowProcessor:
@@ -234,9 +239,10 @@ class WorkflowProcessor:
             ):
                 continue
 
-            ctx = self._evaluate_if_workflow_must_be_created(event, config)
-            if ctx is None:
+            created = self._evaluate_if_workflow_must_be_created(event, config)
+            if created is None:
                 continue
+            ctx, route = created
             ctx.event.dedup_hash = dedup_hash
 
             siblings = existing_by_name.get(ctx.workflow.workflow_name, [])
@@ -244,7 +250,7 @@ class WorkflowProcessor:
 
             if last is None:
                 results.append(
-                    self._execute_transition_after_creation(config, ctx)
+                    self._execute_transition_after_creation(config, ctx, route)
                 )
 
             # Garde CONCURENCY stricte (le source utilisait <=, autorisant
@@ -252,14 +258,23 @@ class WorkflowProcessor:
             elif last.workflow.concurrency < config.concurrency:
                 ctx.workflow.concurrency = last.workflow.concurrency + 1
                 results.append(
-                    self._execute_transition_after_creation(config, ctx)
+                    self._execute_transition_after_creation(config, ctx, route)
                 )
 
         return results
 
     def _evaluate_if_workflow_must_be_created(
         self, event: IncomingEvent, config: WorkflowConfig
-    ) -> RunContext | None:
+    ) -> tuple[RunContext, TransitionConfig | None] | None:
+        """Contexte du workflow à créer et route présélectionnée, ou None.
+
+        Un switch d'initialisation n'est retenu que s'il est VIABLE : avec
+        RECURSIVE, l'événement est réévalué dans l'état cible, qui doit alors
+        offrir une route (une branche qui passe, ou aucun ``ON EVENT`` pour
+        cet événement). Sinon tout se passe comme si ce switch n'avait pas
+        été rencontré : branche suivante, et au bout aucune création — le
+        source laissait le workflow bloqué dans l'état cible, sans le dire.
+        """
 
         initializer = config.initializers.get(event.name)
         if initializer is None:
@@ -275,25 +290,74 @@ class WorkflowProcessor:
         ctx = self.factory.create_context(workflow, event)
 
         for switch in initializer.switchs:
-            if self._evaluate(switch, ctx):
-                ctx.event.to_state = ctx.event.from_state = switch.target_state_name
-                ctx.workflow.recursive = initializer.recursive
-                break
+            if not self._evaluate(switch, ctx):
+                continue
 
-        if not ctx.event.from_state:
+            target = switch.target_state_name
+            instance = self._enter_state(ctx, target)
+            ctx.event.to_state = ctx.event.from_state = target
+
+            route: TransitionConfig | None = None
+            if initializer.recursive:
+                found = self._find_route(config, target, ctx)
+                if found is _DEAD_END:
+                    ctx.pending_states.remove(instance)
+                    ctx.event.to_state = ctx.event.from_state = ""
+                    ctx.functional_log.append(
+                        f"SWITCH {target} ignored: no route for "
+                        f"{event.name} in {target}"
+                    )
+                    continue
+                route = found
+
+            ctx.workflow.recursive = initializer.recursive
+            return ctx, route
+
+        return None
+
+    def _find_route(
+        self, config: WorkflowConfig, state_name: str, ctx: RunContext
+    ) -> TransitionConfig | None | object:
+        """Première branche de ``state_name`` qui passe pour l'événement.
+
+        ``None`` = l'état ne gère pas cet événement (viable, rien à faire) ;
+        ``_DEAD_END`` = il le gère mais aucune branche ne passe.
+        """
+        handler = config.states[state_name].events.get(ctx.incoming_event.name)
+        if handler is None:
             return None
+        for transition in handler.transitions:
+            if self._evaluate(transition, ctx):
+                return transition
+        return _DEAD_END
 
-        return ctx
+    @staticmethod
+    def _enter_state(ctx: RunContext, state_name: str) -> StateInstance:
+        # Une instance à CHAQUE passage par un SWITCH, même vers l'état
+        # courant (décision de cadrage) ; versée dans workflow.states à
+        # l'ajout de l'événement à l'historique.
+        instance = StateInstance(
+            name=state_name,
+            creation_date=WorkflowClock.now(),
+            event_id=ctx.incoming_event.uuid,
+        )
+        ctx.pending_states.append(instance)
+        return instance
 
     def _execute_transition_after_creation(
-        self, config: WorkflowConfig, ctx: RunContext
+        self,
+        config: WorkflowConfig,
+        ctx: RunContext,
+        route: TransitionConfig | None = None,
     ) -> RunContext:
 
         state = config.states[ctx.event.to_state]
         self._collect_rule_actions(state.incoming_rules, ctx)
 
         if ctx.workflow.recursive:
-            self._evaluate_event_in_current_workflow(config, ctx)
+            # Route déjà trouvée par le contrôle de viabilité : on ne
+            # réévalue pas ses gardes (règles appelées une seule fois).
+            self._evaluate_event_in_current_workflow(config, ctx, preselected=route)
 
         return ctx
 
@@ -302,7 +366,10 @@ class WorkflowProcessor:
     # ------------------------------------------------------------------
 
     def _evaluate_event_in_current_workflow(
-        self, config: WorkflowConfig, ctx: RunContext
+        self,
+        config: WorkflowConfig,
+        ctx: RunContext,
+        preselected: TransitionConfig | None | object = _UNSET,
     ) -> None:
 
         state = config.states[ctx.event.from_state]
@@ -314,8 +381,14 @@ class WorkflowProcessor:
         # Actions attachées à l'arrivée de l'événement lui-même.
         self._collect_rule_actions(incoming_event_config.rules, ctx)
 
-        for transition in incoming_event_config.transitions:
-            if self._evaluate(transition, ctx):
+        if preselected is None:
+            return
+        candidates = (
+            incoming_event_config.transitions if preselected is _UNSET else [preselected]
+        )
+
+        for transition in candidates:
+            if preselected is not _UNSET or self._evaluate(transition, ctx):
 
                 # Actions de la transition, puis sortie d'état.
                 self._collect_rule_actions(transition.rule_actions, ctx)
@@ -323,6 +396,7 @@ class WorkflowProcessor:
 
                 state = transition.target_state
                 ctx.event.to_state = state.name
+                self._enter_state(ctx, state.name)
 
                 # Entrée dans le nouvel état.
                 self._collect_rule_actions(state.incoming_rules, ctx)

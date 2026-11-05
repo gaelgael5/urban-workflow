@@ -49,8 +49,16 @@ from ..exceptions import (
 )
 from ..models import RuleSpan, RunContext
 from ..registry import FunctionRegistry
-from ..schemas import BASE_EVENT_SCHEMA, SchemaRegistry
-from ..values import ContextRef, ContextValue, EventPath, resolve_value
+from ..schemas import BASE_EVENT_SCHEMA, BASE_STATE_SCHEMA, SchemaRegistry
+from ..values import (
+    ContextRef,
+    ContextValue,
+    DocumentPath,
+    EventPath,
+    StatePath,
+    parse_path_segments,
+    resolve_value,
+)
 from .errors import DslErrorModel
 from .generated.WorkflowParser import WorkflowParser
 from .generated.WorkflowParserVisitor import WorkflowParserVisitor
@@ -133,6 +141,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         #: tel bloc, ex. ON ENTER STATE) : permet de vérifier les chemins
         #: ``$.…`` contre le schéma de CET événement.
         self._current_event: str | None = None
+        #: État du bloc ``DEFINE STATE`` en cours de visite (None ailleurs,
+        #: notamment dans INITIALIZE WORKFLOW où aucun état n'existe encore) :
+        #: ``@state`` y désigne une instance de CET état.
+        self._current_state: StateConfig | None = None
 
     # ------------------------------------------------------------------
     # API publique
@@ -438,6 +450,25 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             label=self._optional_comment(ctx),
         )
 
+        # Extension urban-workflow : DEFINE STATE … AS @schema
+        if ctx.AS() is not None:
+            state.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    state.schema = self._schemas.get(state.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx, str(exc))
+
+        self._current_state = state
+        try:
+            return self._visit_state_body(ctx, state)
+        finally:
+            self._current_state = None
+
+    def _visit_state_body(
+        self, ctx: WorkflowParser.StateContext, state: StateConfig
+    ) -> StateConfig:
+
         for execute in ctx.execute():
             on_enter, on_exit, rule = self.visitExecute(execute)
             if on_enter:
@@ -693,9 +724,9 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         composite = ctx.compositekey()
         if composite is not None:
             return self.visitCompositekey(composite)
-        json_path = ctx.jsonPath()
-        if json_path is not None:
-            return json_path.getText()
+        context_path = ctx.contextPath()
+        if context_path is not None:
+            return context_path.getText()
         return ctx.string().getText()
 
     def _make_argument_value(
@@ -705,20 +736,16 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         - ``'…'``  → littéral converti vers le type déclaré ;
         - ``@a.b`` → :class:`ContextRef` (résolution paresseuse) ;
-        - ``$.a.b`` → :class:`EventPath` vers le document de l'événement
-          entrant (non converti : la valeur JSON garde son type, comme ``@``) ;
+        - ``@IncomingEvent.a[0]`` → :class:`EventPath` (document de
+          l'événement entrant) ; ``@state.a`` → :class:`StatePath` (instance
+          de l'état du bloc courant) — valeurs JSON non converties ;
         - nom nu   → constante ``DEFINE CONST`` si elle existe, sinon littéral.
         """
         if raw.startswith("'") and raw.endswith("'"):
             return self._convert(_unquote(raw), declared_type, ctx)
 
-        if raw.startswith("$"):
-            path = EventPath.parse(raw)
-            self._check_event_path(path, ctx)
-            return path
-
         if raw.startswith("@"):
-            return ContextRef.parse(raw)
+            return self._make_path(raw, ctx)
 
         constant = self._constants.get(raw)
         if constant is not None:
@@ -726,47 +753,97 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         return self._convert(raw, declared_type, ctx)
 
-    def _check_event_path(self, path: EventPath, ctx) -> None:
-        """Refuse un chemin ``$.…`` inconnu du schéma de l'événement courant.
+    def _make_path(self, raw: str, ctx) -> ContextValue:
+        """Chemin ``@Racine…`` → valeur paresseuse selon sa racine.
 
-        Ne vérifie que ce qui est décidable : dans un bloc ``ON EVENT X``,
-        X déclaré avec un schéma résolu (registre fourni). Le socle commun
-        est toujours connu. La descente s'arrête — sans erreur — dès que le
+        Racines insensibles à la casse, comme l'étaient les chemins ``@``
+        (``@incomingEvent`` = ``@IncomingEvent``).
+        """
+        root, segments = parse_path_segments(raw)
+        kind = root.lower()
+
+        if kind == "incomingevent":
+            path = EventPath(segments)
+            if self._current_event is not None:
+                declared = self._workflow.declared_events.get(self._current_event)
+                if declared is not None:
+                    self._check_document_path(
+                        path, BASE_EVENT_SCHEMA, declared.schema, declared.schema_ref,
+                        f"event {self._current_event!r}", ctx,
+                    )
+            return path
+
+        if kind == "state":
+            state = self._current_state
+            if state is None:
+                self._raise_positioned(
+                    InvalidArgumentValueError,
+                    ctx,
+                    "@state is only available inside a DEFINE STATE block "
+                    "(no state exists yet in INITIALIZE WORKFLOW)",
+                )
+            path = StatePath(segments, state.name)
+            self._check_document_path(
+                path, BASE_STATE_SCHEMA, state.schema, state.schema_ref,
+                f"state {state.name!r}", ctx,
+            )
+            return path
+
+        if "[" in raw:
+            self._raise_positioned(
+                InvalidArgumentValueError,
+                ctx,
+                f"index/key segments are only supported on @IncomingEvent and "
+                f"@state paths, not on @{root}",
+            )
+        return ContextRef.parse(raw)
+
+    def _check_document_path(
+        self,
+        path: DocumentPath,
+        base: dict[str, Any],
+        schema: dict[str, Any] | None,
+        schema_ref: str,
+        owner: str,
+        ctx,
+    ) -> None:
+        """Refuse un chemin inconnu du schéma de l'objet désigné.
+
+        ``@IncomingEvent`` dans un bloc ``ON EVENT X`` → schéma de X ;
+        ``@state`` dans ``DEFINE STATE Y`` → schéma de Y. Ne vérifie que ce
+        qui est décidable : schéma résolu (registre fourni) ; le socle
+        (``base``) est alors toujours connu. La descente s'arrête — sans erreur — dès que le
         schéma ne permet plus de trancher (``$ref``, combinaisons
         ``allOf``/``anyOf``…, ``additionalProperties`` schéma,
         ``patternProperties``) : mieux vaut laisser passer qu'inventer une
         erreur. Une propriété absente d'un ``properties`` déclaré est en
         revanche refusée : c'est la faute de frappe que ce contrôle vise.
         """
-        if self._schemas is None or self._current_event is None:
-            return
-        declared = self._workflow.declared_events.get(self._current_event)
-        if declared is None or declared.schema is None:
+        if self._schemas is None or schema is None:
             return
 
-        properties = dict(BASE_EVENT_SCHEMA["properties"])
-        properties.update(declared.schema.get("properties") or {})
-        schema: Any = {**declared.schema, "properties": properties}
+        properties = dict(base["properties"])
+        properties.update(schema.get("properties") or {})
+        node: Any = {**schema, "properties": properties}
 
         for depth, segment in enumerate(path.segments):
-            if not isinstance(schema, dict) or _undecidable(schema):
+            if not isinstance(node, dict) or _undecidable(node):
                 return
             if isinstance(segment, int):
-                schema = schema.get("items")
+                node = node.get("items")
                 continue
-            known = schema.get("properties")
+            known = node.get("properties")
             if not isinstance(known, dict):
                 return
             if segment not in known:
-                shown = EventPath(path.segments[: depth + 1])
+                shown = type(path)(path.segments[: depth + 1])
                 self._raise_positioned(
                     InvalidArgumentValueError,
                     ctx,
-                    f"unknown property {str(shown)!r} in event "
-                    f"{self._current_event!r} (schema @{declared.schema_ref}); "
-                    f"known: {sorted(known)}",
+                    f"unknown property {str(shown)!r} in {owner} "
+                    f"(schema @{schema_ref}); known: {sorted(known)}",
                 )
-            schema = known[segment]
+            node = known[segment]
 
     def _convert(self, value: Any, declared_type: type | None, ctx) -> Any:
         if declared_type is None or declared_type is object:

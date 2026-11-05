@@ -67,6 +67,20 @@ workflow_actions = Table(
     Index("ix_workflow_actions_event_uuid", "event_uuid"),
 )
 
+# Extension urban-workflow (absente du source) : une instance par SWITCH.
+workflow_states = Table(
+    "workflow_states",
+    metadata,
+    Column("uuid", String(36), primary_key=True),
+    Column("workflow_uuid", String(36), nullable=False),
+    Column("position", Integer, nullable=False),
+    Column("name", String(70), nullable=False),
+    Column("creation_date", String(40)),
+    Column("event_uuid", String(36)),
+    Column("extended_datas", Text, nullable=False, default="{}"),
+    Index("ix_workflow_states_workflow_uuid", "workflow_uuid"),
+)
+
 
 def create_schema(engine) -> None:
     """Crée les tables si elles n'existent pas."""

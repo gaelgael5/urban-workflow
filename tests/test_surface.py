@@ -240,3 +240,19 @@ class TestRendering:
         reparsed = extract_surface(rendered)
         assert reparsed.description == "l'apostrophe"
         assert reparsed.events[0].label == "d'accord"
+
+
+class TestStateSchemaReference:
+    """Le diagramme régénère le DSL : il ne doit pas perdre AS @… d'un état."""
+
+    def test_state_schema_ref_survives_extract_and_render(self):
+        script = (
+            "NAME Demo\n"
+            "DEFINE EVENT Ouverture 'o';\n"
+            "INITIALIZE WORKFLOW\n"
+            "    ON EVENT Ouverture SWITCH Ouvert\n"
+            "DEFINE STATE Ouvert 'ouvert' AS @schema_Ouvert ;\n"
+        )
+        model = extract_surface(script)
+        assert model.states[0].schema_ref == "schema_Ouvert"
+        assert "DEFINE STATE Ouvert 'ouvert' AS @schema_Ouvert" in render_script(model)

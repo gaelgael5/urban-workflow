@@ -90,9 +90,8 @@ COLON :                 ':';
 COMMA :                 ',';
 DOT :                   '.';
 AROBASE :               '@';
-// Extension urban-workflow : chemins JSONPath ($.Prop, $.Liste[0],
-// $['prop']) vers le document de l'evenement entrant.
-DOLLAR :                '$';
+// Extension urban-workflow : segments d'index ([0]) et de cle (['prop'])
+// des chemins @IncomingEvent... / @state... (documents JSON).
 LEFT_BRACKET :          '[';
 RIGHT_BRACKET :         ']';
 SPACES: [ \t\r\n]+ -> skip;

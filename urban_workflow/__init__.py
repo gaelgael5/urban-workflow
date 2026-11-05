@@ -47,6 +47,7 @@ from .models import (
     ResultAction,
     RuleSpan,
     RunContext,
+    StateInstance,
     Workflow,
 )
 from .outputs import (
@@ -100,6 +101,7 @@ __all__ = [
     "MissingConfigurationError",
     "MissingStateError",
     "PushedAction",
+    "StateInstance",
     "ResolutionArgumentError",
     "ResultAction",
     "ResultActionConfig",

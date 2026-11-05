@@ -23,6 +23,7 @@ from urban_workflow import (
     PushedAction,
     ResultActionConfig,
     StateConfig,
+    StateInstance,
     TransitionConfig,
     Workflow,
     WorkflowEngine,
@@ -79,6 +80,12 @@ def make_workflow() -> Workflow:
         )
     )
     workflow.events.append(event)
+    workflow.states.append(
+        StateInstance(
+            name="State1", creation_date=NOW, event_id=event.uuid,
+            extended_datas={"Decision": "ok"},
+        )
+    )
     return workflow
 
 
@@ -102,6 +109,13 @@ class TestRoundTrip:
         assert event.extended_datas == {"Montant": 120}
         assert event.dedup_hash == "f" * 64
         assert event.integration_date == NOW
+
+        (state,) = loaded.states
+        assert state.uuid == saved.states[0].uuid
+        assert state.name == "State1"
+        assert state.creation_date == NOW
+        assert state.event_id == saved.events[0].uuid
+        assert state.extended_datas == {"Decision": "ok"}
 
         action = event.actions[0]
         assert action.name == "Cut"

@@ -92,6 +92,26 @@ class Event:
 
 
 @dataclass
+class StateInstance:
+    """Instance d'état : créée à CHAQUE passage par un SWITCH.
+
+    Socle non modifiable ``Name``/``Uuid``/``CreationDate`` (date d'entrée
+    dans l'état)/``EventId`` (événement entrant qui l'a créé — c'est l'état
+    qui référence l'événement, et non l'événement qui porte des états : un
+    même événement peut être traité par plusieurs workflows) ;
+    ``extended_datas`` portera les champs métier décrits par
+    le schéma de l'état (``DEFINE STATE X … AS @schema``) — leur calcul
+    reste à cadrer.
+    """
+
+    name: str = ""
+    uuid: UUID = field(default_factory=new_uuid)
+    creation_date: datetime | None = None
+    event_id: UUID | None = None
+    extended_datas: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class Workflow:
     """Instance de workflow : son identité et l'historique de ses événements."""
 
@@ -105,6 +125,8 @@ class Workflow:
     recursive: bool = False
     change: ChangeEnum = ChangeEnum.NONE
     events: list[Event] = field(default_factory=list)
+    #: Historique des instances d'état, dans l'ordre des SWITCH.
+    states: list[StateInstance] = field(default_factory=list)
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -198,3 +220,8 @@ class RunContext:
     actions: list[ResultAction] = field(default_factory=list)
     functional_log: list[str] = field(default_factory=list)
     current_evaluation: CurrentEvaluation = field(default_factory=CurrentEvaluation)
+    #: Instances d'état créées par les SWITCH de cette évaluation, versées
+    #: dans ``workflow.states`` à l'ajout de l'événement à l'historique.
+    #: Créées dès le SWITCH (et non à l'ajout) : les règles de l'état cible
+    #: évaluées dans la foulée (RECURSIVE) voient déjà ``@state.Uuid``.
+    pending_states: list[StateInstance] = field(default_factory=list)

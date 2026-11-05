@@ -119,8 +119,8 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
-    # Visit a parse tree produced by WorkflowParser#jsonPath.
-    def visitJsonPath(self, ctx:WorkflowParser.JsonPathContext):
+    # Visit a parse tree produced by WorkflowParser#contextPath.
+    def visitContextPath(self, ctx:WorkflowParser.ContextPathContext):
         return self.visitChildren(ctx)
 
 

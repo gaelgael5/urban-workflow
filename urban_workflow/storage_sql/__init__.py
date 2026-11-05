@@ -2,8 +2,9 @@
 
 Remplace le micro-ORM maison du source (``Black.Beard.Workflows.Outputs.Sql``,
 non porté — décision actée dans ``docs/analyse-portage.md``) en reprenant son
-schéma logique : trois tables ``workflows`` / ``workflow_events`` /
-``workflow_actions``, les données étendues et messages en JSON.
+schéma logique : tables ``workflows`` / ``workflow_events`` /
+``workflow_actions`` (+ ``workflow_states``, extension : une instance par
+SWITCH), les données étendues et messages en JSON.
 
 Usage ::
 
@@ -28,7 +29,14 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from .outputs import SqlPushModelOutputAction, SqlTransaction, SqlUnitOfWork, sql_output
-from .schema import create_schema, metadata, workflow_actions, workflow_events, workflows
+from .schema import (
+    create_schema,
+    metadata,
+    workflow_actions,
+    workflow_events,
+    workflow_states,
+    workflows,
+)
 from .storage import SqlWorkflowStorage
 
 __all__ = [
@@ -41,5 +49,6 @@ __all__ = [
     "sql_output",
     "workflow_actions",
     "workflow_events",
+    "workflow_states",
     "workflows",
 ]

@@ -126,10 +126,11 @@ class SurfaceStateAction:
 
 @dataclass
 class SurfaceState:
-    """``DEFINE STATE nom 'libellé' …;``"""
+    """``DEFINE STATE nom 'libellé' [AS @schema] …;``"""
 
     name: str
     label: str = ""
+    schema_ref: str = ""
     actions: list[SurfaceStateAction] = field(default_factory=list)
     handlers: list[SurfaceHandler] = field(default_factory=list)
 
@@ -212,6 +213,7 @@ class SurfaceModel:
                 SurfaceState(
                     name=str(s.get("name", "")),
                     label=str(s.get("label", "")),
+                    schema_ref=str(s.get("schema_ref", "")),
                     actions=[
                         SurfaceStateAction(
                             trigger=str(a.get("trigger", "ENTER")),
@@ -372,6 +374,8 @@ def extract_surface(source: str, filename: str = "") -> SurfaceModel:
         state = SurfaceState(
             name=state_ctx.key().getText(), label=_optional_label(state_ctx)
         )
+        if state_ctx.AS() is not None:
+            state.schema_ref = state_ctx.schemaRef.getText().lstrip("@")
 
         for execute in state_ctx.execute():
             if execute.AND() is not None:
@@ -505,6 +509,8 @@ def render_script(model: SurfaceModel) -> str:
         head = f"DEFINE STATE {state.name}"
         if state.label:
             head += f" {_quote(state.label)}"
+        if state.schema_ref:
+            head += f" AS @{state.schema_ref}"
         lines.append(head)
 
         for state_action in state.actions:

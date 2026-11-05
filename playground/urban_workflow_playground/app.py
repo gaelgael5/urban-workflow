@@ -145,29 +145,59 @@ def _build_schema_registry(
             "urban-workflow[schemas] (PyYAML + jsonschema)."
         ]
 
-    from urban_workflow.schemas import BASE_EVENT_SCHEMA
-
-    reserved = set(BASE_EVENT_SCHEMA["properties"])
     problems: list[str] = []
     for setting in settings:
         try:
             registry.add_yaml(setting.name, setting.yaml)
         except Exception as exc:
             problems.append(f"schéma {setting.name!r} : {exc}")
-            continue
-        # Les champs du socle sont validés par BASE_EVENT_SCHEMA sur TOUT
-        # événement : un schéma métier qui les redéfinit ajouterait une
-        # contrainte contradictoire (Uuid entier vs format uuid) que plus
-        # aucun événement ne pourrait satisfaire. Refusé ici, côté serveur,
-        # pour que l'éditeur visuel ne soit pas la seule barrière.
-        clash = sorted(reserved & set(registry.get(setting.name).get("properties", {})))
-        if clash:
-            problems.append(
-                f"schéma {setting.name!r} : {', '.join(clash)} "
-                "appartien(nen)t au socle commun des événements et ne se "
-                "redéfini(ssen)t pas dans un schéma métier"
-            )
     return registry, problems
+
+
+def _schema_clash_problems(symbols: dict[str, Any], registry) -> list[str]:
+    """Schémas métier qui redéfinissent un champ du socle de leur objet.
+
+    Le socle est posé par le moteur (événement : validé sur TOUT événement ;
+    état : posé au SWITCH) : un schéma métier qui le redéfinit ajouterait
+    une contrainte contradictoire (Uuid entier vs format uuid) que plus rien
+    ne pourrait satisfaire. Le socle dépend de l'USAGE du schéma — référencé
+    par un DEFINE EVENT ou un DEFINE STATE — d'où un contrôle après lecture
+    du script, côté serveur, pour que l'éditeur visuel ne soit pas la seule
+    barrière.
+    """
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA, BASE_STATE_SCHEMA
+
+    if registry is None:
+        return []
+    usages = [
+        (_schema_refs(symbols, "event"), BASE_EVENT_SCHEMA, "des événements"),
+        (_schema_refs(symbols, "state"), BASE_STATE_SCHEMA, "des états"),
+    ]
+    problems: list[str] = []
+    for refs, base, owner in usages:
+        for ref in sorted({r for r in refs.values() if r}):
+            if ref not in registry:
+                continue
+            clash = sorted(set(base["properties"]) & set(registry.get(ref).get("properties") or {}))
+            if clash:
+                problems.append(
+                    f"schéma {ref!r} : {', '.join(clash)} appartien(nen)t au "
+                    f"socle commun {owner} et ne se redéfini(ssen)t pas dans "
+                    "un schéma métier"
+                )
+    return problems
+
+
+def _schema_refs(symbols: dict[str, Any], kind: str) -> dict[str, str]:
+    """``{nom: schema_ref}`` des événements ou des états — détails du
+    visiteur si le script compile, sinon repli regex (pendant la frappe)."""
+    details = symbols.get(f"{kind}_details") or []
+    if details:
+        return {d["name"]: d.get("schema_ref", "") for d in details}
+    names = symbols.get("events" if kind == "event" else "states", [])
+    refs = {n: "" for n in names if not n.startswith(("$", "__"))}
+    refs.update(symbols.get(f"{kind}_schema_refs", {}))
+    return refs
 
 
 # ----------------------------------------------------------------------
@@ -181,6 +211,9 @@ _RE_EVENT = re.compile(r"\bDEFINE\s+EVENT\s+(\w+)", re.IGNORECASE)
 # schéma de l'événement.
 _RE_EVENT_SCHEMA = re.compile(
     r"\bDEFINE\s+EVENT\s+(\w+)(?:\s*'(?:[^']|'')*')?\s+AS\s+@(\w+)", re.IGNORECASE
+)
+_RE_STATE_SCHEMA = re.compile(
+    r"\bDEFINE\s+STATE\s+(\w+)(?:\s*'(?:[^']|'')*')?\s+AS\s+@(\w+)", re.IGNORECASE
 )
 _RE_RULE = re.compile(r"\bDEFINE\s+RULE\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
 _RE_ACTION = re.compile(r"\bDEFINE\s+ACTION\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
@@ -209,7 +242,8 @@ def _symbols_from_text(script: str) -> dict[str, Any]:
         ],
         "constants": sorted(set(_RE_CONST.findall(script))),
         "states": sorted(set(_RE_STATE.findall(script))),
-        "schema_refs": dict(_RE_EVENT_SCHEMA.findall(script)),
+        "event_schema_refs": dict(_RE_EVENT_SCHEMA.findall(script)),
+        "state_schema_refs": dict(_RE_STATE_SCHEMA.findall(script)),
     }
 
 
@@ -261,6 +295,10 @@ def _symbols_from_visitor(
             for c in visitor.constants.values()
         ],
         "states": sorted(config.states),
+        "state_details": [
+            {"name": s.name, "label": s.label, "schema_ref": s.schema_ref}
+            for s in config.states.values()
+        ],
     }
 
 
@@ -312,26 +350,18 @@ def _flatten_schema_paths(
     return paths
 
 
-def _event_properties(symbols: dict[str, Any], schema_registry) -> dict[str, list]:
-    """Pour chaque événement : socle commun + propriétés de son schéma."""
-    from urban_workflow.schemas import BASE_EVENT_SCHEMA
-
-    refs = {d["name"]: d.get("schema_ref", "") for d in symbols.get("event_details", [])}
-    if not refs:  # script non compilable : références lues par regex
-        refs = {name: "" for name in symbols.get("events", [])}
-        refs.update(symbols.get("schema_refs", {}))
-    names = list(refs) or [
-        e for e in symbols.get("events", []) if not e.startswith(("$", "__"))
-    ]
+def _object_properties(
+    symbols: dict[str, Any], schema_registry, kind: str, base: dict[str, Any]
+) -> dict[str, list]:
+    """Pour chaque événement (ou état) : propriétés de son schéma métier
+    D'ABORD — ce sont elles qu'on cherche en tapant le chemin — puis le
+    socle, identique pour tous."""
     result: dict[str, list] = {}
-    for name in names:
-        # Champs métier D'ABORD : ce sont eux qu'on cherche en tapant « $. » ;
-        # le socle, identique pour tous les événements, vient ensuite.
+    for name, ref in _schema_refs(symbols, kind).items():
         properties: dict[str, Any] = {}
-        ref = refs.get(name, "")
         if ref and schema_registry is not None and ref in schema_registry:
             properties.update(schema_registry.get(ref).get("properties") or {})
-        for key, value in BASE_EVENT_SCHEMA["properties"].items():
+        for key, value in base["properties"].items():
             properties.setdefault(key, value)
         result[name] = _flatten_schema_paths(properties)
     return result
@@ -407,6 +437,14 @@ def base_event_schema() -> dict[str, Any]:
     return BASE_EVENT_SCHEMA
 
 
+@app.get("/api/base-state-schema")
+def base_state_schema() -> dict[str, Any]:
+    # Source unique du socle des états (vue « États »).
+    from urban_workflow.schemas import BASE_STATE_SCHEMA
+
+    return BASE_STATE_SCHEMA
+
+
 @app.post("/api/analyze")
 def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
@@ -450,10 +488,20 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
                 schema = schema_registry.get(setting.name)
                 properties.update(schema.get("properties", {}))
     symbols["payload_properties"] = sorted(properties)
-    symbols["event_properties"] = _event_properties(symbols, schema_registry)
-    from urban_workflow.schemas import BASE_EVENT_SCHEMA
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA, BASE_STATE_SCHEMA
 
+    symbols["event_properties"] = _object_properties(
+        symbols, schema_registry, "event", BASE_EVENT_SCHEMA
+    )
     symbols["base_paths"] = _flatten_schema_paths(BASE_EVENT_SCHEMA["properties"])
+    symbols["state_properties"] = _object_properties(
+        symbols, schema_registry, "state", BASE_STATE_SCHEMA
+    )
+    symbols["base_state_paths"] = _flatten_schema_paths(BASE_STATE_SCHEMA["properties"])
+    symbols.setdefault("state_details", [])
+
+    clashes = _schema_clash_problems(symbols, schema_registry)
+    errors.extend(_error_entry(problem) for problem in clashes)
 
     return {
         "ok": not errors,
@@ -571,6 +619,16 @@ def simulate(request: SimulateRequest) -> dict[str, Any]:
                         "integration_date": json_safe(e.integration_date),
                     }
                     for e in w.events
+                ],
+                # Une instance par SWITCH, chacune référençant l'événement
+                # qui l'a créée.
+                "states": [
+                    {
+                        "name": s.name, "uuid": str(s.uuid),
+                        "creation_date": json_safe(s.creation_date),
+                        "event_id": str(s.event_id) if s.event_id else None,
+                    }
+                    for s in w.states
                 ],
             }
             for w in storage.get_all(Workflow)

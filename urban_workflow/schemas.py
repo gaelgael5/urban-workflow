@@ -51,6 +51,40 @@ BASE_EVENT_SCHEMA: dict[str, Any] = {
     "required": ["Name"],
 }
 
+#: Socle commun de toute instance d'état : posé par le moteur au SWITCH,
+#: donc non modifiable (readOnly). Le schéma métier d'un état
+#: (``DEFINE STATE X … AS @schema``) le complète sans pouvoir le redéfinir.
+BASE_STATE_SCHEMA: dict[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "urban-workflow base state",
+    "type": "object",
+    "properties": {
+        "Name": {"type": "string", "readOnly": True, "description": "Nom de l'état."},
+        "Uuid": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": True,
+            "description": "Identité de l'instance (une par SWITCH).",
+        },
+        "CreationDate": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": True,
+            "description": "Date d'entrée dans l'état.",
+        },
+        # Les états de départ/d'arrivée ne sont PAS des propriétés de
+        # l'événement : un même événement peut être traité en parallèle par
+        # plusieurs workflows. C'est l'état qui référence l'événement.
+        "EventId": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": True,
+            "description": "Uuid de l'événement entrant qui a créé l'état.",
+        },
+    },
+    "required": ["Name"],
+}
+
 def _load_yaml(text: str) -> dict[str, Any]:
     try:
         import yaml

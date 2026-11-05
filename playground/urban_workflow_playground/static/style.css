@@ -70,7 +70,7 @@ main { flex: 1; display: flex; min-height: 0; }
 [hidden] { display: none !important; }
 
 /* Vue « Événements » : liste à gauche, détail (socle + schéma métier) à droite. */
-#events-view.active { display: flex; flex: 1; min-height: 0; }
+#events-view.active, #states-view.active { display: flex; flex: 1; min-height: 0; }
 .ev-list {
   flex: 0 0 230px;
   overflow: auto;
