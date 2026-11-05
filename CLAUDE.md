@@ -129,7 +129,13 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   schéma métier, `EventSchemaError`) et retourne l'empreinte SHA-256 ;
   `_already_integrated` = rejeu Uuid OU même `Event.dedup_hash` dans
   l'historique → ignoré silencieusement (existants ET création).
-  Colonne SQL `workflow_events.dedup_hash`. La validation ne s'applique
+  Colonne SQL `workflow_events.dedup_hash`.
+- **`IntegrationDate`** (socle, `readOnly`) : posée par `evaluate_event`
+  (`WorkflowClock`, avant validation, seulement si absente) ; ignorée si
+  l'émetteur l'envoie (`_SYSTEM_FIELDS` du serializer). Portée par
+  `IncomingEvent`/`Event.integration_date`, colonne SQL, contexte des
+  templates. `Event.creation_date` reste « now » à l'historisation (héritage
+  du source, non modifié). La validation ne s'applique
   que si l'événement serait réellement traité par la config.
 - **Playground à jour schémas/UNIQUE** : panneau « Schémas d'événements »
   dans Paramétrage (nom + YAML, localStorage `uw-playground-schemas`),
