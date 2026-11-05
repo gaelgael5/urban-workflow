@@ -89,9 +89,10 @@
         <button type="submit">Ajouter</button>
       </form>
 
-      <h4 class="section-title">Schémas d'événements <small>(JSON Schema en YAML)</small></h4>
-      <p class="hint-text">Référencés par <code>DEFINE EVENT … AS @nom;</code> —
-      le payload est validé (socle commun + schéma) à chaque évaluation.</p>
+      <h4 class="section-title">Schémas <small>(événements et états, JSON Schema en YAML)</small></h4>
+      <p class="hint-text">Référencés par <code>DEFINE EVENT … AS @nom;</code>
+      (payload validé : socle commun + schéma) ou <code>DEFINE STATE … AS @nom</code>
+      (champs métier de l'état). Éditables aussi dans les vues Événements et États.</p>
       <div id="schemas-list"></div>
       <form id="schema-form">
         <input id="schema-name" placeholder="schema_MonEvenement" required

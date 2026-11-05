@@ -182,7 +182,42 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
 
-## Hors plan — Arguments `$.chemin` (fait)
+## Hors plan — États modélisés, `@state`, `@IncomingEvent` (fait)
+
+Cadrage du 2026-11-05 — **trois objets** : l'événement entrant
+(`@IncomingEvent`, point d'intégration), l'**état** (créé au SWITCH ; le
+calcul de ses champs métier est À CADRER), le workflow (hors cadrage).
+- **`$.` supprimé** → `@IncomingEvent.…` (le `@` est collé à la référence),
+  mêmes capacités. Grammaire : règle `contextPath` (`AROBASE key
+  jsonPathSegment*`) placée AVANT `compositekey` dans `argumentValue` (sur
+  un chemin à points, ambigu, ANTLR prend la première alternative) ; token
+  `DOLLAR` retiré. `[n]`/`['x']` refusés hors `@IncomingEvent`/`@state`.
+  Racines insensibles à la casse. `@Event.…` (historique) reste résolu mais
+  n'est plus proposé.
+- **FromState/ToState ne sont PAS des propriétés de l'événement** (un même
+  événement peut être traité par plusieurs workflows en parallèle) : hors
+  du modèle exposé ; l'instance d'état porte **`EventId`** (l'événement qui
+  l'a créée). `Event.from_state/to_state` internes (par workflow) restent.
+- États : `DEFINE STATE X 'l' AS @schema` ; `BASE_STATE_SCHEMA` = `Name`,
+  `Uuid`, `CreationDate`, `EventId` (readOnly). `StateInstance` créée à
+  **chaque SWITCH** (même vers l'état courant), d'abord dans
+  `ctx.pending_states` (les règles RECURSIVE voient déjà `@state.Uuid`),
+  versée dans `workflow.states` par `AppendStandardEvent` ; table SQL
+  `workflow_states`.
+- `@state` = `StatePath` liée au chargement au NOM de l'état du bloc
+  (`_current_state` du visiteur) → instance la plus récente de cet état ;
+  erreur positionnée dans INITIALIZE. Contrôle contre le schéma de l'état.
+- **Switch viable** (RECURSIVE seulement) : `_find_route` ; état cible qui
+  gère l'événement sans branche passante → comme si le switch n'avait pas
+  été rencontré (pas de workflow). Route présélectionnée réutilisée (gardes
+  évaluées une fois).
+- Playground : `models.js` = UN composant pour les vues Événements et États
+  (`OBJECT_KINDS`), éléments repérés par `data-ref` scopés à la vue (deux
+  vues dans la page) ; `state_details`/`state_properties`/`base_state_paths`
+  + repli regex `state_schema_refs` ; contrôle « pas de redéfinition du
+  socle » selon l'USAGE du schéma (événement ou état), après le parse.
+
+## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 
 - **Troisième extension de grammaire** (commentée dans les .g4) : tokens
   `DOLLAR`/`LEFT_BRACKET`/`RIGHT_BRACKET`, règle `jsonPath` dans
