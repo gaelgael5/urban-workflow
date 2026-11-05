@@ -428,6 +428,10 @@ class TestEventPathsInPlayground:
                   "schemas": [{"name": "schema_Ouverture", "yaml": yaml_text}]},
         ).json()
         assert data["ok"] is True, data["errors"]
+        listed = [p["path"] for p in data["symbols"]["event_properties"]["Ouverture"]]
+        # Champs métier d'abord (les plus recherchés), socle ensuite.
+        assert listed[0] == "Montant"
+        assert listed.index("Lignes[0].Qte") < listed.index("Name")
         paths = {p["path"]: p["type"] for p in data["symbols"]["event_properties"]["Ouverture"]}
         assert paths["Montant"] == "number"
         assert paths["Client.Pays"] == "string"

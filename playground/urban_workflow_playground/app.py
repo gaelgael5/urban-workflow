@@ -325,10 +325,14 @@ def _event_properties(symbols: dict[str, Any], schema_registry) -> dict[str, lis
     ]
     result: dict[str, list] = {}
     for name in names:
-        properties = dict(BASE_EVENT_SCHEMA["properties"])
+        # Champs métier D'ABORD : ce sont eux qu'on cherche en tapant « $. » ;
+        # le socle, identique pour tous les événements, vient ensuite.
+        properties: dict[str, Any] = {}
         ref = refs.get(name, "")
         if ref and schema_registry is not None and ref in schema_registry:
             properties.update(schema_registry.get(ref).get("properties") or {})
+        for key, value in BASE_EVENT_SCHEMA["properties"].items():
+            properties.setdefault(key, value)
         result[name] = _flatten_schema_paths(properties)
     return result
 
