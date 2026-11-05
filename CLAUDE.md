@@ -182,6 +182,27 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
 
+## Hors plan — Arguments `$.chemin` (fait)
+
+- **Troisième extension de grammaire** (commentée dans les .g4) : tokens
+  `DOLLAR`/`LEFT_BRACKET`/`RIGHT_BRACKET`, règle `jsonPath` dans
+  `argumentValue` → `$.Prop`, `$.Liste[0].X`, `$['nom']`, `$` seul.
+  Parseur régénéré dans un conteneur `eclipse-temurin:21-jre` sur test1
+  (pas de Java sur le poste), jar via le miroir Maven.
+- `values.EventPath` (callable comme `ContextRef`) : résolu contre
+  `event_to_document(ctx.incoming_event)` (socle + payload) ; absent →
+  `None` ; pas de conversion de type. Vaut pour règles ET actions.
+- Visiteur : `_current_event` = événement du bloc `ON EVENT`/initialiseur
+  en cours ; `_check_event_path` refuse un chemin inconnu du schéma de cet
+  événement (si registre fourni), arrêt silencieux sur `$ref`,
+  combinaisons, `patternProperties`, `additionalProperties` schéma.
+- Playground : `event_properties` (chemins aplatis + type, par événement)
+  et `base_paths` dans `/api/analyze` ; le repli regex lit aussi les
+  `AS @…` (`schema_refs`) — sinon l'intellisense perd le schéma pendant la
+  frappe, quand le script ne compile pas. Complétion après `$` selon le
+  dernier `ON EVENT X` avant le curseur (socle seul après `DEFINE STATE`,
+  `ON ENTER/EXIT`, `EXPIRE AFTER`).
+
 ## Hors plan — Vue Événements du playground (fait)
 
 - Troisième vue (Éditeur | Diagramme | **Événements**) : liste des
