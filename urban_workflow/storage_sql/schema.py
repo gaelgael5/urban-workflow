@@ -46,6 +46,7 @@ workflow_events = Table(
     Column("to_state", String(70), nullable=False, default=""),
     Column("creation_date", String(40)),
     Column("event_date", String(40)),
+    Column("integration_date", String(40)),
     Column("dedup_hash", String(64), nullable=False, default=""),
     Column("extended_datas", Text, nullable=False, default="{}"),
     Index("ix_workflow_events_workflow_uuid", "workflow_uuid"),

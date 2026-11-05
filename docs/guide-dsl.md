@@ -119,7 +119,8 @@ mais non déclaré est ignoré par ce workflow. Deux clauses optionnelles
   à part et chargé à l'initialisation du moteur (voir
   [guide-integration.md](guide-integration.md) §6) ; chaque événement
   entrant de ce nom est alors validé contre le socle commun (`Name`,
-  `Uuid`, `ExternalId`, `CreationDate`, `EventDate`, `DedupKey`) **et**
+  `Uuid`, `ExternalId`, `CreationDate`, `EventDate`, `DedupKey`,
+  `IntegrationDate` — cette dernière posée par le moteur) **et**
   contre ce schéma — payload non conforme = `EventSchemaError` ;
 - **`UNIQUE (Prop, …)`** — anti-doublon fonctionnel : le moteur hache la
   concaténation de ces propriétés du payload (SHA-256) et **ignore** tout

@@ -6,8 +6,8 @@ l'initialisation du moteur (fichiers YAML ou contenu brut) dans un
 les référencent par nom.
 
 Chaque schéma décrit le payload complet de l'événement (socle commun
-``Name``/``Uuid``/``ExternalId``/``CreationDate``/``EventDate`` + données
-métier, dont l'optionnel ``DedupKey``).
+``Name``/``Uuid``/``ExternalId``/``CreationDate``/``EventDate``, l'optionnel
+``DedupKey``, et ``IntegrationDate`` posée par le moteur + données métier).
 
 Les schémas restent du JSON Schema pur — l'anti-doublon se déclare
 côté DSL (``UNIQUE (…)`` sur ``DEFINE EVENT``) ou côté émetteur
@@ -38,6 +38,15 @@ BASE_EVENT_SCHEMA: dict[str, Any] = {
         "CreationDate": {"type": "string", "format": "date-time"},
         "EventDate": {"type": "string", "format": "date-time"},
         "DedupKey": {"type": "string", "minLength": 1},
+        # readOnly (mot-clé JSON Schema) : géré par le système. Le moteur la
+        # pose à l'intégration ; une valeur de l'émetteur est ignorée.
+        "IntegrationDate": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": True,
+            "description": "Date d'insertion de l'événement dans le système "
+            "(posée par le moteur).",
+        },
     },
     "required": ["Name"],
 }

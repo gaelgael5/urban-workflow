@@ -278,6 +278,7 @@ from the source format):
 | `Uuid` | Event identity — **the replay-without-duplicates key** |
 | `ExternalId` | Subject identifier: groups instances |
 | `CreationDate`, `EventDate` | ISO 8601 dates |
+| `IntegrationDate` | **Set by the engine** (`WorkflowClock`) when `evaluate_event` receives the event: the date it entered the system. A value sent by the emitter is ignored. Kept in the history (`Event.integration_date`, SQL column `integration_date`) and exposed to templates (`event.integration_date`, `incoming.integration_date`) |
 | *everything else* | Business data (`extended_datas`), visible to rules, `MATCHING` filters and templates |
 
 An invalid payload raises `InvalidIncomingEventFormatError`.

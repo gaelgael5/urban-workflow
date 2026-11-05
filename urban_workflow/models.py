@@ -37,6 +37,10 @@ class IncomingEvent:
     external_id: str = ""
     creation_date: datetime | None = None
     event_date: datetime | None = None
+    #: Date d'insertion dans le système (``IntegrationDate``) : posée par le
+    #: moteur à l'entrée de ``evaluate_event`` (horloge ``WorkflowClock``),
+    #: jamais lue du payload — l'émetteur ne peut pas la fixer.
+    integration_date: datetime | None = None
     #: Clé d'idempotence fournie par l'émetteur (propriété ``DedupKey``
     #: du payload) — prioritaire sur les clés ``UNIQUE`` du DSL.
     dedup_key: str = ""
@@ -65,6 +69,8 @@ class Event:
     uuid: UUID = field(default_factory=new_uuid)
     creation_date: datetime | None = None
     event_date: datetime | None = None
+    #: Date d'insertion dans le système, reprise de l'événement entrant.
+    integration_date: datetime | None = None
     from_state: str = ""
     to_state: str = ""
     change: ChangeEnum = ChangeEnum.NONE

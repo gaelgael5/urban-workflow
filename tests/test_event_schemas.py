@@ -319,3 +319,66 @@ class TestEngineSchemaValidation:
 
         return {"Name": "DemandeSoumise", "Uuid": str(uuid4()),
                 "ExternalId": "DA-1", **extra}
+
+
+class TestIntegrationDate:
+    """IntegrationDate : date d'insertion dans le système, posée par le
+    moteur (jamais par l'émetteur), portée par l'historique."""
+
+    def _payload(self, **extra):
+        from uuid import uuid4
+
+        return {"Name": "DemandeSoumise", "Uuid": str(uuid4()),
+                "ExternalId": "DA-1", **extra}
+
+    def test_engine_stamps_integration_date_with_the_clock(self):
+        from datetime import datetime, timezone
+
+        from urban_workflow import Workflow, WorkflowClock
+
+        engine, storage = make_engine(UNIQUE_SCRIPT)
+        instant = datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc)
+        with WorkflowClock.frozen(instant):
+            engine.evaluate_event(self._payload(Montant=1))
+
+        event = storage.get_by(Workflow, "DA-1", "external_id")[0].events[0]
+        assert event.integration_date == instant
+
+    def test_emitter_value_is_ignored(self):
+        from datetime import datetime, timezone
+
+        from urban_workflow import Workflow, WorkflowClock, parse_incoming_event
+
+        parsed = parse_incoming_event(
+            self._payload(IntegrationDate="2000-01-01T00:00:00+00:00")
+        )
+        assert parsed.integration_date is None
+        assert "IntegrationDate" not in parsed.extended_datas
+
+        engine, storage = make_engine(UNIQUE_SCRIPT)
+        instant = datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc)
+        with WorkflowClock.frozen(instant):
+            engine.evaluate_event(
+                self._payload(Montant=1, IntegrationDate="2000-01-01T00:00:00+00:00")
+            )
+        event = storage.get_by(Workflow, "DA-1", "external_id")[0].events[0]
+        assert event.integration_date == instant
+
+    def test_base_schema_declares_it_read_only(self):
+        from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+        prop = BASE_EVENT_SCHEMA["properties"]["IntegrationDate"]
+        assert prop["format"] == "date-time"
+        assert prop["readOnly"] is True
+
+    def test_document_carries_integration_date(self):
+        from datetime import datetime, timezone
+
+        from urban_workflow import IncomingEvent
+        from urban_workflow.engine.serializer import event_to_document
+
+        instant = datetime(2026, 11, 5, 9, 30, tzinfo=timezone.utc)
+        document = event_to_document(
+            IncomingEvent(name="X", integration_date=instant)
+        )
+        assert document["IntegrationDate"] == instant.isoformat()

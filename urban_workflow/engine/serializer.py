@@ -43,6 +43,11 @@ _KNOWN_FIELDS = {
     "DedupKey": ("dedup_key", str),
 }
 
+# Propriétés du socle que l'émetteur ne fixe pas : posées par le moteur.
+# Lues dans un payload, elles sont ignorées (ni champ typé, ni donnée
+# étendue) — sinon un émetteur pourrait antidater son intégration.
+_SYSTEM_FIELDS = frozenset({"IntegrationDate"})
+
 
 def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingEvent:
     """Peuple ``event`` depuis un payload JSON (chaîne ou mapping).
@@ -58,6 +63,8 @@ def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingE
         raise ValueError("incoming event payload must be a JSON object")
 
     for key, value in payload.items():
+        if key in _SYSTEM_FIELDS:
+            continue
         known = _KNOWN_FIELDS.get(key)
         if known is not None:
             attribute, convert = known
@@ -88,6 +95,8 @@ def event_to_document(event: IncomingEvent) -> dict[str, Any]:
         document["CreationDate"] = event.creation_date.isoformat()
     if event.event_date is not None:
         document["EventDate"] = event.event_date.isoformat()
+    if event.integration_date is not None:
+        document["IntegrationDate"] = event.integration_date.isoformat()
     if event.dedup_key:
         document["DedupKey"] = event.dedup_key
     return document

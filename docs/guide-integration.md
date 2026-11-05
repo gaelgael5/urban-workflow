@@ -297,6 +297,7 @@ du format source) :
 | `ExternalId` | Identifiant du sujet : regroupe les instances |
 | `CreationDate`, `EventDate` | Dates ISO 8601 |
 | `DedupKey` | Clé d'idempotence optionnelle fournie par l'émetteur — deux événements portant la même clé ne sont intégrés qu'une fois (prioritaire sur `UNIQUE`) |
+| `IntegrationDate` | **Posée par le moteur** (horloge `WorkflowClock`) à l'entrée de `evaluate_event` : date d'insertion dans le système. Une valeur envoyée par l'émetteur est ignorée. Conservée dans l'historique (`Event.integration_date`, colonne SQL `integration_date`) et exposée aux templates (`event.integration_date`, `incoming.integration_date`) |
 | *tout le reste* | Données métier (`extended_datas`), visibles des règles, des `MATCHING` et des templates |
 
 Un payload invalide lève `InvalidIncomingEventFormatError`.

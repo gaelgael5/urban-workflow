@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .. import constants
+from ..clock import WorkflowClock
 from ..config import (
     InitializationConfig,
     ResultRuleConfig,
@@ -71,6 +72,12 @@ class WorkflowProcessor:
             raise ValueError("event is required")
         if self.output_actions is None:
             raise ValueError("output_actions is required")
+
+        # Date d'intégration posée AVANT la validation : le document validé
+        # contre le socle la porte déjà. « is None » plutôt qu'écrasement : un
+        # même IncomingEvent réévalué (récursif) garde sa date d'origine.
+        if event.integration_date is None:
+            event.integration_date = WorkflowClock.now()
 
         workflows = self._load_existing_workflows(event)
         contexts = list(self._get_existing_contexts(event, workflows))
