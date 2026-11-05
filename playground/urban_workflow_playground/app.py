@@ -18,12 +18,13 @@ validation des appels ``WHEN`` soit la vraie.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -474,9 +475,34 @@ def simulate(request: SimulateRequest) -> dict[str, Any]:
 # ----------------------------------------------------------------------
 
 
+def _versioned_index() -> str:
+    """index.html dont chaque URL /static/… porte ?v=<empreinte du fichier>.
+
+    Sans cela, après un déploiement, le navigateur combinait la page neuve
+    avec un app.js/style.css périmés tirés de son cache (StaticFiles ne pose
+    pas de Cache-Control : le navigateur réutilise à l'heuristique). Une
+    empreinte PAR FICHIER plutôt qu'un numéro de version global : seul ce qui
+    a changé est retéléchargé, les vendors (x6 ≈ 1 Mo) restent en cache.
+    Calculé une fois au chargement du module : les fichiers ne bougent pas
+    sans redéploiement, donc sans redémarrage du process.
+    """
+    def stamp(match: re.Match[str]) -> str:
+        attr, rel = match.group(1), match.group(2)
+        digest = hashlib.sha256((STATIC_DIR / rel).read_bytes()).hexdigest()[:12]
+        return f'{attr}="/static/{rel}?v={digest}"'
+
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return re.sub(r'(href|src)="/static/([^"?#]+)"', stamp, html)
+
+
+_INDEX_HTML = _versioned_index()
+
+
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def index() -> HTMLResponse:
+    # no-cache = revalider à chaque chargement : la page est minuscule, et
+    # c'est elle qui porte les empreintes des fichiers à jour.
+    return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)

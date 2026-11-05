@@ -329,3 +329,28 @@ class TestFavicon:
         # Bouton de repli du panneau de droite (le comportement lui-même est
         # éprouvé dans un vrai navigateur sur la machine de test).
         assert 'id="side-collapse"' in client.get("/").text
+
+
+class TestAssetVersioning:
+    """Sans version dans l'URL, le navigateur garde l'ancien app.js/style.css
+    après un déploiement : page neuve + scripts périmés (vu sur le repli du
+    panneau de droite)."""
+
+    def test_static_assets_carry_a_content_version(self):
+        import re
+
+        html = client.get("/").text
+        refs = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
+        assert refs, "la page doit référencer ses fichiers statiques"
+        for ref in refs:
+            assert re.search(r"\?v=[0-9a-f]{12}$", ref), ref
+
+    def test_versioned_asset_is_still_served(self):
+        import re
+
+        html = client.get("/").text
+        ref = re.search(r'src="(/static/app\.js\?v=[0-9a-f]+)"', html).group(1)
+        assert client.get(ref).status_code == 200
+
+    def test_index_is_revalidated_on_each_load(self):
+        assert client.get("/").headers["cache-control"] == "no-cache"
