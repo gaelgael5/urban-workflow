@@ -32,6 +32,13 @@
   var graph = new X6.Graph({
     container: document.getElementById("diagram-canvas"),
     autoResize: true,
+    // Rendu SYNCHRONE, obligatoire ici : rebuildGraph() fait clearCells()
+    // puis ré-ajoute les MÊMES ids. En rendu asynchrone (défaut X6), la
+    // suppression des vues est différée dans willRemoveViews[id] ; le
+    // ré-ajout écrase l'entrée et l'ancienne vue n'est jamais retirée du
+    // DOM — chaque reconstruction doublait les états à l'écran (fantômes
+    // visibles en glissant un état). Coût négligeable à cette taille.
+    async: false,
     background: { color: COLORS.bg },
     grid: { visible: true, size: 14, args: { color: "#1c2330", thickness: 1 } },
     interacting: {
