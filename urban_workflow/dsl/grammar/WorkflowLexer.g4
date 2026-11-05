@@ -90,6 +90,11 @@ COLON :                 ':';
 COMMA :                 ',';
 DOT :                   '.';
 AROBASE :               '@';
+// Extension urban-workflow : chemins JSONPath ($.Prop, $.Liste[0],
+// $['prop']) vers le document de l'evenement entrant.
+DOLLAR :                '$';
+LEFT_BRACKET :          '[';
+RIGHT_BRACKET :         ']';
 SPACES: [ \t\r\n]+ -> skip;
     
 // Rule #504 <SIMPLE_LETTER> - simple_latin _letter was generalised into SIMPLE_LETTER

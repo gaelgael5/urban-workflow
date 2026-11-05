@@ -146,6 +146,7 @@ forms:
 | Literal | `reason = 'incomplete file'` | Fixed value, converted to the declared parameter type |
 | `@` path | `target = @Workflow.ExternalId` | **Lazy reference**, resolved at run time against the context |
 | Bare name | `threshold = auto_threshold` | `DEFINE CONST` constant if it exists, otherwise a text literal |
+| `$` path | `amount = $.Amount` | **JSONPath** into the incoming event document (urban-workflow extension, see below) |
 
 ### `@` paths
 
@@ -162,6 +163,33 @@ A path navigates the execution context, segment by segment:
 Paths accept the DSL's CamelCase even though the Python attributes are
 snake_case (`@Workflow.ExternalId` → `workflow.external_id`), falling back
 to extended data when the segment is not an attribute.
+
+### `$` paths (JSONPath on the event)
+
+`$` is the **incoming event document**, the one event schemas validate:
+the common base (`Name`, `Uuid`, `ExternalId`, `CreationDate`,
+`EventDate`, `DedupKey`, `IntegrationDate`) plus the payload's business
+data — the same names as in the schema YAML:
+
+```
+ON EVENT RequestSubmitted
+    WHEN AmountBelow(threshold = $.Amount)
+     AND CountryAllowed(country = $.Customer.Country)
+    SWITCH UnderReview
+```
+
+- Segments: `.Prop`, list index `[n]`, and `['name']` for names that are
+  not identifiers (or are keywords). `$` alone passes the whole document.
+  No filters or wildcards: a rule receives **one** value.
+- The value keeps its JSON type (no conversion to the declared type, as
+  with `@`). A missing path yields `None`.
+- **Checked at load time**: inside `ON EVENT X …`, when X declares a schema
+  (`AS @…`) and the schema registry is supplied, an unknown path
+  (`$.Amonut`) is a positioned error (`file:line:col`). The check stops
+  silently where the schema cannot decide (`$ref`, `allOf`/`anyOf`/`oneOf`,
+  `patternProperties`, schema-valued `additionalProperties`).
+- In the playground, typing `$.` suggests the properties of the event of
+  the enclosing `ON EVENT` block (the base only outside such a block).
 
 ## 5. Creating an instance to handle a subject (`INITIALIZE WORKFLOW`)
 

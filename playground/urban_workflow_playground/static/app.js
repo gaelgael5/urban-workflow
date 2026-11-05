@@ -20,12 +20,15 @@
     start: [
       {regex: /--.*/, token: "comment"},
       {regex: /\/\*/, token: "comment", next: "comment"},
+      // Chemin JSONPath vers l'événement entrant ($.Prop, $.Liste[0], $['p']) —
+      // avant la règle des chaînes, qui avalerait le ['p'].
+      {regex: /\$(?:\.[A-Za-z][\w$#]*|\[\d+\]|\['(?:[^'\n]|'')*'\])*/, token: "variable-3"},
       {regex: /'(?:[^'\n]|'')*'/, token: "string"},
       {regex: new RegExp("\\b(?:" + KEYWORDS.join("|") + ")\\b"), token: "keyword"},
       {regex: /@[A-Za-z][\w$#]*(?:\.[A-Za-z][\w$#]*)*/, token: "variable-2"},
       {regex: /\b\d+\b/, token: "number"},
       {regex: /[A-Za-z][\w$#]*/, token: "variable"},
-      {regex: /[();=,.]/, token: "punctuation"},
+      {regex: /[();=,.\[\]]/, token: "punctuation"},
     ],
     comment: [
       {regex: /.*?\*\//, token: "comment", next: "start"},
@@ -128,6 +131,37 @@
     };
   }
 
+  /** Événement du bloc ON EVENT qui contient le curseur (null hors bloc). */
+  function enclosingEvent(textBefore) {
+    var re = /\bON\s+EVENT\s+([A-Za-z][\w$#]*)|\bEXPIRE\s+AFTER\b|\bDEFINE\s+STATE\b|\bON\s+(?:ENTER|EXIT)\b/gi;
+    var last = null, m;
+    // Les commentaires ne comptent pas : un « ON EVENT » commenté ne
+    // définit pas le contexte.
+    var text = textBefore.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    while ((m = re.exec(text)) !== null) { last = m; }
+    return last && last[1] ? last[1] : null;
+  }
+
+  function eventPathCompletions(cm) {
+    var before = cm.getRange(CodeMirror.Pos(0, 0), cm.getCursor());
+    var eventName = enclosingEvent(before);
+    var byEvent = symbols.event_properties || {};
+    var paths = (eventName && byEvent[eventName]) || null;
+    if (!paths) {
+      // Hors d'un bloc ON EVENT (ou événement inconnu) : seul le socle,
+      // commun à tous les événements, est certain (fourni par le serveur,
+      // source unique BASE_EVENT_SCHEMA).
+      paths = symbols.base_paths || [];
+    }
+    return paths.map(function (p) {
+      return {
+        text: "$." + p.path,
+        displayText: "$." + p.path + "  ·  " + p.type +
+          (eventName ? "" : "  (socle)"),
+      };
+    });
+  }
+
   function completionsFor(context) {
     if (context === "path") {
       return CONTEXT_PATHS.map(function (p) { return {text: p, displayText: p}; });
@@ -160,6 +194,7 @@
   }
 
   function detectContext(before) {
+    if (/\$[\w.\[\]']*$/.test(before)) { return "eventpath"; }
     if (/\bAS\s+@?\w*$/i.test(before)) { return "schema"; }
     if (/\bUNIQUE\s*\([^)]*$/i.test(before)) { return "unique"; }
     if (/@[\w.]*$/.test(before)) { return "path"; }
@@ -177,6 +212,17 @@
     if (token.type === "string" || token.type === "comment") { return null; }
     var lineText = cm.getLine(cursor.line).slice(0, cursor.ch);
     var context = detectContext(lineText);
+    if (context === "eventpath") {
+      var pathMatch = /\$[\w.\[\]']*$/.exec(lineText);
+      var typedPath = pathMatch[0].toLowerCase();
+      return {
+        list: eventPathCompletions(cm).filter(function (item) {
+          return item.text.toLowerCase().indexOf(typedPath) === 0;
+        }),
+        from: CodeMirror.Pos(cursor.line, cursor.ch - pathMatch[0].length),
+        to: CodeMirror.Pos(cursor.line, cursor.ch),
+      };
+    }
 
     var match = /[@\w.]*$/.exec(lineText);
     var start = cursor.ch - (match ? match[0].length : 0);
@@ -200,7 +246,9 @@
     if (cm.state.completionActive) { return; }
     var token = cm.getTokenAt(cm.getCursor());
     if (token.type === "string" || token.type === "comment") { return; }
-    if (/[\w@]/.test(change.text[0])) {
+    // $ et . ouvrent aussi la complétion : « $. » doit proposer les
+    // propriétés de l'événement sans attendre une lettre.
+    if (/[\w@$.\[]/.test(change.text[0])) {
       cm.showHint({hint: dslHint, completeSingle: false});
     }
   });

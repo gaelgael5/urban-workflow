@@ -49,8 +49,8 @@ from ..exceptions import (
 )
 from ..models import RuleSpan, RunContext
 from ..registry import FunctionRegistry
-from ..schemas import SchemaRegistry
-from ..values import ContextRef, ContextValue, resolve_value
+from ..schemas import BASE_EVENT_SCHEMA, SchemaRegistry
+from ..values import ContextRef, ContextValue, EventPath, resolve_value
 from .errors import DslErrorModel
 from .generated.WorkflowParser import WorkflowParser
 from .generated.WorkflowParserVisitor import WorkflowParserVisitor
@@ -129,6 +129,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         self._declarations: dict[str, DeclaredFunction] = {}
         #: Cibles de ``SWITCH`` à valider une fois tous les états connus.
         self._pending_switch_targets: list[tuple[str, Any]] = []
+        #: Événement du bloc ``ON EVENT`` en cours de visite (None hors d'un
+        #: tel bloc, ex. ON ENTER STATE) : permet de vérifier les chemins
+        #: ``$.…`` contre le schéma de CET événement.
+        self._current_event: str | None = None
 
     # ------------------------------------------------------------------
     # API publique
@@ -482,7 +486,11 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         when_rule_position: RuleSpan | None = None
         if ctx.WHEN() is not None:
             condition = ctx.rule_conditions()
-            when_rule, when_rule_code = self.visitRule_conditions(condition)
+            self._current_event = event_name
+            try:
+                when_rule, when_rule_code = self.visitRule_conditions(condition)
+            finally:
+                self._current_event = None
             when_rule_text = self._source_text(condition)
             when_rule_position = self._span(condition)
 
@@ -521,11 +529,15 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             expire_rule_text = "@IncomingEvent.CurrentState == @Workflow.CurrentState"
             rule_pairs.extend(_expiration_rule_pairs(delay))
 
-        for switch_state in ctx.switch_state():
-            transition = self.visitSwitch_state(switch_state)
-            if expire_rule is not None:
-                _merge_when_rule(transition, expire_rule, expire_rule_text)
-            incoming_event.add_transition(transition)
+        self._current_event = incoming_event.name
+        try:
+            for switch_state in ctx.switch_state():
+                transition = self.visitSwitch_state(switch_state)
+                if expire_rule is not None:
+                    _merge_when_rule(transition, expire_rule, expire_rule_text)
+                incoming_event.add_transition(transition)
+        finally:
+            self._current_event = None
 
         return incoming_event, rule_pairs
 
@@ -681,6 +693,9 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         composite = ctx.compositekey()
         if composite is not None:
             return self.visitCompositekey(composite)
+        json_path = ctx.jsonPath()
+        if json_path is not None:
+            return json_path.getText()
         return ctx.string().getText()
 
     def _make_argument_value(
@@ -690,10 +705,17 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         - ``'…'``  → littéral converti vers le type déclaré ;
         - ``@a.b`` → :class:`ContextRef` (résolution paresseuse) ;
+        - ``$.a.b`` → :class:`EventPath` vers le document de l'événement
+          entrant (non converti : la valeur JSON garde son type, comme ``@``) ;
         - nom nu   → constante ``DEFINE CONST`` si elle existe, sinon littéral.
         """
         if raw.startswith("'") and raw.endswith("'"):
             return self._convert(_unquote(raw), declared_type, ctx)
+
+        if raw.startswith("$"):
+            path = EventPath.parse(raw)
+            self._check_event_path(path, ctx)
+            return path
 
         if raw.startswith("@"):
             return ContextRef.parse(raw)
@@ -703,6 +725,48 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             return self._convert(constant.value, declared_type, ctx)
 
         return self._convert(raw, declared_type, ctx)
+
+    def _check_event_path(self, path: EventPath, ctx) -> None:
+        """Refuse un chemin ``$.…`` inconnu du schéma de l'événement courant.
+
+        Ne vérifie que ce qui est décidable : dans un bloc ``ON EVENT X``,
+        X déclaré avec un schéma résolu (registre fourni). Le socle commun
+        est toujours connu. La descente s'arrête — sans erreur — dès que le
+        schéma ne permet plus de trancher (``$ref``, combinaisons
+        ``allOf``/``anyOf``…, ``additionalProperties`` schéma,
+        ``patternProperties``) : mieux vaut laisser passer qu'inventer une
+        erreur. Une propriété absente d'un ``properties`` déclaré est en
+        revanche refusée : c'est la faute de frappe que ce contrôle vise.
+        """
+        if self._schemas is None or self._current_event is None:
+            return
+        declared = self._workflow.declared_events.get(self._current_event)
+        if declared is None or declared.schema is None:
+            return
+
+        properties = dict(BASE_EVENT_SCHEMA["properties"])
+        properties.update(declared.schema.get("properties") or {})
+        schema: Any = {**declared.schema, "properties": properties}
+
+        for depth, segment in enumerate(path.segments):
+            if not isinstance(schema, dict) or _undecidable(schema):
+                return
+            if isinstance(segment, int):
+                schema = schema.get("items")
+                continue
+            known = schema.get("properties")
+            if not isinstance(known, dict):
+                return
+            if segment not in known:
+                shown = EventPath(path.segments[: depth + 1])
+                self._raise_positioned(
+                    InvalidArgumentValueError,
+                    ctx,
+                    f"unknown property {str(shown)!r} in event "
+                    f"{self._current_event!r} (schema @{declared.schema_ref}); "
+                    f"known: {sorted(known)}",
+                )
+            schema = known[segment]
 
     def _convert(self, value: Any, declared_type: type | None, ctx) -> Any:
         if declared_type is None or declared_type is object:
@@ -976,3 +1040,10 @@ def _merge_when_rule(
 
         transition.when_rule = combined
         transition.when_rule_text = f"{guard_text} AND {transition.when_rule_text}"
+
+
+def _undecidable(schema: dict) -> bool:
+    """Le schéma ne permet pas de dire si une propriété y existe."""
+    if any(key in schema for key in ("$ref", "allOf", "anyOf", "oneOf", "patternProperties")):
+        return True
+    return isinstance(schema.get("additionalProperties"), dict)

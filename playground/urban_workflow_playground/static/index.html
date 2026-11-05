@@ -124,6 +124,11 @@ required: [Montant]"></textarea>
             le schéma (panneau Paramétrage) valide le payload ; UNIQUE et la
             propriété <code>DedupKey</code> de l'émetteur (prioritaire)
             bloquent les doublons en simulation.</li>
+        <li><code>regle(p = $.Montant)</code> : chemin JSONPath dans
+            l'événement entrant (socle + payload, <code>$.Client.Pays</code>,
+            <code>$.Lignes[0].Qte</code>). Taper <code>$.</code> propose les
+            propriétés de l'événement du bloc <code>ON EVENT</code> courant ;
+            un chemin absent du schéma est signalé.</li>
         <li>Vue <b>Événements</b> : liste des événements du script ; pour
             chacun, le socle commun (non modifiable) et l'éditeur visuel du
             schéma métier, synchronisé avec son YAML et le panneau

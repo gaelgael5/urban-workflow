@@ -136,6 +136,21 @@ argument :
 argumentValue :
       string 
     | compositekey
+    | jsonPath
+    ;
+
+// Extension urban-workflow : acces JSONPath au document de l'evenement
+// entrant (socle + donnees metier). Sous-ensemble volontaire : racine $,
+// proprietes (.Prop ou ['prop'] pour les noms hors identifiant) et index
+// de liste [n] -- pas de filtres ni de jokers (une regle recoit UNE valeur).
+jsonPath :
+    DOLLAR jsonPathSegment*
+    ;
+
+jsonPathSegment :
+      DOT key
+    | LEFT_BRACKET NUMBER RIGHT_BRACKET
+    | LEFT_BRACKET CHAR_STRING RIGHT_BRACKET
     ;
 
 rule_conditions :

@@ -408,3 +408,41 @@ class TestEventsView:
         assert data["ok"] is False
         message = data["errors"][0]["message"]
         assert "schema_Ouverture" in message and "Uuid" in message and "socle" in message
+
+
+class TestEventPathsInPlayground:
+    """Intellisense après $ : chemins de chaque événement (socle + schéma)."""
+
+    def test_event_properties_flatten_schema_paths(self):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        yaml_text = (
+            "type: object\nproperties:\n"
+            "  Montant: {type: number}\n"
+            "  Client: {type: object, properties: {Pays: {type: string}}}\n"
+            "  Lignes: {type: array, items: {type: object, properties: {Qte: {type: integer}}}}\n"
+        )
+        data = client.post(
+            "/api/analyze",
+            json={"script": SCHEMA_SCRIPT, "rules": [],
+                  "schemas": [{"name": "schema_Ouverture", "yaml": yaml_text}]},
+        ).json()
+        assert data["ok"] is True, data["errors"]
+        paths = {p["path"]: p["type"] for p in data["symbols"]["event_properties"]["Ouverture"]}
+        assert paths["Montant"] == "number"
+        assert paths["Client.Pays"] == "string"
+        assert paths["Lignes[0].Qte"] == "integer"
+        assert paths["Name"] == "string" and "IntegrationDate" in paths  # socle
+
+    def test_event_without_schema_offers_the_base_only(self):
+        data = client.post("/api/analyze", json={"script": SCRIPT, "rules": RULES}).json()
+        paths = [p["path"] for p in data["symbols"]["event_properties"]["Ouverture"]]
+        assert "Name" in paths and "IntegrationDate" in paths and "Montant" not in paths
+        base = [p["path"] for p in data["symbols"]["base_paths"]]
+        assert "IntegrationDate" in base and "Montant" not in base
+
+    def test_rule_argument_accepts_an_event_path(self):
+        script = SCRIPT.replace("EstComplet(champs = 'Montant')", "EstComplet(champs = $.Name)")
+        assert "$.Name" in script
+        data = client.post("/api/analyze", json={"script": script, "rules": RULES}).json()
+        assert data["ok"] is True, data["errors"]

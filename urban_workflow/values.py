@@ -81,6 +81,87 @@ class ContextRef:
         return current
 
 
+_PATH_TOKEN_RE = re.compile(
+    r"\.(?P<key>[A-Za-z_][A-Za-z0-9_$#]*)"
+    r"|\[(?P<index>\d+)\]"
+    r"|\['(?P<quoted>(?:[^']|'')*)'\]"
+)
+
+
+@dataclass(frozen=True)
+class EventPath:
+    """Chemin JSONPath ``$.a.b[0]`` vers le document de l'événement entrant.
+
+    Extension DSL urban-workflow (``WHEN Regle(p = $.Montant)``). Le
+    document est celui que valident les schémas : socle CamelCase
+    (``Name``, ``IntegrationDate``…) + données métier — l'auteur d'un
+    script raisonne donc sur le même objet que dans le YAML du schéma.
+
+    Sous-ensemble volontaire : propriétés et index de liste, pas de filtres
+    ni de jokers (une règle reçoit UNE valeur). Un chemin absent donne
+    ``None`` (sémantique JSONPath « pas de correspondance », même
+    convention que les chemins urban-json) plutôt qu'une erreur : un champ
+    facultatif absent est un cas métier normal, que la règle tranche.
+    """
+
+    #: Segments : ``str`` pour une propriété, ``int`` pour un index.
+    segments: tuple[str | int, ...] = ()
+
+    @classmethod
+    def parse(cls, text: str) -> EventPath:
+        text = text.replace(" ", "")
+        if not text.startswith("$"):
+            raise ValueError(f"an event path starts with '$': {text!r}")
+        segments: list[str | int] = []
+        position = 1
+        while position < len(text):
+            match = _PATH_TOKEN_RE.match(text, position)
+            if match is None:
+                raise ValueError(f"invalid event path {text!r} at {position}")
+            if match.group("key") is not None:
+                segments.append(match.group("key"))
+            elif match.group("index") is not None:
+                segments.append(int(match.group("index")))
+            else:
+                segments.append(match.group("quoted").replace("''", "'"))
+            position = match.end()
+        return cls(tuple(segments))
+
+    def __str__(self) -> str:
+        parts = ["$"]
+        for segment in self.segments:
+            if isinstance(segment, int):
+                parts.append(f"[{segment}]")
+            elif re.fullmatch(r"[A-Za-z][A-Za-z0-9_$#]*", segment):
+                parts.append(f".{segment}")
+            else:
+                parts.append("['" + segment.replace("'", "''") + "']")
+        return "".join(parts)
+
+    def resolve(self, document: Any) -> Any:
+        current = document
+        for segment in self.segments:
+            if isinstance(segment, int):
+                if not isinstance(current, list) or segment >= len(current):
+                    return None
+                current = current[segment]
+            else:
+                if not isinstance(current, Mapping) or segment not in current:
+                    return None
+                current = current[segment]
+        return current
+
+    def __call__(self, ctx: Any) -> Any:
+        # Import local : values est un module de base, le serializer (moteur)
+        # en dépend déjà — l'inverse au niveau module ferait un cycle.
+        from .engine.serializer import event_to_document
+
+        incoming = getattr(ctx, "incoming_event", None)
+        if incoming is None:
+            return None
+        return self.resolve(event_to_document(incoming))
+
+
 #: Une valeur de configuration : littéral, référence contextuelle ou callable.
 ContextValue = Any | ContextRef | Callable[[Any], Any]
 

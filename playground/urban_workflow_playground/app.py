@@ -273,6 +273,55 @@ def _positioned(exc: WorkflowError) -> dict[str, Any]:
     return _error_entry(str(exc))
 
 
+def _flatten_schema_paths(
+    properties: dict[str, Any], prefix: str = "", depth: int = 0
+) -> list[dict[str, str]]:
+    """Chemins ``$.…`` proposés par l'intellisense, avec leur type.
+
+    Objets descendus (``Client.Pays``), listes d'objets via leur premier
+    élément (``Lignes[0].Qte``) — la même forme que la syntaxe acceptée par
+    le DSL. Profondeur bornée : un schéma récursif ne fait pas boucler.
+    """
+    paths: list[dict[str, str]] = []
+    if depth > 4:
+        return paths
+    for name, schema in properties.items():
+        if not isinstance(schema, dict):
+            continue
+        path = f"{prefix}{name}"
+        kind = schema.get("type", "")
+        kind = kind if isinstance(kind, str) else "|".join(kind)
+        paths.append({"path": path, "type": kind or "any"})
+        if isinstance(schema.get("properties"), dict):
+            paths.extend(_flatten_schema_paths(schema["properties"], f"{path}.", depth + 1))
+        items = schema.get("items")
+        if isinstance(items, dict):
+            paths.append({"path": f"{path}[0]", "type": items.get("type", "any")})
+            if isinstance(items.get("properties"), dict):
+                paths.extend(
+                    _flatten_schema_paths(items["properties"], f"{path}[0].", depth + 1)
+                )
+    return paths
+
+
+def _event_properties(symbols: dict[str, Any], schema_registry) -> dict[str, list]:
+    """Pour chaque événement : socle commun + propriétés de son schéma."""
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+    refs = {d["name"]: d.get("schema_ref", "") for d in symbols.get("event_details", [])}
+    names = list(refs) or [
+        e for e in symbols.get("events", []) if not e.startswith(("$", "__"))
+    ]
+    result: dict[str, list] = {}
+    for name in names:
+        properties = dict(BASE_EVENT_SCHEMA["properties"])
+        ref = refs.get(name, "")
+        if ref and schema_registry is not None and ref in schema_registry:
+            properties.update(schema_registry.get(ref).get("properties") or {})
+        result[name] = _flatten_schema_paths(properties)
+    return result
+
+
 def _summary(config) -> dict[str, Any]:
     return {
         "name": config.name,
@@ -386,6 +435,10 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
                 schema = schema_registry.get(setting.name)
                 properties.update(schema.get("properties", {}))
     symbols["payload_properties"] = sorted(properties)
+    symbols["event_properties"] = _event_properties(symbols, schema_registry)
+    from urban_workflow.schemas import BASE_EVENT_SCHEMA
+
+    symbols["base_paths"] = _flatten_schema_paths(BASE_EVENT_SCHEMA["properties"])
 
     return {
         "ok": not errors,

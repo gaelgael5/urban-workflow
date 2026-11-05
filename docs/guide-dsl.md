@@ -169,7 +169,7 @@ nombre, délai (`n MINUTE|HOUR|DAY`, converti en minutes), identifiant.
 
 ## 4. Les arguments d'appel
 
-Dans `regle(arg = …)` comme dans `action(arg = …)`, trois formes de
+Dans `regle(arg = …)` comme dans `action(arg = …)`, quatre formes de
 valeur :
 
 | Forme | Exemple | Sémantique |
@@ -177,6 +177,7 @@ valeur :
 | Littéral | `motif = 'dossier incomplet'` | Valeur fixe, convertie au type déclaré du paramètre |
 | Chemin `@` | `cible = @Workflow.ExternalId` | **Référence paresseuse** résolue à l'exécution contre le contexte |
 | Nom nu | `seuil = seuil_auto` | Constante `DEFINE CONST` si elle existe, sinon littéral texte |
+| Chemin `$` | `montant = $.Montant` | **JSONPath** dans le document de l'événement entrant (extension urban-workflow, voir ci-dessous) |
 
 ### Les chemins `@`
 
@@ -194,6 +195,37 @@ Un chemin navigue dans le contexte d'exécution, segment par segment :
 Les chemins acceptent le CamelCase du DSL même si les attributs Python
 sont en snake_case (`@Workflow.ExternalId` → `workflow.external_id`), et
 retombent sur les données étendues quand le segment n'est pas un attribut.
+
+### Les chemins `$` (JSONPath sur l'événement)
+
+`$` désigne le **document de l'événement entrant**, celui que valident
+les schémas : socle commun (`Name`, `Uuid`, `ExternalId`, `CreationDate`,
+`EventDate`, `DedupKey`, `IntegrationDate`) + données métier du payload.
+On y écrit donc les mêmes noms que dans le YAML du schéma :
+
+```
+ON EVENT DemandeSoumise
+    WHEN MontantInferieur(seuil = $.Montant)
+     AND PaysAutorise(pays = $.Client.Pays)
+     AND QuantiteValide(qte = $.Lignes[0].Qte)
+    SWITCH EnValidation
+```
+
+- Segments : `.Prop`, index de liste `[n]`, et `['nom']` pour un nom qui
+  n'est pas un identifiant (ou qui est un mot-clé). `$` seul passe le
+  document entier. Pas de filtres ni de jokers : une règle reçoit
+  **une** valeur.
+- La valeur garde son type JSON (pas de conversion vers le type déclaré,
+  comme pour `@`). Un chemin absent donne `None` : un champ facultatif
+  manquant est un cas métier normal, que la règle tranche.
+- **Vérifié au chargement** : dans `ON EVENT X …`, si X est déclaré avec
+  un schéma (`AS @…`) et que le moteur reçoit le registre de schémas, un
+  chemin inconnu (`$.Montnt`) est une erreur positionnée
+  (`fichier:ligne:col`). Le contrôle s'arrête sans erreur là où le schéma
+  ne permet pas de trancher (`$ref`, `allOf`/`anyOf`/`oneOf`,
+  `patternProperties`, `additionalProperties` décrit par un schéma).
+- Dans le playground, taper `$.` propose les propriétés de l'événement du
+  bloc `ON EVENT` courant (le socle seul hors d'un tel bloc).
 
 ## 5. Créer une instance pour traiter un sujet (`INITIALIZE WORKFLOW`)
 
