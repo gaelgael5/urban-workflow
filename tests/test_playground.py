@@ -446,3 +446,21 @@ class TestEventPathsInPlayground:
         assert "$.Name" in script
         data = client.post("/api/analyze", json={"script": script, "rules": RULES}).json()
         assert data["ok"] is True, data["errors"]
+
+    def test_event_paths_survive_a_script_being_typed(self):
+        # Pendant la frappe de « $. » le script ne compile pas : la
+        # complétion doit quand même connaître le schéma de l'événement.
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        script = SCHEMA_SCRIPT.replace(
+            "ON EVENT Ouverture SWITCH Ouvert",
+            "ON EVENT Ouverture WHEN EstComplet(champs = $.) SWITCH Ouvert",
+        )
+        data = client.post(
+            "/api/analyze",
+            json={"script": script, "rules": RULES,
+                  "schemas": [{"name": "schema_Ouverture", "yaml": SCHEMA_YAML}]},
+        ).json()
+        assert data["ok"] is False
+        paths = [p["path"] for p in data["symbols"]["event_properties"]["Ouverture"]]
+        assert "Montant" in paths

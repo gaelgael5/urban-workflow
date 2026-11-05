@@ -175,6 +175,13 @@ def _build_schema_registry(
 # ----------------------------------------------------------------------
 
 _RE_EVENT = re.compile(r"\bDEFINE\s+EVENT\s+(\w+)", re.IGNORECASE)
+# DEFINE EVENT nom 'libellé'? AS @schema : sert au repli quand le script ne
+# compile pas — cas permanent PENDANT la frappe (« seuil = $. »), qui est
+# justement le moment où l'intellisense des chemins $ doit connaître le
+# schéma de l'événement.
+_RE_EVENT_SCHEMA = re.compile(
+    r"\bDEFINE\s+EVENT\s+(\w+)(?:\s*'(?:[^']|'')*')?\s+AS\s+@(\w+)", re.IGNORECASE
+)
 _RE_RULE = re.compile(r"\bDEFINE\s+RULE\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
 _RE_ACTION = re.compile(r"\bDEFINE\s+ACTION\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
 _RE_CONST = re.compile(r"\bDEFINE\s+CONST\s+(\w+)", re.IGNORECASE)
@@ -202,6 +209,7 @@ def _symbols_from_text(script: str) -> dict[str, Any]:
         ],
         "constants": sorted(set(_RE_CONST.findall(script))),
         "states": sorted(set(_RE_STATE.findall(script))),
+        "schema_refs": dict(_RE_EVENT_SCHEMA.findall(script)),
     }
 
 
@@ -309,6 +317,9 @@ def _event_properties(symbols: dict[str, Any], schema_registry) -> dict[str, lis
     from urban_workflow.schemas import BASE_EVENT_SCHEMA
 
     refs = {d["name"]: d.get("schema_ref", "") for d in symbols.get("event_details", [])}
+    if not refs:  # script non compilable : références lues par regex
+        refs = {name: "" for name in symbols.get("events", [])}
+        refs.update(symbols.get("schema_refs", {}))
     names = list(refs) or [
         e for e in symbols.get("events", []) if not e.startswith(("$", "__"))
     ]
