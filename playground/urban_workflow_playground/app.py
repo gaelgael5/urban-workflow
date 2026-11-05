@@ -498,7 +498,10 @@ def simulate(request: SimulateRequest) -> dict[str, Any]:
                 "state": w.current_state,
                 "extended_datas": json_safe(w.extended_datas),
                 "events": [
-                    {"name": e.name, "from": e.from_state, "to": e.to_state}
+                    {
+                        "name": e.name, "from": e.from_state, "to": e.to_state,
+                        "integration_date": json_safe(e.integration_date),
+                    }
                     for e in w.events
                 ],
             }

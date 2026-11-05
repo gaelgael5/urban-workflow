@@ -97,12 +97,16 @@ class TestSimulate:
                         "Uuid": "11111111-1111-4111-8111-111111111111",
                         "ExternalId": "D-1",
                         "Montant": 120,
+                        # Ignorée : c'est le moteur qui date l'intégration.
+                        "IntegrationDate": "2000-01-01T00:00:00+00:00",
                     }
                 ],
             },
         )
         data = response.json()
         assert data["ok"] is True
+        integrated = data["workflows"][0]["events"][0]["integration_date"]
+        assert integrated and not integrated.startswith("2000")
 
         step = data["steps"][0]
         assert step["impacted"][0]["to_state"] == "Ouvert"

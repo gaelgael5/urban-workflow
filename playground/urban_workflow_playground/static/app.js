@@ -440,6 +440,11 @@
     data.workflows.forEach(function (w) {
       html += "<div class='sim-ctx'><b>" + esc(w.workflow) + "</b> [" +
         esc(w.external_id) + "] — état <b>" + esc(w.state) + "</b>" +
+        "<div class='sim-log'>" + (w.events || []).map(function (e) {
+          // Historique avec la date d'intégration posée par le moteur.
+          return esc(e.name) + " : " + esc(e.from || "∅") + " → " + esc(e.to || "∅") +
+            (e.integration_date ? " · intégré le " + esc(e.integration_date) : "");
+        }).join("<br>") + "</div>" +
         "<pre>" + esc(JSON.stringify(w.extended_datas, null, 1)) + "</pre></div>";
     });
     out.innerHTML = html;
