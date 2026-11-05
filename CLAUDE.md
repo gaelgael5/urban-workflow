@@ -176,6 +176,31 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
 
+## Hors plan — Vue Événements du playground (fait)
+
+- Troisième vue (Éditeur | Diagramme | **Événements**) : liste des
+  événements du script, détail = **socle en lecture seule** (instance
+  `readOnly`, servi par `GET /api/base-event-schema` — source unique
+  `BASE_EVENT_SCHEMA`) + **schéma métier** éditable, synchronisé avec son
+  YAML et le panneau Paramétrage (même stockage `schemaSettings`).
+  « Créer le schéma métier » insère `AS @schema_<Event>` ; « Déclarer »
+  ajoute un `DEFINE EVENT` (insertions CodeMirror annulables).
+- Composant **réutilisé de Miles** : `SchemaFieldsEditor` de
+  jsonjoy-builder (fork vendu, tgz identique à
+  `Miles/portail/frontend/vendor/`). Bundle navigateur **commité**
+  `static/vendor/schema-editor.{js,css}`, sources dans
+  `playground/schema-editor/` (`npm ci && npm run build`, esbuild IIFE,
+  `window.UWSchemaEditor`). Le fork ne verrouille pas un champ isolé →
+  deux instances. Exclu de l'image (`.dockerignore`).
+- CSS : les styles jsonjoy sont en `@layer` → toute règle globale non
+  rangée en couche les écrase ; les règles `button, select` du playground
+  sont en `:where(…):where(:not(.jsonjoy, .jsonjoy *))` (spécificité
+  nulle). Thème = variables `--jsonjoy-*` redéfinies sur `.jsonjoy`
+  (s'applique aussi aux dialogues en portail sur `<body>`).
+- Serveur : `event_details` liste tous les événements métier (+ `label`,
+  `declared`) ; un schéma métier qui redéfinit un champ du socle est
+  refusé à l'analyse.
+
 ## Hors plan — Livraison sur machine de test (fait)
 
 - Standard « machines de test » : push sur **`dev`** (branche créée depuis
