@@ -262,3 +262,46 @@ class TestSurface:
         assert "AS @IncomingEvent.Montant > seuil AND TRUE;" in rendered
         assert render_script(extract_surface(rendered)) == rendered
         parse_config(rendered)
+
+
+MULTILINE = """
+NAME Demo
+DEFINE EVENT Ouverture 'o';
+DEFINE RULE Eligible (DECIMAL seuil) 'règle sur plusieurs lignes'
+    AS -- le montant compte double pour un client fidèle
+       @IncomingEvent.Montant * 2 > seuil
+       /* canaux acceptés */
+       AND @IncomingEvent.Canal IN ('web',
+                                    'mobile');
+INITIALIZE WORKFLOW
+    ON EVENT Ouverture WHEN Eligible(seuil = '100') SWITCH Ouvert
+DEFINE STATE Ouvert 'ouvert' ;
+"""
+
+
+class TestMultiline:
+    """Le corps est une expression libre : sauts de ligne et commentaires
+    sont permis partout entre ``AS`` et le ``;``."""
+
+    def test_multiline_body_with_comments_is_evaluated(self):
+        for payload, expected in [
+            ({"Montant": 60, "Canal": "mobile"}, True),
+            ({"Montant": 40, "Canal": "mobile"}, False),
+            ({"Montant": 60, "Canal": "guichet"}, False),
+        ]:
+            engine, storage = _engine(MULTILINE)
+            engine.evaluate_event(
+                {"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K", **payload}
+            )
+            assert bool(storage.get_all(Workflow)) is expected, payload
+
+    def test_error_points_to_the_line_inside_the_body(self):
+        script = MULTILINE.replace("AND @IncomingEvent.Canal", "AND seuill")
+        with pytest.raises(InvalidArgumentNameError, match=r"x\.wf:8:\d+.*seuill"):
+            parse_config(script, filename="x.wf")
+
+    def test_multiline_body_is_a_fixed_point_of_the_round_trip(self):
+        rendered = render_script(extract_surface(MULTILINE))
+        assert render_script(extract_surface(rendered)) == rendered
+        assert "       AND @IncomingEvent.Canal IN ('web'," in rendered
+        parse_config(rendered)

@@ -114,7 +114,7 @@ the DSL** (below).
 #### Rules written in the DSL (`AS <expression>`)
 
 urban-workflow extension: a simple rule can carry its logic in its
-declaration, without code.
+declaration, without code. Full reference: [rules-guide.md](rules-guide.md).
 
 ```sql
 DEFINE RULE AmountBelow (DECIMAL threshold) 'amount is below the threshold'
@@ -123,6 +123,9 @@ DEFINE RULE CanRemind (INTEGER days) 'state open long enough'
     AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= days
        AND @IncomingEvent.Channel IN ('web', 'mobile');
 ```
+
+The body may span several lines and contain comments (`--`, `/* */`): it
+runs from `AS` to the `;`.
 
 It is called exactly like a code rule. A rule has a body OR a registered
 function: both for the same name are rejected at load time. Every declared

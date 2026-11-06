@@ -145,7 +145,7 @@ même nom (voir [guide-integration.md](guide-integration.md) §2), soit un
 #### Règles écrites dans le DSL (`AS <expression>`)
 
 Extension urban-workflow : une règle simple peut porter sa logique dans sa
-déclaration, sans code.
+déclaration, sans code. Référence complète : [guide-regles.md](guide-regles.md).
 
 ```sql
 DEFINE RULE MontantInferieur (DECIMAL seuil) 'le montant est sous le seuil'
@@ -154,6 +154,9 @@ DEFINE RULE Relancable (INTEGER jours) 'état ouvert depuis assez longtemps'
     AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= jours
        AND @IncomingEvent.Canal IN ('web', 'mobile');
 ```
+
+Le corps peut s'étendre sur plusieurs lignes et contenir des commentaires
+(`--`, `/* */`) : il va de `AS` jusqu'au `;`.
 
 Elle s'appelle exactement comme une règle de code
 (`WHEN MontantInferieur(seuil = seuil_auto)`). Une règle a un corps OU une

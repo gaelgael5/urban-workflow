@@ -485,8 +485,11 @@ def render_script(model: SurfaceModel) -> str:
         if declared.label:
             head += f" {_quote(declared.label)}"
         if declared.body:
-            # Corps multi-lignes : continuations réindentées sous la règle.
-            body = declared.body.replace("\n", "\n        ")
+            # Corps multi-lignes : continuations alignées sur le premier
+            # token après « AS » (colonne 7). _snippet désindente par
+            # rapport à cette colonne : un autre décalage ajouterait des
+            # espaces à chaque aller-retour script → diagramme → script.
+            body = declared.body.replace("\n", "\n       ")
             head += f"\n    AS {body}"
         lines.append(f"{head};")
 

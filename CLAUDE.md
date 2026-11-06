@@ -237,6 +237,11 @@ la v1, coexistence avec les règles Python.
   contrôle de chemins) puis **recompilation à chaque site d'appel**
   (`@state`/schéma de l'événement du bloc appelant ; erreur « … (in rule X
   called at …) »). Corps + fonction enregistrée = erreur.
+- Corps multi-lignes et commentaires permis (tokens seuls). Rendu canonique :
+  continuations alignées colonne 7 (sous le 1er token après `AS`) — c'est
+  la base de désindentation de `_snippet`, sinon l'aller-retour diagramme
+  ajoute des espaces. Référence utilisateur : `docs/guide-regles.md`
+  (+ `docs/en/rules-guide.md`).
 - Surface : `SurfaceFunction.body`. Playground : règles à corps ignorées
   du panneau (`_RE_RULE_BODY`), `symbols.rules[].body`, complétion dans le
   corps (`enclosingRuleBody`), exemple « validation » avec

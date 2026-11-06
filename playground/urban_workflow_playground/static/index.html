@@ -151,13 +151,16 @@ required: [Montant]"></textarea>
             <code>AND/OR/NOT</code> ; fonctions <code>NOW()</code>,
             <code>DAYS_BETWEEN(a, b)</code>, <code>HOURS_BETWEEN</code>,
             <code>MINUTES_BETWEEN</code>, <code>LENGTH(x)</code>,
-            <code>CONTAINS(x, y)</code>. Valeur absente = <code>NULL</code>.</li>
+            <code>CONTAINS(x, y)</code>. Valeur absente = <code>NULL</code>.
+            Le corps peut tenir sur plusieurs lignes, avec commentaires
+            <code>--</code> / <code>/* */</code>, jusqu'au <code>;</code>.</li>
         <li>Vues <b>Événements</b> et <b>États</b> : liste des objets du
             script ; pour chacun, le socle commun (non modifiable) et l'éditeur
             visuel du schéma métier, synchronisé avec son YAML et le panneau
             Paramétrage. « Créer le schéma métier » ajoute
             <code>AS @schema_…</code> à la déclaration.</li>
-        <li>Référence du langage : <code>docs/guide-dsl.md</code>.</li>
+        <li>Référence du langage : <code>docs/guide-dsl.md</code> ; règles
+            écrites dans le script : <code>docs/guide-regles.md</code>.</li>
       </ul>
     </div>
   </aside>
