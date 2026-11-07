@@ -110,7 +110,13 @@ main { flex: 1; display: flex; min-height: 0; }
 .ev-badge.ko { background: #4a1f24; color: var(--ko); }
 /* Vue « Scripts » : éditeur du script + règles encore sans script. */
 .sc-editor { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
-.sc-editor .CodeMirror { height: auto; min-height: 140px; max-height: 60vh; }
+.sc-editor .CodeMirror {
+  height: auto; min-height: 140px; max-height: 60vh;
+  /* Même thème que l'éditeur du workflow (#editor-view .CodeMirror). */
+  font: 13px/1.5 "Cascadia Code", "Fira Code", Consolas, monospace;
+  background: var(--bg);
+  color: var(--text);
+}
 .sc-editor .CodeMirror-scroll { min-height: 140px; max-height: 60vh; }
 .sc-free-title { margin: 10px 0 0; }
 .sc-free { display: flex; align-items: center; gap: 6px; }
