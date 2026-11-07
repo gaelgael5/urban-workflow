@@ -10,10 +10,13 @@ Deux endpoints :
   (moteur complet en mémoire) et retourne états, actions poussées et
   journal fonctionnel.
 
-Les règles métier n'existant pas côté navigateur, le panneau de
+Les règles métier de code n'existant pas côté navigateur, le panneau de
 paramétrage les déclare (nom, paramètres typés, résultat simulé) ; le
 serveur fabrique des callables à la signature exacte pour que la
-validation des appels ``WHEN`` soit la vraie.
+validation des appels ``WHEN`` soit la vraie. Les règles qui référencent
+un script (``DEFINE RULE … AS @nom``) sont, elles, évaluées pour de vrai :
+les scripts (vue « Scripts ») sont envoyés avec chaque requête et chargés
+dans un ``ScriptRegistry``.
 """
 
 from __future__ import annotations
@@ -47,12 +50,18 @@ from urban_workflow.dsl import (
 )
 from urban_workflow.exceptions import DslSyntaxError, WorkflowError
 from urban_workflow.outputs import default_memory_output
+from urban_workflow.scripts import Script, ScriptLanguage, ScriptRegistry
 from urban_workflow.templating.context import json_safe
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 _IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_$#]*$")
-_POSITIONED = re.compile(r"^(?:[^:\n]*:)?(\d+):(\d+):\s*(.*)$", re.DOTALL)
+_POSITIONED = re.compile(r"^(?:([^:\n]*):)?(\d+):(\d+):\s*(.*)$", re.DOTALL)
+# « … (in rule 'R' called|declared at playground:12:8) » : endroit du
+# workflow où le script est utilisé (appel, ou référence AS @ contrôlée).
+_CALLED_AT = re.compile(
+    r"\(in rule '([^']*)' (?:called|declared) at (?:[^:\n]*:)?(\d+):(\d+)\)\s*$"
+)
 
 app = FastAPI(title="urban-workflow playground")
 
@@ -82,16 +91,26 @@ class SchemaSetting(BaseModel):
     yaml: str
 
 
+class ScriptSetting(BaseModel):
+    """Un script (méthode d'une règle ``AS @nom``) édité dans la vue Scripts."""
+
+    name: str
+    language: str = "expression"
+    source: str = ""
+
+
 class AnalyzeRequest(BaseModel):
     script: str
     rules: list[RuleSetting] = Field(default_factory=list)
     schemas: list[SchemaSetting] = Field(default_factory=list)
+    scripts: list[ScriptSetting] = Field(default_factory=list)
 
 
 class SimulateRequest(BaseModel):
     script: str
     rules: list[RuleSetting] = Field(default_factory=list)
     schemas: list[SchemaSetting] = Field(default_factory=list)
+    scripts: list[ScriptSetting] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -105,6 +124,7 @@ class GenerateRequest(BaseModel):
     model: dict[str, Any]
     rules: list[RuleSetting] = Field(default_factory=list)
     schemas: list[SchemaSetting] = Field(default_factory=list)
+    scripts: list[ScriptSetting] = Field(default_factory=list)
 
 
 # ----------------------------------------------------------------------
@@ -115,13 +135,13 @@ class GenerateRequest(BaseModel):
 def _build_registry(settings: list[RuleSetting], script: str = "") -> FunctionRegistry:
     """Fabrique des callables à la signature exacte des règles paramétrées.
 
-    Les règles dont le script écrit le corps (``DEFINE RULE … AS …``) sont
+    Les règles qui référencent un script (``DEFINE RULE … AS @nom``) sont
     évaluées par le moteur : leur entrée éventuelle dans le panneau est
-    ignorée, sinon le visiteur refuserait « corps ET code »."""
+    ignorée, sinon le visiteur refuserait « script ET code »."""
     registry = FunctionRegistry("rule")
-    with_body = set(_RE_RULE_BODY.findall(script))
+    with_script = {name for name, _ in _RE_RULE_SCRIPT.findall(script)}
     for setting in settings:
-        if not _IDENTIFIER.match(setting.name) or setting.name in with_body:
+        if not _IDENTIFIER.match(setting.name) or setting.name in with_script:
             continue
         params = [p.name for p in setting.params if _IDENTIFIER.match(p.name)]
         signature = ", ".join(["ctx", *params])
@@ -133,6 +153,47 @@ def _build_registry(settings: list[RuleSetting], script: str = "") -> FunctionRe
         if setting.name not in registry:
             registry.add(setting.name, namespace["_rule"])
     return registry
+
+
+class _InvalidScript(ScriptLanguage):
+    """Tient la place d'un script en erreur de syntaxe : son erreur est
+    déjà signalée (dans la vue Scripts) ; sans cette place, chaque règle qui
+    le référence ajouterait un faux « script inconnu », et l'analyse du
+    workflow s'arrêterait là."""
+
+    name = "invalide"
+
+    def compile(self, script: Script, binding):
+        return lambda run_ctx, params: False
+
+
+def _build_script_registry(
+    settings: list[ScriptSetting],
+) -> tuple[ScriptRegistry, list[dict[str, Any]]]:
+    """Charge les scripts de la vue Scripts ; erreurs positionnées DANS
+    chaque script (champ ``script``). Toujours un registre : dans le
+    playground, une référence ``AS @nom`` est toujours vérifiée."""
+    registry = ScriptRegistry()
+    registry.register_language(_InvalidScript())
+    errors: list[dict[str, Any]] = []
+    for setting in settings:
+        if not setting.name or setting.name in registry:
+            continue
+        try:
+            # origin = nom : les positions s'écrivent « nom:ligne:col ».
+            registry.add_script(
+                setting.name, setting.source, setting.language, origin=setting.name
+            )
+        except DslSyntaxError as exc:
+            errors.extend(
+                {**_error_entry(e.message, e.line, e.column), "script": setting.name}
+                for e in exc.errors
+            )
+            registry.add(Script(setting.name, "invalide", origin=setting.name))
+        except WorkflowError as exc:
+            errors.append({**_error_entry(str(exc)), "script": setting.name})
+            registry.add(Script(setting.name, "invalide", origin=setting.name))
+    return registry, errors
 
 
 def _build_schema_registry(
@@ -222,8 +283,12 @@ _RE_STATE_SCHEMA = re.compile(
 )
 _RE_RULE = re.compile(r"\bDEFINE\s+RULE\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
 _RE_ACTION = re.compile(r"\bDEFINE\s+ACTION\s+(\w+)\s*\(([^)]*)\)", re.IGNORECASE)
-_RE_RULE_BODY = re.compile(
-    r"\bDEFINE\s+RULE\s+(\w+)\s*\([^)]*\)\s*(?:'(?:[^']|'')*')?\s*AS\b"
+# DEFINE RULE|ACTION nom (…) 'libellé'? AS @script (repli pendant la frappe).
+_RE_RULE_SCRIPT = re.compile(
+    r"\bDEFINE\s+RULE\s+(\w+)\s*\([^)]*\)\s*(?:'(?:[^']|'')*')?\s*AS\s+@([\w.]+)"
+)
+_RE_ACTION_SCRIPT = re.compile(
+    r"\bDEFINE\s+ACTION\s+(\w+)\s*\([^)]*\)\s*(?:'(?:[^']|'')*')?\s*AS\s+@([\w.]+)"
 )
 _RE_CONST = re.compile(r"\bDEFINE\s+CONST\s+(\w+)", re.IGNORECASE)
 _RE_STATE = re.compile(r"\bDEFINE\s+STATE\s+(\w+)", re.IGNORECASE)
@@ -238,18 +303,24 @@ def _params_from_text(text: str) -> list[dict[str, str]]:
 
 
 def _symbols_from_text(script: str) -> dict[str, Any]:
+    rule_scripts = dict(_RE_RULE_SCRIPT.findall(script))
+    action_scripts = dict(_RE_ACTION_SCRIPT.findall(script))
     return {
         "events": sorted(set(_RE_EVENT.findall(script))),
         "rules": [
             {
                 "name": name,
                 "params": _params_from_text(params),
-                "body": "…" if name in set(_RE_RULE_BODY.findall(script)) else "",
+                "script": rule_scripts.get(name, ""),
             }
             for name, params in _RE_RULE.findall(script)
         ],
         "actions": [
-            {"name": name, "params": _params_from_text(params)}
+            {
+                "name": name,
+                "params": _params_from_text(params),
+                "script": action_scripts.get(name, ""),
+            }
             for name, params in _RE_ACTION.findall(script)
         ],
         "constants": sorted(set(_RE_CONST.findall(script))),
@@ -279,9 +350,9 @@ def _symbols_from_visitor(
                     for n, t in d.parameters.items()
                 ],
                 "comment": d.comment,
-                # Corps DSL (règle évaluée par le moteur) : le panneau
-                # Paramétrage n'a pas à la simuler.
-                "body": d.body_text,
+                # Méthode référencée (règle évaluée par le moteur) : le
+                # panneau Paramétrage n'a pas à la simuler.
+                "script": d.script_ref,
             }
             for d in visitor.declarations.values()
             if d.kind == kind
@@ -326,12 +397,29 @@ def _error_entry(message: str, line: int = 1, column: int = 0) -> dict[str, Any]
     return {"line": line, "column": column, "message": message, "severity": "error"}
 
 
-def _positioned(exc: WorkflowError) -> dict[str, Any]:
-    """Retrouve ``ligne:colonne`` dans le message des erreurs du visiteur."""
+def _positioned(exc: WorkflowError, scripts: set[str] = frozenset()) -> list[dict[str, Any]]:
+    """Retrouve ``ligne:colonne`` dans le message des erreurs du visiteur.
+
+    Une erreur positionnée dans un SCRIPT (``nom:ligne:col``) donne deux
+    entrées : l'une dans le script (vue Scripts), l'autre dans l'éditeur au
+    site d'appel quand il est cité — sinon le workflow serait « en erreur »
+    sans rien de souligné."""
     match = _POSITIONED.match(str(exc))
-    if match:
-        return _error_entry(match.group(3), int(match.group(1)), int(match.group(2)))
-    return _error_entry(str(exc))
+    if not match:
+        return [_error_entry(str(exc))]
+    origin, line, column, message = match.groups()
+    if origin not in scripts:
+        return [_error_entry(message, int(line), int(column))]
+    entries = [{**_error_entry(message, int(line), int(column)), "script": origin}]
+    called = _CALLED_AT.search(message)
+    short = _CALLED_AT.sub("", message).strip()
+    if called:
+        entries.append(_error_entry(
+            f"script @{origin} : {short}", int(called.group(2)), int(called.group(3))
+        ))
+    else:
+        entries.append(_error_entry(f"script @{origin} : {short}"))
+    return entries
 
 
 def _flatten_schema_paths(
@@ -468,6 +556,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
 
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     errors.extend(_error_entry(problem) for problem in schema_problems)
+    script_registry, script_errors = _build_script_registry(request.scripts)
 
     parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
     for error in parser.errors:
@@ -478,6 +567,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
             rules=_build_registry(request.rules, request.script),
             filename="playground",
             schemas=schema_registry,
+            scripts=script_registry,
         )
         try:
             config = parser.visit(visitor)
@@ -489,9 +579,15 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
                 _error_entry(e.message, e.line, e.column) for e in exc.errors
             )
         except WorkflowError as exc:
-            errors.append(_positioned(exc))
+            errors.extend(_positioned(exc, set(script_registry.names())))
 
+    # Les erreurs des scripts eux-mêmes ne bloquent pas l'analyse du
+    # workflow (le script en erreur tient sa place) : ajoutées après.
+    errors.extend(script_errors)
     symbols["schemas"] = sorted(s.name for s in request.schemas)
+    symbols["scripts"] = [
+        {"name": s.name, "language": s.language} for s in request.scripts if s.name
+    ]
     symbols.setdefault("event_details", [])
 
     # Propriétés connues pour la complétion de UNIQUE (…) : socle commun +
@@ -549,7 +645,8 @@ def generate(request: GenerateRequest) -> dict[str, Any]:
     script = render_script(SurfaceModel.from_dict(request.model))
     analysis = analyze(
         AnalyzeRequest(
-            script=script, rules=request.rules, schemas=request.schemas
+            script=script, rules=request.rules, schemas=request.schemas,
+            scripts=request.scripts,
         )
     )
     return {
@@ -567,13 +664,19 @@ def simulate(request: SimulateRequest) -> dict[str, Any]:
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     if schema_problems:
         return {"ok": False, "error": " ; ".join(schema_problems), "steps": []}
+    script_registry, script_errors = _build_script_registry(request.scripts)
+    if script_errors:
+        problems = [f"script @{e['script']} {e['line']}:{e['column']} : {e['message']}"
+                    for e in script_errors]
+        return {"ok": False, "error": " ; ".join(problems), "steps": []}
 
     parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
     try:
         parser.check()
         config = parser.visit(
             WorkflowConfigVisitor(
-                rules=registry, filename="playground", schemas=schema_registry
+                rules=registry, filename="playground", schemas=schema_registry,
+                scripts=script_registry,
             )
         )
     except WorkflowError as exc:

@@ -154,6 +154,11 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#rule_script.
+    def visitRule_script(self, ctx:WorkflowParser.Rule_scriptContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#compareExpression.
     def visitCompareExpression(self, ctx:WorkflowParser.CompareExpressionContext):
         return self.visitChildren(ctx)

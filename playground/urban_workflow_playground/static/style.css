@@ -70,7 +70,9 @@ main { flex: 1; display: flex; min-height: 0; }
 [hidden] { display: none !important; }
 
 /* Vue « Événements » : liste à gauche, détail (socle + schéma métier) à droite. */
-#events-view.active, #states-view.active { display: flex; flex: 1; min-height: 0; }
+#events-view.active, #states-view.active, #scripts-view.active {
+  display: flex; flex: 1; min-height: 0;
+}
 .ev-list {
   flex: 0 0 230px;
   overflow: auto;
@@ -105,6 +107,16 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .ev-badge.muted { background: var(--border); color: var(--muted); }
 .ev-badge.warn { background: #4a3a1a; color: #f0b45f; }
+.ev-badge.ko { background: #4a1f24; color: var(--ko); }
+/* Vue « Scripts » : éditeur du script + règles encore sans script. */
+.sc-editor { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
+.sc-editor .CodeMirror { height: auto; min-height: 140px; max-height: 60vh; }
+.sc-editor .CodeMirror-scroll { min-height: 140px; max-height: 60vh; }
+.sc-free-title { margin: 10px 0 0; }
+.sc-free { display: flex; align-items: center; gap: 6px; }
+.sc-free code { flex: 1; color: var(--accent); word-break: break-all; }
+.sc-free button { font-size: 11px; padding: 2px 6px; }
+.rule-row.dsl-rule { cursor: pointer; }
 .ev-detail { flex: 1; overflow: auto; padding: 10px 16px 24px; min-width: 0; }
 .ev-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .ev-head h3 { margin: 4px 0; }

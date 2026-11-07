@@ -91,6 +91,31 @@ Bonnes pratiques (détaillées dans [guide-tests.md](guide-tests.md)) :
 règles **pures** (pas d'I/O), qui lisent le contexte et retournent un
 booléen ; tout effet de bord passe par les actions.
 
+### Règles référencées par script (`AS @script`)
+
+Une règle déclarée `DEFINE RULE R (…) '…' AS @nom;` n'est pas cherchée dans
+le `FunctionRegistry` : sa méthode est le script `nom` du
+`ScriptRegistry`, chargé à l'initialisation du moteur comme les schémas.
+
+```python
+from urban_workflow.scripts import ScriptRegistry
+
+scripts = (
+    ScriptRegistry()
+    .add_directory("scripts/")                  # un fichier par script (.expr…)
+    .add_script("montant_inferieur", "@IncomingEvent.Montant < seuil")
+    .add_function("solvable", lambda ctx, client: verifier(client))  # Python
+)
+config = parse_config(script, rules=rules, schemas=schemas, scripts=scripts)
+```
+
+Le langage d'un fichier vient de son extension (`.expr` = langage
+`expression`) ; `add_function` enregistre un callable `(ctx, **params)`
+dont la signature est contrôlée contre celle de la déclaration. Un langage
+supplémentaire s'ajoute avec `register_language` (sous-classe de
+`ScriptLanguage` : `name`, `extensions`, `check`, `compile`). Détails :
+[guide-regles.md](guide-regles.md).
+
 ## 3. Charger les scripts
 
 ### Un script seul
@@ -386,6 +411,8 @@ from urban_workflow.templating import ( # urban-json (templates JSLT)
     JsltActionTranslator, TemplateRegistry, MetadataRegistry,
 )
 from urban_workflow.outputs import default_memory_output
+from urban_workflow.schemas import SchemaRegistry   # extra [schemas]
+from urban_workflow.scripts import ScriptRegistry   # méthodes AS @script
 ```
 
 `dsl` et `templating` sont des sous-paquets volontairement non réexportés

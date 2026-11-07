@@ -182,14 +182,26 @@ unique_keys :
     ;
 
 action_declaration_statement :
-    ACTION key LEFT_PAREN parameters? RIGHT_PAREN comment?
+    // (AS ...) : extension urban-workflow -- reference de la methode de
+    // l'action dans le ScriptRegistry (verifiee au chargement ; son
+    // execution est a cadrer).
+    ACTION key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS scriptRef=compositekey)?
     ;
 
 rule_declaration_statement :
-    // (AS ...) : extension urban-workflow -- corps de la regle ecrit dans le
-    // DSL, evalue par le moteur. Sans corps, la regle reste une fonction
+    // (AS ...) : extension urban-workflow -- la regle est implementee par un
+    // script du ScriptRegistry, charge a l'initialisation du moteur comme les
+    // schemas : le document de workflow ne porte pas de code (decision
+    // utilisateur du 2026-11-07). Sans AS, la regle reste une fonction
     // enregistree cote code (FunctionRegistry), comme dans le source.
-    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS ruleBody=expression)?
+    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS scriptRef=compositekey)?
+    ;
+
+// Extension urban-workflow : point d'entree d'un script du langage
+// d'expressions (fichier separe du workflow, une seule expression ; le ';'
+// final est tolere).
+rule_script :
+    expression SEMICOLON? EOF
     ;
 
 // Extension urban-workflow : langage d'expressions des regles. Dans une

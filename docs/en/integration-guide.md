@@ -91,6 +91,30 @@ Best practices (detailed in [testing-guide.md](testing-guide.md)):
 **pure** rules (no I/O) that read the context and return a boolean; every
 side effect goes through actions.
 
+### Rules referencing a script (`AS @script`)
+
+A rule declared `DEFINE RULE R (…) '…' AS @name;` is not looked up in the
+`FunctionRegistry`: its method is the script `name` of the
+`ScriptRegistry`, loaded at engine start like schemas.
+
+```python
+from urban_workflow.scripts import ScriptRegistry
+
+scripts = (
+    ScriptRegistry()
+    .add_directory("scripts/")                  # one file per script (.expr…)
+    .add_script("amount_below", "@IncomingEvent.Amount < threshold")
+    .add_function("solvent", lambda ctx, customer: check(customer))  # Python
+)
+config = parse_config(script, rules=rules, scripts=scripts)
+```
+
+A file's language comes from its extension (`.expr` = `expression`
+language); `add_function` registers a `(ctx, **params)` callable whose
+signature is checked against the declaration. Another language is added
+with `register_language` (a `ScriptLanguage` subclass: `name`,
+`extensions`, `check`, `compile`). Details: [rules-guide.md](rules-guide.md).
+
 ## 3. Loading scripts
 
 ### A single script
@@ -338,6 +362,7 @@ from urban_workflow.templating import ( # urban-json (JSLT templates)
     JsltActionTranslator, TemplateRegistry, MetadataRegistry,
 )
 from urban_workflow.outputs import default_memory_output
+from urban_workflow.scripts import ScriptRegistry   # AS @script methods
 from urban_workflow.storage_sql import ( # [sql] extra
     SqlWorkflowStorage, sql_output,
 )

@@ -1,12 +1,16 @@
-"""Langage d'expressions des règles écrites dans le DSL.
+"""Langage d'expressions des scripts de règles (langage ``expression``).
 
-``DEFINE RULE MontantEleve (DECIMAL seuil) 'montant élevé'
-    AS @IncomingEvent.Montant > seuil;``
+Le workflow référence le script, le script porte l'expression ::
 
-Extension urban-workflow (décision utilisateur du 2026-11-05) : une règle
-peut porter son corps dans le DSL au lieu d'être une fonction enregistrée
-dans le ``FunctionRegistry`` ; les deux coexistent avec la même syntaxe
-d'appel (``WHEN MontantEleve(seuil = '1000')``).
+    -- workflow
+    DEFINE RULE MontantEleve (DECIMAL seuil) 'montant élevé' AS @montant_eleve;
+
+    -- montant_eleve.expr (ScriptRegistry)
+    @IncomingEvent.Montant > seuil
+
+Décisions utilisateur : langage complet dès la v1 (2026-11-05) ; le code
+hors du document de workflow, référencé par ``AS @nom`` (2026-11-07). Le
+script utilise les paramètres typés de la déclaration qui le référence.
 
 Choix de sémantique — une règle ne doit JAMAIS faire tomber le traitement
 d'un événement pour une donnée imprévue :
@@ -32,15 +36,20 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
+from antlr4 import CommonTokenStream, InputStream
+
 from ..clock import WorkflowClock
 from ..exceptions import (
+    DslSyntaxError,
     InvalidArgumentNameError,
     InvalidArgumentValueError,
     InvalidMethodReferenceError,
 )
+from ..scripts import CompiledScript, Script, ScriptBinding, ScriptLanguage
 from ..values import resolve_value
+from .generated.WorkflowLexer import WorkflowLexer
 from .generated.WorkflowParser import WorkflowParser
-from .parser import _unquote
+from .parser import _CollectingErrorListener, _unquote
 
 #: Valeur compilée : ``(run_ctx, params) -> valeur``.
 Compiled = Callable[[Any, dict[str, Any]], Any]
@@ -286,7 +295,7 @@ class ExpressionCompiler:
         self._error(
             InvalidArgumentNameError,
             ctx,
-            f"unknown identifier {name!r} in rule body; parameters: "
+            f"unknown identifier {name!r}; parameters: "
             f"{sorted(self._parameters)}, constants: {sorted(self._constants)} "
             "(text literals take quotes)",
         )
@@ -299,7 +308,7 @@ class ExpressionCompiler:
             self._error(
                 InvalidMethodReferenceError,
                 ctx,
-                f"unknown function {name!r} in rule body; available: "
+                f"unknown function {name!r}; available: "
                 f"{sorted(FUNCTIONS)}",
             )
         arity, func = entry
@@ -312,3 +321,60 @@ class ExpressionCompiler:
                 f"got {len(arguments)}",
             )
         return lambda run_ctx, params: func(*(a(run_ctx, params) for a in arguments))
+
+
+# ----------------------------------------------------------------------
+# Langage de script ``expression``
+# ----------------------------------------------------------------------
+
+
+def parse_expression_script(source: str, origin: str = ""):
+    """Analyse un script ``expression`` → nœud ``rule_script``.
+
+    Lève :class:`DslSyntaxError` (erreurs positionnées dans ``origin``).
+    """
+    listener = _CollectingErrorListener(origin)
+    lexer = WorkflowLexer(InputStream(source))
+    lexer.removeErrorListeners()
+    lexer.addErrorListener(listener)
+    parser = WorkflowParser(CommonTokenStream(lexer))
+    parser.removeErrorListeners()
+    parser.addErrorListener(listener)
+    tree = parser.rule_script()
+    if listener.errors:
+        details = "; ".join(str(error) for error in listener.errors)
+        raise DslSyntaxError(
+            f"{len(listener.errors)} syntax error(s) in script {origin!r}: {details}",
+            errors=listener.errors,
+        )
+    return tree
+
+
+class ExpressionLanguage(ScriptLanguage):
+    """Fichiers ``.expr`` : une expression, sur autant de lignes que voulu."""
+
+    name = "expression"
+    extensions = (".expr",)
+
+    def __init__(self) -> None:
+        # Arbre analysé une fois par script (contrôlé à l'enregistrement),
+        # recompilé en closures à chaque site d'appel.
+        self._trees: dict[tuple[str, str], Any] = {}
+
+    def _tree(self, script: Script):
+        key = (script.where, script.source)
+        tree = self._trees.get(key)
+        if tree is None:
+            tree = self._trees[key] = parse_expression_script(script.source, script.where)
+        return tree
+
+    def check(self, script: Script) -> None:
+        self._tree(script)
+
+    def compile(self, script: Script, binding: ScriptBinding) -> CompiledScript:
+        return ExpressionCompiler(
+            parameters=binding.parameters,
+            constants=binding.constants,
+            make_path=binding.make_path,
+            error=binding.error,
+        ).compile(self._tree(script).expression())

@@ -1,65 +1,152 @@
-# Guide to rules written in the DSL
+# Guide to rules and their scripts
 
-> Reference of the rule expression language (`DEFINE RULE … AS …`). The
-> rest of the DSL is in [dsl-guide.md](dsl-guide.md); Python rules in
+> How a DSL rule references its method (`DEFINE RULE … AS @script`), how
+> to load scripts, and the reference of the `expression` language. The
+> rest of the DSL is in [dsl-guide.md](dsl-guide.md); code rules in
 > [integration-guide.md](integration-guide.md) §2.
 
-## 1. Principle
+## 1. Principle: the workflow references, the script implements
 
-A rule is a **business predicate** used by `WHEN` conditions. It can be
-implemented in two ways, with **the same call syntax**:
-
-| | Code rule | Rule written in the DSL |
-|---|---|---|
-| Declaration | `DEFINE RULE R (DECIMAL threshold) 'l';` | `DEFINE RULE R (DECIMAL threshold) 'l' AS <expression>;` |
-| Implementation | Python callable registered in the `FunctionRegistry` | the expression after `AS` |
-| Call | `WHEN R(threshold = '1000')` | `WHEN R(threshold = '1000')` |
-
-Use the DSL for conditions that are **readable by the business** and
-**side-effect free**: comparing amounts, checking a channel, measuring the
-age of a state. Keep Python for external calls, database access or
-algorithmic logic.
-
-A rule has a body **or** a registered function, never both: the same name
-with a body and a code function is rejected at load time.
-
-## 2. Writing a rule
+The workflow document describes the **business** (states, transitions,
+conditions); it carries no code. A rule declares its name, its typed
+signature and, with `AS @name`, **the method that implements it**:
 
 ```sql
-DEFINE RULE HighAmount (DECIMAL threshold) 'amount above the threshold'
-    AS @IncomingEvent.Amount > threshold;
+DEFINE RULE HighAmount (DECIMAL threshold) 'amount above the threshold' AS @high_amount;
 ```
 
-- The signature (`TEXT`, `INTEGER`, `DECIMAL`) types the parameters: a
-  `'1000'` argument passed to a `DECIMAL` reaches the expression as a
-  number.
-- The label is optional, as for any rule.
-- The expression ends at the `;`.
+The `high_amount` script lives next to it, in a **script registry** loaded
+at engine start, like event schemas:
+
+```sql
+-- scripts/high_amount.expr
+@IncomingEvent.Amount > threshold
+```
+
+This split brings three things:
+
+- **the choice of language** for each method, made at load time: the
+  provided `expression` language, a Python function, or any registered
+  language. The workflow does not change when the implementation does;
+- **reuse**: several rules may reference the same script;
+- **uniformity** with actions, which reference their method the same way
+  (`DEFINE ACTION … AS @script`, see §2).
+
+| Declaration | Implementation looked up |
+|---|---|
+| `DEFINE RULE R (…) 'l';` | Python callable registered as `R` in the `FunctionRegistry` (original behaviour) |
+| `DEFINE RULE R (…) 'l' AS @name;` | script `name` of the `ScriptRegistry` |
+
+The call is the same in both cases: `WHEN R(threshold = '1000')`. A rule
+has a script **or** a code function under its name, never both: loading
+rejects that duplicate.
+
+## 2. Referencing a script in the DSL
+
+```sql
+DEFINE RULE   Urgent (DECIMAL cap) 'urgent claim' AS @urgent;
+DEFINE RULE   Old (INTEGER days) 'in the state for long enough'
+    AS @rules.age;
+DEFINE ACTION Archive (TEXT file) 'archive the file' AS @archive;
+```
+
+- `AS @name` comes after the optional label.
+- The name may contain dots (`@rules.age`) to group scripts by theme.
+- The script uses the **parameters of the declaration** that references it
+  (`cap`, `days`): the declaration fixes their names and types. A `'1000'`
+  argument passed to a `DECIMAL` reaches the script as a number.
+- **Actions:** the reference is accepted and checked at load time, but
+  executing action methods is still to be designed. Today it has no effect
+  and the action produces its message as before (JSLT template).
+
+## 3. Loading scripts: the `ScriptRegistry`
+
+```python
+from urban_workflow.dsl import parse_config
+from urban_workflow.scripts import ScriptRegistry
+
+scripts = (
+    ScriptRegistry()
+    .add_directory("scripts/")                    # one file per script
+    .add_file("common/cap.expr", name="rules.cap")
+    .add_script("digital_channel", "@IncomingEvent.Channel IN ('web', 'mobile')")
+    .add_function("solvent", lambda ctx, customer: check_solvency(customer))
+)
+config = parse_config(workflow_text, rules=rules, schemas=schemas, scripts=scripts)
+```
+
+| Method | Effect |
+|---|---|
+| `add_directory(path)` | loads files whose extension matches a known language; others are ignored |
+| `add_file(path, name=None)` | loads a file; language = extension, name = file name without extension |
+| `add_script(name, text, language="expression")` | registers a script from its text |
+| `add_function(name, callable)` | registers a Python callable `(ctx, **params)` |
+| `register_language(language)` | adds a language |
+
+**Syntax is checked at registration**: a badly written script raises a
+`DslSyntaxError` positioned in its file (`scripts/urgent.expr:2:5`). A name
+registered twice is rejected.
+
+### Provided languages
+
+| Language | Source | Behaviour |
+|---|---|---|
+| `expression` | `.expr` files, or `add_script` | one boolean expression, described in §4 |
+| `python` | `add_function` only | the callable receives the context then the named arguments; its signature is checked against the declaration at load time |
+
+The registry never executes `.py` files: loading Python code remains the
+application's decision, which then registers its functions.
+
+### Adding a language
+
+A language is a `ScriptLanguage` subclass:
+
+```python
+from urban_workflow.scripts import ScriptLanguage
+
+class JsltLanguage(ScriptLanguage):
+    name = "jslt"
+    extensions = (".jslt",)
+
+    def check(self, script):           # at registration: syntax
+        compile_jslt(script.source)
+
+    def compile(self, script, binding):
+        # binding.parameters: signature of the referencing declaration
+        # binding.constants:  workflow constants
+        template = compile_jslt(script.source)
+        return lambda run_ctx, params: template.evaluate(run_ctx, params)
+
+scripts = ScriptRegistry().register_language(JsltLanguage()).add_directory("scripts/")
+```
+
+`compile` is called **at each call site** of the rule, with the signature
+of the declaration: that is where a language checks the names a script
+uses.
+
+### Without a registry
+
+If `parse_config` gets no `scripts`, `AS @…` references are kept
+unresolved (same permissive mode as schemas). But **calling** a script
+rule is then rejected, as nothing can evaluate it: `rule 'R' is
+implemented by script @name but no ScriptRegistry was provided`.
+
+## 4. The `expression` language
+
+An `expression` script holds **a single expression**, which gives the
+rule's result. A trailing `;` is tolerated.
 
 ### Several lines and comments
 
-**The body may span as many lines as needed.** Line breaks, spaces and
-comments (`-- …` to the end of the line, multi-line `/* … */`) are allowed
-anywhere between `AS` and `;`, including inside an `IN` list or function
-arguments:
+A script spans as many lines as needed. `-- …` comments (to the end of the
+line) and `/* … */` are allowed anywhere:
 
 ```sql
-DEFINE RULE Eligible (DECIMAL threshold, INTEGER days) 'eligible for fast track'
-    AS -- a loyal customer counts double
-       (@IncomingEvent.Amount * 2 > threshold OR @IncomingEvent.Loyal = TRUE)
-       /* digital channels only */
-       AND @IncomingEvent.Channel IN ('web',
-                                      'mobile')
-       AND DAYS_BETWEEN(@state.CreationDate, NOW()) < days;
+-- urgent.expr: claim to handle first
+CONTAINS(@IncomingEvent.Title, 'urgent')
+    /* amount plus 20 % above the cap */
+    OR @IncomingEvent.Amount * 1.2 > cap
 ```
-
-Layout is free: the engine only reads tokens. Recommended convention (also
-used by the script generated from the Diagram view): `AS` on its own line,
-indented by 4 spaces, following lines aligned under the first element
-after `AS`, with `AND`/`OR` leading the line. Errors report the exact line
-inside the body.
-
-## 3. What an expression may contain
 
 ### Values
 
@@ -77,16 +164,16 @@ Negative numbers use unary minus: `-5`.
 
 | Written | Refers to |
 |---|---|
-| `threshold` | a **parameter** of the rule |
-| `urgent_cap` | a `DEFINE CONST` **constant**, even declared after the rule |
+| `threshold` | a **parameter** of the declaration referencing the script |
+| `urgent_cap` | a workflow `DEFINE CONST` **constant**, even declared after the rule |
 | `@IncomingEvent.Amount` | a property of the incoming event (base + payload), with `.Customer.Country`, `[0]`, `['name']` |
 | `@state.CreationDate` | the instance of the state of the block where the rule is **called** (base `Name`, `Uuid`, `CreationDate`, `EventId` plus the state schema fields) |
 | `@Workflow.ExternalId` | the other `@` paths of the DSL ([dsl-guide.md](dsl-guide.md) §4) |
 
 A parameter hides a constant of the same name. **An unknown bare name is an
-error**, unlike call arguments where it becomes text: in a body, text
-always takes quotes, so a typo (`treshold`) never silently becomes the
-string `'treshold'`.
+error**, unlike DSL call arguments where it becomes text: in a script,
+text always takes quotes, so a typo (`treshold`) never silently becomes
+the string `'treshold'`.
 
 ### Operators
 
@@ -133,7 +220,7 @@ Function names are case-insensitive (`now()` = `NOW()`).
 
 An unknown function or a wrong argument count is rejected at load time.
 
-## 4. Semantics: a rule never makes processing fail
+### Semantics: a rule never makes processing fail
 
 A malformed event must not stop the engine. Unexpected data yields a value,
 never an exception:
@@ -163,16 +250,16 @@ false (or `NULL` for a difference).
 
 ## 5. Load-time checks
 
-The script is rejected, with a positioned error (`file:line:column`), if:
+On the workflow side, loading is rejected with a positioned error
+(`workflow.wf:line:column`) if:
 
-- the body has a syntax error;
-- it uses a name that is neither a parameter nor a constant;
-- it calls an unknown function, or with a wrong argument count;
-- the rule has both a body and a code function of the same name;
+- `AS @name` points to a script missing from the registry;
+- a rule has both a script and a code function under its name;
 - a call omits a declared parameter, or passes an unknown one.
 
-The body is then **recompiled at each call site**, in the context of the
-calling block:
+Each rule script is then checked **against the signature of every
+declaration that references it**, even if the rule is never called, and
+**recompiled at each call**, in the context of the calling block:
 
 - `@state` is the state of the `DEFINE STATE` holding the call; it is
   rejected when the rule is called in `INITIALIZE WORKFLOW` (no state
@@ -180,9 +267,19 @@ calling block:
 - an `@IncomingEvent.…` path is checked against the schema of the event of
   the calling `ON EVENT` block, when a schema registry is provided.
 
-The error then points into the body and quotes the call:
-`… (in rule 'CanRemind' called at workflow.wf:24:12)`. The same rule may be
-valid when called in one state and rejected in another.
+An error found in a script is positioned **in the script** and quotes the
+relevant place of the workflow:
+
+```
+scripts/urgent.expr:3:25: unknown identifier 'capp'; parameters: ['cap'], …
+    (in rule 'Urgent' declared at workflow.wf:12:50)
+scripts/age.expr:1:13: @state is only available inside a DEFINE STATE block …
+    (in rule 'Old' called at workflow.wf:31:13)
+```
+
+The same script may thus be valid for one rule and rejected for another
+(different parameters), or valid when called in a state and rejected in
+`INITIALIZE WORKFLOW`.
 
 ## 6. Execution and log
 
@@ -190,58 +287,78 @@ Each evaluation is traced in the workflow log like a code rule, with the
 argument values:
 
 ```
-HighAmount(threshold=1000.0) -> True
+Urgent(cap=5000.0) -> True
 ```
 
 **A rule must have no side effect.** The engine may evaluate it several
 times for the same event: to check that a switch is viable, it evaluates
-the guards of the target state in advance. Rules written in the DSL have,
-by construction, no way to change anything.
+the guards of the target state in advance. `expression` scripts have, by
+construction, no way to change anything; a Python function must follow
+the same rule.
 
-## 7. Examples
+## 7. Complete example
 
-```sql
--- Thresholds and arithmetic
-DEFINE CONST urgent_cap 5000 'urgent handling cap';
-DEFINE RULE Urgent (DECIMAL cap) 'urgent claim'
-    AS CONTAINS(@IncomingEvent.Title, 'urgent')
-       OR @IncomingEvent.Amount * 1.2 > cap;
-
--- List of values
-DEFINE RULE KnownPlan () 'plan in the catalogue'
-    AS @IncomingEvent.Plan IN ('basic', 'premium', 'pro');
-
--- Missing data
-DEFINE RULE NoAmount () 'amount not provided'
-    AS @IncomingEvent.Amount IS NULL;
-
--- Age of the current state (to be called inside a DEFINE STATE)
-DEFINE RULE Old (INTEGER days) 'in the state long enough'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= days;
-
--- Commitment in months, computed in days
-DEFINE RULE CommitmentOver (INTEGER months) 'commitment period over'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= months * 30;
-```
-
-Calls:
+Workflow:
 
 ```sql
+NAME Claims VERSION 1
+DEFINE EVENT  ClaimFiled 'a claim is filed' AS @schema_Claim;
+DEFINE EVENT  Reminder 'the customer sends a reminder';
+
+DEFINE RULE   Urgent (DECIMAL cap) 'urgent claim' AS @urgent;
+DEFINE RULE   Old (INTEGER days) 'in the state for long enough' AS @age;
+DEFINE CONST  urgent_cap 5000 'above: priority handling';
+
+INITIALIZE WORKFLOW
+    ON EVENT ClaimFiled RECURSIVE SWITCH Triage
+
 DEFINE STATE Triage 'triage'
-    ON EVENT Claim
+    ON EVENT ClaimFiled
         WHEN Urgent(cap = urgent_cap) SWITCH Priority
+        SWITCH Waiting
+;
+DEFINE STATE Waiting 'waiting'
     ON EVENT Reminder
-        WHEN Old(days = '3') SWITCH InProgress
+        WHEN Old(days = '3') SWITCH Priority
+;
+DEFINE STATE Priority 'priority' ;
 ```
 
-The playground ships two complete examples to replay: « Règles écrites
-dans le script » and « États et switch viable » (Examples menu).
+Scripts:
+
+```sql
+-- scripts/urgent.expr
+CONTAINS(@IncomingEvent.Title, 'urgent')
+    OR @IncomingEvent.Amount * 1.2 > cap
+```
+
+```sql
+-- scripts/age.expr: @state = the state of the calling block (Waiting)
+DAYS_BETWEEN(@state.CreationDate, NOW()) >= days
+```
+
+Loading:
+
+```python
+scripts = ScriptRegistry().add_directory("scripts/")
+config = parse_config(workflow_text, schemas=schemas, scripts=scripts)
+```
 
 ## 8. In the playground
 
-- A rule with a body is really evaluated: it needs no entry in the
-  Settings panel. A panel rule with the same name is ignored and shown
-  struck through.
-- Inside a body, completion (`Ctrl`+`Space`) offers the rule parameters,
-  constants, functions, `@IncomingEvent.`, `@state.` and operators.
-- Errors are underlined on the exact line of the body.
+- The **Scripts** view lists the scripts referenced by the workflow (rules
+  and actions) and those written but unused. Badges: « à écrire » (to
+  write), « erreur » (error), « inutilisé » (unused).
+- The detail shows the declarations using the script and an editor with
+  completion (`Ctrl`+`Space`): parameters of those declarations,
+  constants, functions, `@IncomingEvent.…`, `@state.…`, operators. Errors
+  are underlined in the script, and also in the workflow at the reference
+  or the call.
+- « écrire en script », below the list, converts a rule without a script:
+  the playground adds `AS @name` to its declaration and creates the script.
+- In the workflow editor, `AS @` after a `DEFINE RULE` or `DEFINE ACTION`
+  offers script names.
+- A script rule needs no entry in the Settings panel. A panel rule with the
+  same name is ignored and shown struck through.
+- The « Règles et scripts » and « États et switch viable » examples are
+  complete and replay as is.

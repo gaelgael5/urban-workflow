@@ -219,33 +219,45 @@ calcul de ses champs métier est À CADRER), le workflow (hors cadrage).
   + repli regex `state_schema_refs` ; contrôle « pas de redéfinition du
   socle » selon l'USAGE du schéma (événement ou état), après le parse.
 
-## Hors plan — Règles écrites dans le DSL (fait)
+## Hors plan — Règles : méthodes référencées `AS @script` (fait)
 
-Cadrage du 2026-11-05 : corps dans le `DEFINE RULE`, langage complet dès
-la v1, coexistence avec les règles Python.
-- Grammaire : `RULE key (…) comment? (AS ruleBody=expression)?` ; règle
-  `expression` récursive à gauche (priorité = ordre des alternatives :
-  moins unaire, `* /`, `+ -`, comparaisons/IN/IS NULL, NOT, AND, OR) ;
-  tokens `IN IS NULL TRUE FALSE` (mots réservés) et opérateurs.
-- `dsl/expressions.py` : `ExpressionCompiler` → closures
-  `(run_ctx, params)` ; `FUNCTIONS` (NOW, LENGTH, CONTAINS, *_BETWEEN) —
+Cadrage du 2026-11-05 (langage complet dès la v1, coexistence Python) puis
+**décision du 2026-11-07 : pas de code dans le document de workflow** —
+le corps en ligne `AS <expression>` a été SUPPRIMÉ.
+- Grammaire : `RULE … comment? (AS scriptRef=compositekey)?` et idem sur
+  `ACTION` ; entrée `rule_script : expression SEMICOLON? EOF` pour les
+  fichiers de script. Règle `expression` récursive à gauche (priorité =
+  ordre des alternatives) ; tokens `IN IS NULL TRUE FALSE` + opérateurs.
+- `urban_workflow/scripts.py` : `ScriptRegistry` (`add_script`,
+  `add_function`, `add_file` — langage par extension —, `add_directory`,
+  `register_language`, `compile`), `ScriptLanguage` (`check` à
+  l'enregistrement, `compile(script, ScriptBinding)` à chaque site
+  d'appel), `PythonLanguage` (signature contrôlée via `FunctionRegistry`),
+  `UnknownScriptError`. `ExpressionLanguage` (`.expr`) dans
+  `dsl/expressions.py` (import paresseux depuis le registre : le DSL
+  importe `scripts`). `FUNCTIONS` (NOW, LENGTH, CONTAINS, *_BETWEEN) —
   miroir `RULE_FUNCTIONS` dans `static/app.js`. Sémantique « jamais
-  d'exception » : NULL, comparaison impossible = faux, calcul impossible =
-  NULL.
-- Visiteur : `DeclaredFunction.body` ; contrôle des corps après TOUTES les
-  déclarations (`_check_rule_bodies`, mode `_checking_rule_body` sans
-  contrôle de chemins) puis **recompilation à chaque site d'appel**
-  (`@state`/schéma de l'événement du bloc appelant ; erreur « … (in rule X
-  called at …) »). Corps + fonction enregistrée = erreur.
-- Corps multi-lignes et commentaires permis (tokens seuls). Rendu canonique :
-  continuations alignées colonne 7 (sous le 1er token après `AS`) — c'est
-  la base de désindentation de `_snippet`, sinon l'aller-retour diagramme
-  ajoute des espaces. Référence utilisateur : `docs/guide-regles.md`
-  (+ `docs/en/rules-guide.md`).
-- Surface : `SurfaceFunction.body`. Playground : règles à corps ignorées
-  du panneau (`_RE_RULE_BODY`), `symbols.rules[].body`, complétion dans le
-  corps (`enclosingRuleBody`), exemple « validation » avec
-  `MontantInferieur` écrite dans le script.
+  d'exception ».
+- Visiteur (`scripts=`) : `DeclaredFunction.script_ref` ; référence
+  inconnue = erreur positionnée sur `AS @…` ; script + fonction de code
+  homonyme = erreur ; `_check_rule_scripts` après TOUTES les déclarations
+  (« … (in rule X declared at …) ») puis recompilation à chaque appel
+  (« … (called at …) ») ; erreurs positionnées DANS le script
+  (`origine:ligne:col`, `make_path(..., error=)`). Sans registre :
+  références gardées, appel refusé. Actions : référence vérifiée,
+  exécution À CADRER.
+- Surface : `SurfaceFunction.script`, rendu `… 'libellé' AS @nom;`.
+- Playground : vue **Scripts** (`static/scripts.js`, `#sc-list`/
+  `#sc-detail`), scripts en localStorage `uw-playground-scripts` envoyés
+  en `scripts: [{name, language, source}]` à analyze/simulate/generate ;
+  `_build_script_registry` (toujours un registre ; script en erreur de
+  syntaxe remplacé par le langage `invalide` pour ne pas créer de faux
+  « script inconnu ») ; erreurs avec champ `script` + doublon dans
+  l'éditeur au site d'appel/déclaration (`_CALLED_AT`) ;
+  `symbols.rules[].script`, `symbols.scripts` ; complétion `AS @` →
+  scripts après DEFINE RULE/ACTION ; « écrire en script » ajoute
+  `AS @nom` ; exemples avec `scripts`.
+- Docs : `docs/guide-regles.md` (+ `docs/en/rules-guide.md`).
 
 ## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 

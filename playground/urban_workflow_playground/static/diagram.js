@@ -811,6 +811,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: model, rules: bridge.getRules(), schemas: bridge.getSchemas(),
+        scripts: bridge.getScripts(),
       }),
     })
       .then(function (r) { return r.json(); })
@@ -831,7 +832,7 @@
   // Barre d'outils + bascule de vue
   // ------------------------------------------------------------------
 
-  var VIEWS = ["editor", "diagram", "events", "states"];
+  var VIEWS = ["editor", "diagram", "events", "states", "scripts"];
 
   function showView(which) {
     VIEWS.forEach(function (name) {

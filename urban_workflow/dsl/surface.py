@@ -67,13 +67,13 @@ class SurfaceEvent:
 
 @dataclass
 class SurfaceFunction:
-    """``DEFINE RULE|ACTION nom (TYPE param, …) 'libellé' [AS corps];``"""
+    """``DEFINE RULE|ACTION nom (TYPE param, …) 'libellé' [AS @script];``"""
 
     name: str
     params: list[dict[str, str]] = field(default_factory=list)  # {type, name}
     label: str = ""
-    #: Corps d'une règle écrite dans le DSL (texte source brut), "" sinon.
-    body: str = ""
+    #: Référence de la méthode (``AS @script``, sans le ``@``), "" sinon.
+    script: str = ""
 
 
 @dataclass
@@ -170,7 +170,7 @@ class SurfaceModel:
                         for p in f.get("params", [])
                     ],
                     label=str(f.get("label", "")),
-                    body=str(f.get("body", "") or ""),
+                    script=str(f.get("script", "") or "").lstrip("@"),
                 )
                 for f in items or []
             ]
@@ -288,9 +288,8 @@ def _function(ctx) -> SurfaceFunction:
             {"type": p.type_().getText(), "name": p.key().getText()}
             for p in parameters.parameter()
         ]
-    body = getattr(ctx, "ruleBody", None)
-    if body is not None:
-        declared.body = _snippet(body)
+    if ctx.scriptRef is not None:
+        declared.script = ctx.scriptRef.getText().lstrip("@")
     return declared
 
 
@@ -484,13 +483,8 @@ def render_script(model: SurfaceModel) -> str:
         head = f"DEFINE {keyword} {declared.name} ({signature})"
         if declared.label:
             head += f" {_quote(declared.label)}"
-        if declared.body:
-            # Corps multi-lignes : continuations alignées sur le premier
-            # token après « AS » (colonne 7). _snippet désindente par
-            # rapport à cette colonne : un autre décalage ajouterait des
-            # espaces à chaque aller-retour script → diagramme → script.
-            body = declared.body.replace("\n", "\n       ")
-            head += f"\n    AS {body}"
+        if declared.script:
+            head += f" AS @{declared.script}"
         lines.append(f"{head};")
 
     for rule in model.rules:

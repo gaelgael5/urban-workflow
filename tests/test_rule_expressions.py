@@ -1,12 +1,10 @@
-"""Règles écrites dans le DSL : ``DEFINE RULE R (…) 'l' AS <expression>;``.
+"""Langage ``expression`` des scripts de règles.
 
-Décisions de cadrage (2026-11-05) :
-- le corps s'écrit dans le ``DEFINE RULE`` (nommé, réutilisable, typé) et
-  s'appelle comme une règle de code : ``WHEN R(seuil = '1000')`` ;
-- première version complète : comparaisons et logique, ``IN``, calcul,
-  fonctions usuelles (``NOW``, écarts de dates, ``LENGTH``, ``CONTAINS``) ;
-- coexistence avec les règles Python ; corps ET fonction pour un même nom
-  = erreur au chargement.
+Le workflow référence le script (``DEFINE RULE R (…) 'l' AS @r;``), le
+ScriptRegistry porte l'expression (décision du 2026-11-07). Cadrage du
+langage (2026-11-05) : comparaisons et logique, ``IN``, calcul, fonctions
+usuelles (``NOW``, écarts de dates, ``LENGTH``, ``CONTAINS``) ; la règle
+s'appelle comme une règle de code : ``WHEN R(seuil = '1000')``.
 """
 
 from __future__ import annotations
@@ -27,7 +25,6 @@ from urban_workflow import (
     WorkflowsConfig,
 )
 from urban_workflow.dsl import parse_config
-from urban_workflow.dsl.surface import extract_surface, render_script
 from urban_workflow.exceptions import (
     DslSyntaxError,
     DuplicatedArgumentNameError,
@@ -37,19 +34,33 @@ from urban_workflow.exceptions import (
     MissingArgumentNameError,
 )
 from urban_workflow.outputs import default_memory_output
+from urban_workflow.scripts import ScriptRegistry
 
 TEMPLATE = """
 NAME Demo
 DEFINE EVENT Ouverture 'o';
-DEFINE RULE R ({decl}) 'règle' AS {body};
+DEFINE RULE R ({decl}) 'règle' AS @r;
 INITIALIZE WORKFLOW
     ON EVENT Ouverture WHEN R({args}) SWITCH Ouvert
 DEFINE STATE Ouvert 'ouvert' ;
 """
 
 
-def _engine(script: str, rules: FunctionRegistry | None = None, schemas=None):
-    config = parse_config(script, rules=rules or FunctionRegistry("rule"), schemas=schemas)
+def _scripts(body: str, name: str = "r") -> ScriptRegistry:
+    return ScriptRegistry().add_script(name, body, origin=f"{name}.expr")
+
+
+def _load(body: str, decl: str = "", args: str = "", **kwargs):
+    """Charge TEMPLATE avec ``body`` comme script ``@r``."""
+    return parse_config(
+        TEMPLATE.format(decl=decl, args=args), scripts=_scripts(body), **kwargs
+    )
+
+
+def _engine(script: str, rules: FunctionRegistry | None = None, schemas=None,
+            scripts: ScriptRegistry | None = None):
+    config = parse_config(script, rules=rules or FunctionRegistry("rule"), schemas=schemas,
+                          scripts=scripts)
     storage = MemoryStorage()
     processor = WorkflowProcessor(WorkflowsConfig().add_document(config), WorkflowFactory())
     processor.load_existing_workflows_by_external_id = lambda key: storage.get_by(
@@ -61,7 +72,7 @@ def _engine(script: str, rules: FunctionRegistry | None = None, schemas=None):
 
 def _passes(body: str, payload: dict | None = None, decl: str = "", args: str = "") -> bool:
     """La règle passe-t-elle ? (= le workflow est-il créé)"""
-    engine, storage = _engine(TEMPLATE.format(decl=decl, body=body, args=args))
+    engine, storage = _engine(TEMPLATE.format(decl=decl, args=args), scripts=_scripts(body))
     engine.evaluate_event(
         {"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K", **(payload or {})}
     )
@@ -145,8 +156,7 @@ class TestFunctions:
 NAME Demo
 DEFINE EVENT Ouverture 'o';
 DEFINE EVENT Relance 'r';
-DEFINE RULE Ancien (INTEGER jours) 'état ancien'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= jours;
+DEFINE RULE Ancien (INTEGER jours) 'état ancien' AS @ancien;
 INITIALIZE WORKFLOW
     ON EVENT Ouverture SWITCH Ouvert
 DEFINE STATE Ouvert 'ouvert'
@@ -154,7 +164,9 @@ DEFINE STATE Ouvert 'ouvert'
 ;
 DEFINE STATE Relance 'relancé' ;
 """
-        engine, storage = _engine(script)
+        engine, storage = _engine(
+            script, scripts=_scripts("DAYS_BETWEEN(@state.CreationDate, NOW()) >= jours", "ancien")
+        )
         with WorkflowClock.frozen(datetime(2026, 11, 1, tzinfo=timezone.utc)):
             engine.evaluate_event({"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K"})
         with WorkflowClock.frozen(datetime(2026, 11, 2, tzinfo=timezone.utc)):
@@ -167,48 +179,44 @@ DEFINE STATE Relance 'relancé' ;
 
 class TestIdentifiers:
     def test_constant_declared_after_the_rule(self):
-        script = TEMPLATE.format(decl="", body="@IncomingEvent.Montant > Plafond", args="")
+        script = TEMPLATE.format(decl="", args="")
         script = script.replace("INITIALIZE", "DEFINE CONST Plafond 1000 'plafond';\nINITIALIZE")
-        engine, storage = _engine(script)
+        engine, storage = _engine(script, scripts=_scripts("@IncomingEvent.Montant > Plafond"))
         engine.evaluate_event(
             {"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K", "Montant": 2000}
         )
         assert storage.get_all(Workflow)
 
     def test_unknown_identifier_is_positioned(self):
-        with pytest.raises(InvalidArgumentNameError, match=r"x\.wf:\d+:\d+.*seuill"):
-            parse_config(
-                TEMPLATE.format(decl="DECIMAL seuil", body="@IncomingEvent.M > seuill",
-                                args="seuil = '1'"),
-                filename="x.wf",
-            )
+        # Positionnée DANS le script (r.expr:1:19), même sans appel.
+        with pytest.raises(InvalidArgumentNameError, match=r"r\.expr:1:19: .*seuill"):
+            _load("@IncomingEvent.M > seuill", "DECIMAL seuil", "seuil = '1'")
 
     def test_unknown_function_and_arity(self):
         with pytest.raises(InvalidMethodReferenceError, match="TODAY"):
-            parse_config(TEMPLATE.format(decl="", body="TODAY() = 1", args=""))
+            _load("TODAY() = 1")
         with pytest.raises(InvalidArgumentValueError, match="LENGTH expects 1"):
-            parse_config(TEMPLATE.format(decl="", body="LENGTH() = 1", args=""))
+            _load("LENGTH() = 1")
 
-    def test_syntax_error(self):
-        with pytest.raises(DslSyntaxError):
-            parse_config(TEMPLATE.format(decl="", body="1 >", args="")).build()
+    def test_syntax_error_is_raised_when_the_script_is_registered(self):
+        with pytest.raises(DslSyntaxError, match=r"r\.expr:1:3"):
+            _scripts("1 >")
 
 
 class TestCallSites:
     def test_missing_argument(self):
         with pytest.raises(MissingArgumentNameError, match="seuil"):
-            parse_config(TEMPLATE.format(decl="DECIMAL seuil", body="seuil > 1", args=""))
+            _load("seuil > 1", "DECIMAL seuil")
 
     def test_unknown_argument(self):
         with pytest.raises(InvalidArgumentNameError, match="autre"):
-            parse_config(TEMPLATE.format(decl="", body="TRUE", args="autre = '1'"))
+            _load("TRUE", args="autre = '1'")
 
     def test_state_path_called_from_initialize_is_rejected_with_the_call(self):
-        with pytest.raises(InvalidArgumentValueError, match=r"@state.*called at x\.wf:\d+"):
-            parse_config(
-                TEMPLATE.format(decl="", body="@state.Name = 'Ouvert'", args=""),
-                filename="x.wf",
-            )
+        with pytest.raises(
+            InvalidArgumentValueError, match=r"^r\.expr:1:0: @state.*called at x\.wf:\d+"
+        ):
+            _load("@state.Name = 'Ouvert'", filename="x.wf")
 
     def test_event_path_checked_against_the_calling_event_schema(self):
         pytest.importorskip("yaml")
@@ -218,15 +226,15 @@ class TestCallSites:
         schemas = SchemaRegistry().add_yaml(
             "schema_Ouverture", "type: object\nproperties:\n  Montant: {type: number}\n"
         )
-        script = TEMPLATE.format(decl="", body="@IncomingEvent.Montnt > 1", args="").replace(
+        script = TEMPLATE.format(decl="", args="").replace(
             "DEFINE EVENT Ouverture 'o';", "DEFINE EVENT Ouverture 'o' AS @schema_Ouverture;"
         )
         with pytest.raises(InvalidArgumentValueError, match="Montnt.*called at"):
-            parse_config(script, schemas=schemas)
+            parse_config(script, schemas=schemas, scripts=_scripts("@IncomingEvent.Montnt > 1"))
 
     def test_call_is_logged_like_a_code_rule(self):
         engine, storage = _engine(
-            TEMPLATE.format(decl="DECIMAL seuil", body="seuil > 1", args="seuil = '2'")
+            TEMPLATE.format(decl="DECIMAL seuil", args="seuil = '2'"), scripts=_scripts("seuil > 1")
         )
         contexts = engine.evaluate_event(
             {"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K"}
@@ -235,73 +243,42 @@ class TestCallSites:
 
 
 class TestCoexistence:
-    def test_body_and_code_for_the_same_name_is_rejected(self):
+    def test_script_and_code_for_the_same_name_is_rejected(self):
         rules = FunctionRegistry("rule").add("R", lambda ctx: True)
-        with pytest.raises(DuplicatedArgumentNameError, match="body"):
-            parse_config(TEMPLATE.format(decl="", body="TRUE", args=""), rules=rules)
+        with pytest.raises(DuplicatedArgumentNameError, match="script"):
+            _load("TRUE", rules=rules)
 
-    def test_code_rules_still_work_next_to_body_rules(self):
-        script = TEMPLATE.format(decl="", body="TRUE", args="").replace(
+    def test_code_rules_still_work_next_to_script_rules(self):
+        script = TEMPLATE.format(decl="", args="").replace(
             "WHEN R()", "WHEN R() AND Code()"
         ).replace("DEFINE RULE R", "DEFINE RULE Code () 'code';\nDEFINE RULE R")
         rules = FunctionRegistry("rule").add("Code", lambda ctx: True)
-        engine, storage = _engine(script, rules)
+        engine, storage = _engine(script, rules, scripts=_scripts("TRUE"))
         engine.evaluate_event({"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K"})
         assert storage.get_all(Workflow)
 
 
-class TestSurface:
-    def test_body_survives_the_diagram_round_trip(self):
-        script = TEMPLATE.format(
-            decl="DECIMAL seuil", body="@IncomingEvent.Montant > seuil AND TRUE",
-            args="seuil = '1'",
-        )
-        model = extract_surface(script)
-        assert model.rules[0].body == "@IncomingEvent.Montant > seuil AND TRUE"
-        rendered = render_script(model)
-        assert "AS @IncomingEvent.Montant > seuil AND TRUE;" in rendered
-        assert render_script(extract_surface(rendered)) == rendered
-        parse_config(rendered)
-
-
-MULTILINE = """
-NAME Demo
-DEFINE EVENT Ouverture 'o';
-DEFINE RULE Eligible (DECIMAL seuil) 'règle sur plusieurs lignes'
-    AS -- le montant compte double pour un client fidèle
-       @IncomingEvent.Montant * 2 > seuil
-       /* canaux acceptés */
-       AND @IncomingEvent.Canal IN ('web',
-                                    'mobile');
-INITIALIZE WORKFLOW
-    ON EVENT Ouverture WHEN Eligible(seuil = '100') SWITCH Ouvert
-DEFINE STATE Ouvert 'ouvert' ;
+MULTILINE = """-- le montant compte double pour un client fidèle
+@IncomingEvent.Montant * 2 > seuil
+/* canaux acceptés */
+AND @IncomingEvent.Canal IN ('web',
+                             'mobile');
 """
 
 
 class TestMultiline:
-    """Le corps est une expression libre : sauts de ligne et commentaires
-    sont permis partout entre ``AS`` et le ``;``."""
+    """Un script s'écrit sur autant de lignes que voulu, avec commentaires ;
+    le ``;`` final est toléré."""
 
-    def test_multiline_body_with_comments_is_evaluated(self):
+    def test_multiline_script_with_comments_is_evaluated(self):
         for payload, expected in [
             ({"Montant": 60, "Canal": "mobile"}, True),
             ({"Montant": 40, "Canal": "mobile"}, False),
             ({"Montant": 60, "Canal": "guichet"}, False),
         ]:
-            engine, storage = _engine(MULTILINE)
-            engine.evaluate_event(
-                {"Name": "Ouverture", "Uuid": str(uuid4()), "ExternalId": "K", **payload}
-            )
-            assert bool(storage.get_all(Workflow)) is expected, payload
+            assert _passes(MULTILINE, payload, "DECIMAL seuil", "seuil = '100'") is expected
 
-    def test_error_points_to_the_line_inside_the_body(self):
-        script = MULTILINE.replace("AND @IncomingEvent.Canal", "AND seuill")
-        with pytest.raises(InvalidArgumentNameError, match=r"x\.wf:8:\d+.*seuill"):
-            parse_config(script, filename="x.wf")
-
-    def test_multiline_body_is_a_fixed_point_of_the_round_trip(self):
-        rendered = render_script(extract_surface(MULTILINE))
-        assert render_script(extract_surface(rendered)) == rendered
-        assert "       AND @IncomingEvent.Canal IN ('web'," in rendered
-        parse_config(rendered)
+    def test_error_points_to_the_line_inside_the_script(self):
+        body = MULTILINE.replace("AND @IncomingEvent.Canal", "AND seuill")
+        with pytest.raises(InvalidArgumentNameError, match=r"^r\.expr:4:4: .*seuill"):
+            _load(body, "DECIMAL seuil", "seuil = '100'")

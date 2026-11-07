@@ -53,6 +53,11 @@ class UnknownSchemaError(WorkflowError):
     """Un ``DEFINE EVENT … AS @schema`` référence un schéma non enregistré."""
 
 
+class UnknownScriptError(WorkflowError):
+    """Un ``DEFINE RULE/ACTION … AS @script`` référence un script non
+    enregistré (ou un langage de script inconnu)."""
+
+
 class EventSchemaError(WorkflowError):
     """Le payload d'un événement ne respecte pas le schéma déclaré.
 

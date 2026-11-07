@@ -12,10 +12,10 @@ DEFINE EVENT  ValidationAccordee 'un valideur approuve';
 DEFINE EVENT  ValidationRefusee  'un valideur refuse';
 
 DEFINE RULE   EstComplet (TEXT champs)         'les champs requis sont présents';
--- Règle écrite dans le script (AS …) : évaluée par le moteur, sans
--- entrée dans le panneau Paramétrage.
+-- Règle implémentée par un script (vue Scripts) : évaluée par le moteur,
+-- sans entrée dans le panneau Paramétrage.
 DEFINE RULE   MontantInferieur (DECIMAL seuil) 'montant sous le seuil'
-    AS @IncomingEvent.Montant < seuil;
+    AS @montant_inferieur;
 
 DEFINE ACTION NotifierValideur (TEXT niveau, TEXT dossier)  'demande d''approbation';
 DEFINE ACTION NotifierDemandeur (TEXT motif, TEXT dossier)  'information du demandeur';
@@ -70,6 +70,9 @@ DEFINE STATE Expiree 'validation expirée sans réponse' ;
     rules: [
       {name: "EstComplet", params: [{name: "champs", type: "TEXT"}], result: true},
     ],
+    scripts: [
+      {name: "montant_inferieur", source: "-- le montant de la demande est sous le seuil\n@IncomingEvent.Montant < seuil\n"},
+    ],
     schemas: [
       {name: "schema_DemandeSoumise",
        yaml: "title: DemandeSoumise\n" +
@@ -92,7 +95,7 @@ DEFINE STATE Expiree 'validation expirée sans réponse' ;
 
   regles: {
     script: `NAME Reclamations VERSION 1
-DESCRIPTION 'réclamations clients — règles écrites dans le script'
+DESCRIPTION 'réclamations clients — règles implémentées par des scripts'
 
 DEFINE EVENT  ReclamationDeposee 'une réclamation est déposée'
     AS @schema_Reclamation;
@@ -100,20 +103,15 @@ DEFINE EVENT  PieceAjoutee 'le client complète son dossier';
 DEFINE EVENT  Relance      'le client relance';
 DEFINE EVENT  Cloture      'le conseiller clôt le dossier';
 
--- Règles écrites dans le script (AS …) : évaluées par le moteur pendant
--- la simulation, sans entrée dans le panneau Paramétrage.
-DEFINE RULE   Urgente (DECIMAL plafond) 'réclamation urgente'
-    AS CONTAINS(@IncomingEvent.Libelle, 'urgent')
-       OR @IncomingEvent.Montant * 1.2 > plafond;
-DEFINE RULE   Complete (INTEGER minimum) 'assez de pièces jointes'
-    AS LENGTH(@IncomingEvent.Pieces) >= minimum;
-DEFINE RULE   SansMontant () 'montant non renseigné'
-    AS @IncomingEvent.Montant IS NULL;
-DEFINE RULE   CanalNumerique () 'déposée en ligne'
-    AS @IncomingEvent.Canal IN ('web', 'mobile');
--- @state : l'état du bloc qui APPELLE la règle (ici Incomplete).
+-- Chaque règle référence son script (vue Scripts) : le workflow ne porte
+-- pas de code. Évaluées par le moteur pendant la simulation.
+DEFINE RULE   Urgente (DECIMAL plafond) 'réclamation urgente' AS @urgente;
+DEFINE RULE   Complete (INTEGER minimum) 'assez de pièces jointes' AS @complete;
+DEFINE RULE   SansMontant () 'montant non renseigné' AS @sans_montant;
+DEFINE RULE   CanalNumerique () 'déposée en ligne' AS @canal_numerique;
+-- @state dans le script : l'état du bloc qui APPELLE la règle (Incomplete).
 DEFINE RULE   Ancienne (INTEGER jours) 'dans l''état depuis assez longtemps'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= jours;
+    AS @anciennete;
 
 DEFINE ACTION Notifier (TEXT motif, TEXT dossier) 'information du client';
 
@@ -160,6 +158,13 @@ DEFINE STATE Prioritaire 'traitement prioritaire'
 DEFINE STATE Close 'réclamation close' ;
 `,
     rules: [],
+    scripts: [
+      {name: "urgente", source: "-- urgent si le libellé le dit, ou si le montant majoré\n-- de 20 % dépasse le plafond\nCONTAINS(@IncomingEvent.Libelle, 'urgent')\n    OR @IncomingEvent.Montant * 1.2 > plafond\n"},
+      {name: "complete", source: "LENGTH(@IncomingEvent.Pieces) >= minimum\n"},
+      {name: "sans_montant", source: "@IncomingEvent.Montant IS NULL\n"},
+      {name: "canal_numerique", source: "@IncomingEvent.Canal IN ('web', 'mobile')\n"},
+      {name: "anciennete", source: "-- @state = l'état du bloc qui appelle la règle\nDAYS_BETWEEN(@state.CreationDate, NOW()) >= jours\n"},
+    ],
     schemas: [
       {name: "schema_Reclamation",
        yaml: "title: Reclamation\n" +
@@ -196,12 +201,10 @@ DEFINE EVENT  Souscription 'le client souscrit' AS @schema_Souscription;
 DEFINE EVENT  Paiement     'un paiement est reçu';
 DEFINE EVENT  Resiliation  'le client résilie';
 
-DEFINE RULE   OffreConnue () 'offre au catalogue'
-    AS @IncomingEvent.Offre IN ('standard', 'premium');
-DEFINE RULE   PaiementAccepte () 'paiement accepté'
-    AS @IncomingEvent.Statut = 'accepte';
+DEFINE RULE   OffreConnue () 'offre au catalogue' AS @offre_connue;
+DEFINE RULE   PaiementAccepte () 'paiement accepté' AS @paiement_accepte;
 DEFINE RULE   EngagementTermine (INTEGER mois) 'engagement écoulé'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= mois * 30;
+    AS @engagement_termine;
 
 DEFINE ACTION Notifier (TEXT motif, TEXT reference) 'information du client';
 
@@ -255,6 +258,11 @@ DEFINE STATE Preavis  'résiliation programmée' ;
 DEFINE STATE Resilie  'abonnement résilié' ;
 `,
     rules: [],
+    scripts: [
+      {name: "offre_connue", source: "@IncomingEvent.Offre IN ('standard', 'premium')\n"},
+      {name: "paiement_accepte", source: "@IncomingEvent.Statut = 'accepte'\n"},
+      {name: "engagement_termine", source: "-- engagement exprimé en mois, compté en jours\nDAYS_BETWEEN(@state.CreationDate, NOW()) >= mois * 30\n"},
+    ],
     schemas: [
       {name: "schema_Souscription",
        yaml: "title: Souscription\n" +

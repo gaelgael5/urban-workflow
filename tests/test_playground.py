@@ -553,40 +553,74 @@ class TestStatesInPlayground:
         assert data["ok"] is True, data["errors"]
 
 
-BODY_SCRIPT = """
+SCRIPT_REF = """
 NAME Demo
 DEFINE EVENT Ouverture 'ouverture';
-DEFINE RULE MontantEleve (DECIMAL seuil) 'montant élevé'
-    AS @IncomingEvent.Montant > seuil;
+DEFINE RULE MontantEleve (DECIMAL seuil) 'montant élevé' AS @montant_eleve;
 INITIALIZE WORKFLOW
     ON EVENT Ouverture WHEN MontantEleve(seuil = '1000') SWITCH Ouvert
 DEFINE STATE Ouvert 'ouvert' ;
 """
+SCRIPTS = [{"name": "montant_eleve", "language": "expression",
+            "source": "-- montant\n@IncomingEvent.Montant > seuil"}]
 
 
-class TestRuleBodies:
-    """Règles écrites dans le script (``AS <expression>``) : évaluées par
-    le moteur, sans entrée dans le panneau Paramétrage."""
+class TestScripts:
+    """Règles qui référencent un script (``AS @nom``) : évaluées par le
+    moteur avec les scripts de la vue Scripts, sans entrée dans le panneau
+    Paramétrage."""
 
     def test_analyze_without_panel_entry(self):
-        data = client.post("/api/analyze", json={"script": BODY_SCRIPT}).json()
+        data = client.post(
+            "/api/analyze", json={"script": SCRIPT_REF, "scripts": SCRIPTS}
+        ).json()
         assert data["ok"] is True, data["errors"]
         (rule,) = data["symbols"]["rules"]
-        assert rule["body"] == "@IncomingEvent.Montant > seuil"
+        assert rule["script"] == "montant_eleve"
+        assert data["symbols"]["scripts"] == [{"name": "montant_eleve", "language": "expression"}]
 
     def test_panel_entry_with_the_same_name_is_ignored(self):
         rules = [{"name": "MontantEleve", "params": [{"name": "seuil", "type": "DECIMAL"}],
                   "result": False}]
         data = client.post(
-            "/api/analyze", json={"script": BODY_SCRIPT, "rules": rules}
+            "/api/analyze", json={"script": SCRIPT_REF, "rules": rules, "scripts": SCRIPTS}
         ).json()
         assert data["ok"] is True, data["errors"]
 
-    def test_simulation_really_evaluates_the_body(self):
+    def test_missing_script_is_flagged_on_the_reference(self):
+        data = client.post("/api/analyze", json={"script": SCRIPT_REF}).json()
+        assert data["ok"] is False
+        (error,) = data["errors"]
+        assert error["line"] == 4 and "montant_eleve" in error["message"]
+        assert "script" not in error
+
+    def test_script_syntax_error_is_positioned_in_the_script(self):
+        broken = [{**SCRIPTS[0], "source": "@IncomingEvent.Montant >"}]
+        data = client.post(
+            "/api/analyze", json={"script": SCRIPT_REF, "scripts": broken}
+        ).json()
+        assert data["ok"] is False
+        (error,) = data["errors"]  # pas de faux « script inconnu » en plus
+        assert error["script"] == "montant_eleve" and error["line"] == 1
+
+    def test_script_semantic_error_is_shown_in_the_script_and_at_the_call(self):
+        wrong = [{**SCRIPTS[0], "source": "@IncomingEvent.Montant > seuill"}]
+        data = client.post(
+            "/api/analyze", json={"script": SCRIPT_REF, "scripts": wrong}
+        ).json()
+        in_script, at_call = data["errors"]
+        assert in_script["script"] == "montant_eleve"
+        assert (in_script["line"], in_script["column"]) == (1, 25)
+        assert "seuill" in in_script["message"]
+        # Contrôlé dès la déclaration : souligné sur la référence AS @.
+        assert "script" not in at_call and at_call["line"] == 4
+        assert at_call["message"].startswith("script @montant_eleve : ")
+
+    def test_simulation_really_evaluates_the_script(self):
         def run(montant):
             data = client.post(
                 "/api/simulate",
-                json={"script": BODY_SCRIPT, "events": [
+                json={"script": SCRIPT_REF, "scripts": SCRIPTS, "events": [
                     {"Name": "Ouverture", "ExternalId": "K", "Montant": montant}
                 ]},
             ).json()
@@ -596,9 +630,9 @@ class TestRuleBodies:
         assert run(1500)[0]["state"] == "Ouvert"
         assert run(500) == []
 
-    def test_regex_fallback_flags_bodies_while_typing(self):
-        broken = BODY_SCRIPT + "\nDEFINE STATE"  # script invalide pendant la frappe
-        data = client.post("/api/analyze", json={"script": broken}).json()
+    def test_regex_fallback_keeps_references_while_typing(self):
+        broken = SCRIPT_REF + "\nDEFINE STATE"  # script invalide pendant la frappe
+        data = client.post("/api/analyze", json={"script": broken, "scripts": SCRIPTS}).json()
         assert data["ok"] is False
         (rule,) = data["symbols"]["rules"]
-        assert rule["body"]
+        assert rule["script"] == "montant_eleve"

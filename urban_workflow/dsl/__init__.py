@@ -47,6 +47,7 @@ def parse_config(
     rules: FunctionRegistry | None = None,
     filename: str = "",
     schemas=None,
+    scripts=None,
 ) -> WorkflowConfig:
     """Analyse un script DSL complet et construit sa configuration.
 
@@ -56,5 +57,7 @@ def parse_config(
     argument inconnu ou manquant, état ``SWITCH`` absent…).
     """
     parser = WorkflowScriptParser.parse_string(source, filename=filename).check()
-    visitor = WorkflowConfigVisitor(rules=rules, filename=filename, schemas=schemas)
+    visitor = WorkflowConfigVisitor(
+        rules=rules, filename=filename, schemas=schemas, scripts=scripts
+    )
     return parser.visit(visitor)

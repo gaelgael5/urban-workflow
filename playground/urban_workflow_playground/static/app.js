@@ -16,8 +16,8 @@
     "INCLUDE", "FRAGMENT", "IN", "IS", "NULL", "TRUE", "FALSE",
   ];
 
-  // Fonctions du langage d'expressions des règles (DEFINE RULE … AS …) —
-  // miroir de urban_workflow.dsl.expressions.FUNCTIONS.
+  // Fonctions du langage d'expressions des scripts de règles (vue
+  // Scripts) — miroir de urban_workflow.dsl.expressions.FUNCTIONS.
   var RULE_FUNCTIONS = [
     {name: "NOW", args: ""}, {name: "LENGTH", args: "valeur"},
     {name: "CONTAINS", args: "conteneur, element"},
@@ -56,6 +56,8 @@
   var lastErrors = [];
   var ruleSettings = loadRules();
   var schemaSettings = loadSchemas();
+  // Scripts des règles « AS @nom » (vue Scripts) : [{name, language, source}].
+  var scriptSettings = loadScripts();
   // Abonnés à chaque analyse (vue « Événements » : la liste suit le script).
   var analyzeListeners = [];
 
@@ -89,6 +91,15 @@
     try { localStorage.setItem("uw-playground-schemas", JSON.stringify(schemaSettings)); }
     catch (e) { /* idem */ }
   }
+  function loadScripts() {
+    try {
+      return JSON.parse(localStorage.getItem("uw-playground-scripts")) || [];
+    } catch (e) { return []; }
+  }
+  function saveScripts() {
+    try { localStorage.setItem("uw-playground-scripts", JSON.stringify(scriptSettings)); }
+    catch (e) { /* idem */ }
+  }
 
   // ------------------------------------------------------------------
   // Éditeur + lint (analyse serveur)
@@ -107,7 +118,8 @@
     fetch("/api/analyze", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({script: text, rules: ruleSettings, schemas: schemaSettings}),
+      body: JSON.stringify({script: text, rules: ruleSettings, schemas: schemaSettings,
+                            scripts: scriptSettings}),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -118,7 +130,9 @@
         renderDiagnostics();
         renderStructure(data.summary);
         renderRules();
-        updateLinting(lastErrors.map(function (e) {
+        // Les erreurs positionnées DANS un script (e.script) sont soulignées
+        // par la vue Scripts, pas dans l'éditeur du workflow.
+        updateLinting(lastErrors.filter(function (e) { return !e.script; }).map(function (e) {
           var line = Math.max(0, (e.line || 1) - 1);
           var ch = Math.max(0, e.column || 0);
           return {
@@ -170,42 +184,6 @@
     return last && last[1] ? last[1] : null;
   }
 
-  /** Règle dont le curseur est dans le corps (``DEFINE RULE X (…) 'l' AS …``
-   * pas encore terminé par « ; ») : {name, params} ou null. */
-  function enclosingRuleBody(textBefore) {
-    var text = textBefore.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/'(?:[^'\n]|'')*'/g, "''");
-    var re = /\bDEFINE\s+RULE\s+([A-Za-z][\w$#]*)\s*\(([^)]*)\)\s*(?:'')?\s*AS\b/gi;
-    var last = null, m;
-    while ((m = re.exec(text)) !== null) { last = m; }
-    if (!last || text.slice(last.index + last[0].length).indexOf(";") >= 0) { return null; }
-    var params = [];
-    last[2].replace(/(?:TEXT|INTEGER|DECIMAL)\s+([A-Za-z][\w$#]*)/gi, function (_, n) {
-      params.push(n);
-    });
-    return {name: last[1], params: params};
-  }
-
-  function ruleBodyCompletions(rule) {
-    var items = rule.params.map(function (p) {
-      return {text: p, displayText: p + "  ·  paramètre"};
-    });
-    (symbols.constants || []).forEach(function (c) {
-      var name = c.name || c;
-      items.push({text: name, displayText: name + "  ·  constante"});
-    });
-    RULE_FUNCTIONS.forEach(function (f) {
-      items.push({text: f.name + "(" + (f.args ? "" : ")"),
-                  displayText: f.name + "(" + f.args + ")  ·  fonction"});
-    });
-    ["@IncomingEvent.", "@state."].forEach(function (p) {
-      items.push({text: p, displayText: p});
-    });
-    ["AND ", "OR ", "NOT ", "IN (", "IS NULL", "IS NOT NULL", "TRUE", "FALSE"]
-      .forEach(function (k) { items.push({text: k, displayText: k.trim()}); });
-    return items;
-  }
-
   // Chemins @IncomingEvent. / @state. : propriétés de l'objet du bloc
   // courant (métier d'abord, puis socle — ordre fourni par le serveur).
   var PATH_KINDS = {
@@ -222,11 +200,8 @@
       owner: enclosingState,
       byName: function () { return symbols.state_properties || {}; },
       // Hors d'un bloc DEFINE STATE, @state n'existe pas (refusé à
-      // l'analyse) : rien à proposer — sauf dans le corps d'une règle, où
-      // il désignera l'état du bloc APPELANT : seul le socle est certain.
-      fallback: function (before) {
-        return enclosingRuleBody(before) ? (symbols.base_state_paths || []) : [];
-      },
+      // l'analyse) : rien à proposer.
+      fallback: function () { return []; },
     },
   };
 
@@ -247,6 +222,9 @@
   function completionsFor(context) {
     if (context === "path") {
       return CONTEXT_PATHS.map(function (p) { return {text: p, displayText: p}; });
+    }
+    if (context === "script") {
+      return plain(scriptNames().map(function (s) { return "@" + s; }));
     }
     if (context === "schema") {
       return plain((symbols.schemas || []).map(function (s) { return "@" + s; }));
@@ -271,6 +249,15 @@
       .concat(plain(symbols.events), plain(symbols.states));
   }
 
+  /** Scripts connus : écrits (vue Scripts) puis seulement référencés. */
+  function scriptNames() {
+    var names = scriptSettings.map(function (s) { return s.name; });
+    (symbols.rules || []).concat(symbols.actions || []).forEach(function (d) {
+      if (d.script && names.indexOf(d.script) < 0) { names.push(d.script); }
+    });
+    return names;
+  }
+
   function plain(list) {
     return (list || []).map(function (s) { return {text: s, displayText: s}; });
   }
@@ -278,6 +265,9 @@
   function detectContext(before) {
     if (/@IncomingEvent\.[\w.\[\]']*$/i.test(before)) { return "eventpath"; }
     if (/@state\.[\w.\[\]']*$/i.test(before)) { return "statepath"; }
+    // AS @ d'une règle ou d'une action → scripts ; d'un événement ou d'un
+    // état → schémas.
+    if (/\bDEFINE\s+(?:RULE|ACTION)\b[^;]*\bAS\s+@?[\w.]*$/i.test(before)) { return "script"; }
     if (/\bAS\s+@?\w*$/i.test(before)) { return "schema"; }
     if (/\bUNIQUE\s*\([^)]*$/i.test(before)) { return "unique"; }
     if (/@[\w.]*$/.test(before)) { return "path"; }
@@ -311,11 +301,7 @@
     var start = cursor.ch - (match ? match[0].length : 0);
     var typed = (match ? match[0] : "").toLowerCase();
 
-    // Corps d'une règle : paramètres, constantes, fonctions, opérateurs —
-    // prioritaire sur « AS @schema » et « = constante » qui s'y tromperaient.
-    var rule = enclosingRuleBody(cm.getRange(CodeMirror.Pos(0, 0), cursor));
-    var candidates = rule && context !== "path" ? ruleBodyCompletions(rule)
-                                                : completionsFor(context);
+    var candidates = completionsFor(context);
 
     var list = candidates.filter(function (item) {
       return !typed || item.text.toLowerCase().indexOf(typed) === 0 ||
@@ -363,6 +349,16 @@
     lastErrors.forEach(function (e) {
       var div = document.createElement("div");
       div.className = "diag";
+      if (e.script) {
+        // Erreur dans un script : on l'ouvre dans la vue Scripts.
+        div.textContent = "script @" + e.script + " ligne " + e.line + ":" +
+          e.column + " — " + e.message;
+        div.onclick = function () {
+          document.dispatchEvent(new CustomEvent("uw:open-script", {detail: e}));
+        };
+        el.appendChild(div);
+        return;
+      }
       div.textContent = "ligne " + e.line + ":" + e.column + " — " + e.message;
       div.onclick = function () {
         editor.setCursor({line: Math.max(0, e.line - 1), ch: e.column || 0});
@@ -429,18 +425,22 @@
   function renderRules() {
     var el = document.getElementById("rules-list");
     el.innerHTML = "";
-    // Règles écrites dans le script (DEFINE RULE … AS …) : évaluées par le
-    // moteur, rien à simuler ; une entrée homonyme du panneau est ignorée.
-    var withBody = {};
+    // Règles implémentées par un script (DEFINE RULE … AS @nom) : évaluées
+    // par le moteur, rien à simuler ; une entrée homonyme du panneau est
+    // ignorée. Clic = ouvrir le script.
+    var withScript = {};
     (symbols.rules || []).forEach(function (rule) {
-      if (!rule.body) { return; }
-      withBody[rule.name] = true;
+      if (!rule.script) { return; }
+      withScript[rule.name] = true;
       var row = document.createElement("div");
       row.className = "rule-row dsl-rule";
-      row.title = rule.body;
+      row.title = "Ouvrir le script @" + rule.script;
       row.innerHTML = "<code>" + esc(rule.name + "(" + (rule.params || []).map(function (p) {
         return p.type + " " + p.name; }).join(", ") + ")") + "</code>" +
-        "<small>écrite dans le script</small>";
+        "<small>script @" + esc(rule.script) + "</small>";
+      row.onclick = function () {
+        document.dispatchEvent(new CustomEvent("uw:open-script", {detail: {script: rule.script}}));
+      };
       el.appendChild(row);
     });
     if (!ruleSettings.length) {
@@ -453,9 +453,9 @@
       var signature = rule.name + "(" + rule.params.map(function (p) {
         return p.type + " " + p.name;
       }).join(", ") + ")";
-      if (withBody[rule.name]) {
+      if (withScript[rule.name]) {
         row.className += " overridden";
-        row.title = "Ignorée : le script écrit le corps de cette règle (AS …)";
+        row.title = "Ignorée : cette règle est implémentée par un script (AS @…)";
       }
       row.innerHTML = "<code>" + esc(signature) + "</code>" +
         "<label class='inline'><input type='checkbox' " +
@@ -549,7 +549,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         script: editor.getValue(), rules: ruleSettings,
-        schemas: schemaSettings, events: events,
+        schemas: schemaSettings, scripts: scriptSettings, events: events,
       }),
     })
       .then(function (r) { return r.json(); })
@@ -670,6 +670,11 @@
       });
       saveSchemas(); renderSchemas();
     }
+    (example.scripts || []).forEach(function (script) {
+      scriptSettings = scriptSettings.filter(function (s) { return s.name !== script.name; });
+      scriptSettings.push(Object.assign({language: "expression"}, script));
+    });
+    saveScripts();
     document.getElementById("events-input").value =
       JSON.stringify(example.events, null, 2);
     e.target.value = "";
@@ -684,6 +689,24 @@
     setScript: function (value) { editor.setValue(value); },
     getRules: function () { return ruleSettings; },
     getSchemas: function () { return schemaSettings; },
+    getScripts: function () { return scriptSettings; },
+    ruleFunctions: RULE_FUNCTIONS,
+    revalidate: function () { revalidate(); },
+    // Création/remplacement d'un script, puis ré-analyse.
+    setScriptSource: function (name, source, language) {
+      var found = scriptSettings.some(function (s) {
+        if (s.name === name) { s.source = source; return true; }
+        return false;
+      });
+      if (!found) {
+        scriptSettings.push({name: name, language: language || "expression", source: source});
+      }
+      saveScripts(); revalidate();
+    },
+    removeScript: function (name) {
+      scriptSettings = scriptSettings.filter(function (s) { return s.name !== name; });
+      saveScripts(); revalidate();
+    },
     refreshEditor: function () { editor.refresh(); },
     getSymbols: function () { return symbols; },
     onAnalyze: function (fn) { analyzeListeners.push(fn); },
@@ -720,6 +743,12 @@
     schemaSettings = initial.schemas.slice();
     saveSchemas(); renderSchemas();
   }
+  (initial.scripts || []).forEach(function (script) {
+    if (!scriptSettings.some(function (s) { return s.name === script.name; })) {
+      scriptSettings.push(Object.assign({language: "expression"}, script));
+    }
+  });
+  saveScripts();
   editor.setValue(initial.script);
   document.getElementById("events-input").value =
     JSON.stringify(initial.events, null, 2);

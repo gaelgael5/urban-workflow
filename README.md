@@ -64,7 +64,7 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 | Guide | Contenu |
 |---|---|
 | [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, fragments |
-| [docs/guide-regles.md](docs/guide-regles.md) | **Écrire des règles dans le DSL** : `DEFINE RULE … AS <expression>`, opérateurs, fonctions, sémantique `NULL`, contrôles |
+| [docs/guide-regles.md](docs/guide-regles.md) | **Règles et scripts** : `DEFINE RULE … AS @script`, `ScriptRegistry` multi-langage, langage `expression` (opérateurs, fonctions, sémantique `NULL`), contrôles |
 | [docs/guide-integration.md](docs/guide-integration.md) | **L'utiliser dans du code** : règles métier, assemblage du moteur, templates JSLT, chaîne de sorties, événements techniques |
 | [docs/guide-tests.md](docs/guide-tests.md) | **Le tester** : règles pures, configuration, templates, scénarios de bout en bout |
 | [docs/analyse-portage.md](docs/analyse-portage.md) | Analyse du projet source et choix structurants du portage |

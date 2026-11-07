@@ -18,7 +18,7 @@
     <select id="example-select" title="Exemples">
       <option value="">Exemples…</option>
       <option value="validation">Circuit de validation</option>
-      <option value="regles">Règles écrites dans le script</option>
+      <option value="regles">Règles et scripts</option>
       <option value="etats">États et switch viable</option>
       <option value="minimal">Script minimal</option>
       <option value="casse">Script avec erreurs</option>
@@ -34,6 +34,7 @@
       <button id="view-diagram">Diagramme</button>
       <button id="view-events" title="Lister les événements et éditer leur structure">Événements</button>
       <button id="view-states" title="Lister les états et éditer leur structure">États</button>
+      <button id="view-scripts" title="Écrire les méthodes des règles (DEFINE RULE … AS @script)">Scripts</button>
       <span id="diagram-tools" hidden>
         <button id="dg-add-state" title="Ajouter un état">＋ État</button>
         <button id="dg-link-mode"
@@ -56,6 +57,10 @@
     <div id="states-view" class="view">
       <nav id="st-list" class="ev-list" aria-label="États du script"></nav>
       <section id="st-detail" class="ev-detail"></section>
+    </div>
+    <div id="scripts-view" class="view">
+      <nav id="sc-list" class="ev-list" aria-label="Scripts des règles"></nav>
+      <section id="sc-detail" class="ev-detail"></section>
     </div>
     <div id="diagram-view" class="view">
       <div id="diagram-canvas"></div>
@@ -81,8 +86,8 @@
     <div id="tab-rules" class="tab active">
       <p class="hint-text">Règles métier disponibles pour les conditions
       <code>WHEN</code> : nom, paramètres typés et résultat simulé.
-      Sauvegardé dans le navigateur. Les règles écrites dans le script
-      (<code>AS …</code>) sont évaluées pour de vrai.</p>
+      Sauvegardé dans le navigateur. Les règles qui référencent un script
+      (<code>AS @…</code>, vue Scripts) sont évaluées pour de vrai.</p>
       <div id="rules-list"></div>
       <form id="rule-form">
         <input id="rule-name" placeholder="NomDeLaRegle" required
@@ -144,23 +149,25 @@ required: [Montant]"></textarea>
             <code>Uuid</code>, <code>CreationDate</code>, <code>EventId</code>
             + champs du schéma de l'état). Une instance est créée à chaque
             <code>SWITCH</code> ; indisponible dans <code>INITIALIZE WORKFLOW</code>.</li>
-        <li><code>DEFINE RULE R (DECIMAL seuil) '…' AS @IncomingEvent.Montant &gt; seuil;</code> :
-            règle écrite dans le script, évaluée par le moteur (pas d'entrée
-            dans Paramétrage). Opérateurs <code>= != &lt; &lt;= &gt; &gt;=</code>,
-            <code>+ - * /</code>, <code>IN (…)</code>, <code>IS [NOT] NULL</code>,
-            <code>AND/OR/NOT</code> ; fonctions <code>NOW()</code>,
-            <code>DAYS_BETWEEN(a, b)</code>, <code>HOURS_BETWEEN</code>,
-            <code>MINUTES_BETWEEN</code>, <code>LENGTH(x)</code>,
-            <code>CONTAINS(x, y)</code>. Valeur absente = <code>NULL</code>.
-            Le corps peut tenir sur plusieurs lignes, avec commentaires
-            <code>--</code> / <code>/* */</code>, jusqu'au <code>;</code>.</li>
+<li><code>DEFINE RULE R (DECIMAL seuil) '…' AS @montant_eleve;</code> :
+            la règle est implémentée par le script <code>@montant_eleve</code>,
+            écrit dans la vue <b>Scripts</b> (hors du workflow) et évalué par le
+            moteur. Langage <code>expression</code> : opérateurs
+            <code>= != &lt; &lt;= &gt; &gt;=</code>, <code>+ - * /</code>,
+            <code>IN (…)</code>, <code>IS [NOT] NULL</code>, <code>AND/OR/NOT</code> ;
+            fonctions <code>NOW()</code>, <code>DAYS_BETWEEN(a, b)</code>,
+            <code>HOURS_BETWEEN</code>, <code>MINUTES_BETWEEN</code>,
+            <code>LENGTH(x)</code>, <code>CONTAINS(x, y)</code> ; valeur absente =
+            <code>NULL</code> ; plusieurs lignes et commentaires permis.
+            <code>DEFINE ACTION … AS @script</code> est accepté (référence
+            vérifiée, exécution à venir).</li>
         <li>Vues <b>Événements</b> et <b>États</b> : liste des objets du
             script ; pour chacun, le socle commun (non modifiable) et l'éditeur
             visuel du schéma métier, synchronisé avec son YAML et le panneau
             Paramétrage. « Créer le schéma métier » ajoute
             <code>AS @schema_…</code> à la déclaration.</li>
-        <li>Référence du langage : <code>docs/guide-dsl.md</code> ; règles
-            écrites dans le script : <code>docs/guide-regles.md</code>.</li>
+        <li>Référence du langage : <code>docs/guide-dsl.md</code> ; scripts des
+            règles : <code>docs/guide-regles.md</code>.</li>
       </ul>
     </div>
   </aside>
@@ -176,5 +183,6 @@ required: [Montant]"></textarea>
 <script src="/static/diagram.js"></script>
 <script src="/static/vendor/schema-editor.js"></script>
 <script src="/static/models.js"></script>
+<script src="/static/scripts.js"></script>
 </body>
 </html>

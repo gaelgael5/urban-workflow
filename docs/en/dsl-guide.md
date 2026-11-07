@@ -108,62 +108,51 @@ A rule is a **business predicate** used in `WHEN` conditions. Its signature
 (`TEXT`, `INTEGER`, `DECIMAL`) types the arguments: a `'500'` literal passed
 to a `DECIMAL` parameter reaches Python as a `float`. The implementation is
 either a Python callable registered under the same name (see
-[integration-guide.md](integration-guide.md) §2), or a **body written in
-the DSL** (below).
+[integration-guide.md](integration-guide.md) §2), or a **referenced
+script** (below).
 
-#### Rules written in the DSL (`AS <expression>`)
+#### Rules implemented by a script (`AS @script`)
 
-urban-workflow extension: a simple rule can carry its logic in its
-declaration, without code. Full reference: [rules-guide.md](rules-guide.md).
+urban-workflow extension: the workflow document carries no code. A rule
+**references** its method, written next to it and loaded at engine start
+into a `ScriptRegistry`, like schemas:
 
 ```sql
 DEFINE RULE AmountBelow (DECIMAL threshold) 'amount is below the threshold'
-    AS @IncomingEvent.Amount < threshold;
-DEFINE RULE CanRemind (INTEGER days) 'state open long enough'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= days
-       AND @IncomingEvent.Channel IN ('web', 'mobile');
+    AS @amount_below;
 ```
 
-The body may span several lines and contain comments (`--`, `/* */`): it
-runs from `AS` to the `;`.
+```sql
+-- amount_below.expr
+@IncomingEvent.Amount < threshold
+```
 
-It is called exactly like a code rule. A rule has a body OR a registered
-function: both for the same name are rejected at load time. Every declared
-parameter must be given at the call.
+The rule is called exactly like a code rule; the script uses the typed
+parameters of the declaration. The script language is chosen at load time:
+the `expression` language (`.expr` files: comparisons, `IN`, `IS NULL`,
+arithmetic, `NOW()`, `DAYS_BETWEEN`…), a Python function, or any
+registered language. A rule has a script OR a code function under its
+name, never both. An unknown script name is rejected at load time.
 
-| Element | Syntax |
-|---|---|
-| values | `42`, `1.5`, `'text'`, `TRUE`, `FALSE`, `NULL` |
-| references | rule parameters, constants, `@IncomingEvent.…`, `@state.…`, `@Workflow.…` paths |
-| arithmetic | `-x`, `*`, `/`, `+`, `-` |
-| comparisons | `=`, `!=` (or `<>`), `<`, `<=`, `>`, `>=`, `x [NOT] IN (a, b…)`, `x IS [NOT] NULL` |
-| logic | `NOT`, `AND`, `OR`, parentheses |
-| functions | `NOW()`, `DAYS_BETWEEN(start, end)`, `HOURS_BETWEEN`, `MINUTES_BETWEEN`, `LENGTH(x)`, `CONTAINS(container, item)` |
-
-Usual precedence, strongest first: unary minus, `* /`, `+ -`,
-comparisons, `NOT`, `AND`, `OR`. Text takes quotes: an unknown bare name is
-an error. `IN`, `IS`, `NULL`, `TRUE`, `FALSE` become reserved words.
-
-**A rule never makes processing fail.** A missing value is `NULL`; an
-impossible ordering comparison is false; an impossible computation
-(`NULL`, division by zero) yields `NULL`; `AND`/`OR`/`NOT` read `NULL` as
-false. Document dates (ISO 8601 text) compare with `NOW()`.
-
-**Checked at load time, per call.** The body is compiled where the rule is
-called: `@state` is the calling block's state (rejected from `INITIALIZE
-WORKFLOW`), and `@IncomingEvent.…` paths are checked against the calling
-event's schema. The error points at the body and names the call.
+Full reference (languages, `expression` language, `NULL` semantics,
+checks): [rules-guide.md](rules-guide.md).
 
 ### Actions
 
 ```sql
 DEFINE ACTION NotifyApprover (TEXT level) 'approval request';
+DEFINE ACTION Archive (TEXT file) 'archiving' AS @archive;
 ```
 
 An action is a **message pushed outward** (bus, queue, API…) when the
 workflow triggers it. Unlike rules, it has no Python implementation: its
 materialisation into JSON goes through a template (see
 [integration-guide.md](integration-guide.md) §4).
+
+urban-workflow extension: an action may also reference a method
+(`AS @script`), for the same reason as rules. The reference is checked at
+load time; executing action methods is still to be designed (no effect
+today).
 
 Rules and actions share the same namespace: declaring `RULE X` then
 `ACTION X` is an error.
@@ -505,7 +494,7 @@ MATCHING (K = 'v' …)                      -- event routing
 
 DEFINE EVENT  Name 'label' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Name (TYPE arg, …) 'label';      -- TYPE: TEXT|INTEGER|DECIMAL
-DEFINE RULE   Name (TYPE arg, …) 'label' AS expression;   -- body in the DSL
+DEFINE RULE   Name (TYPE arg, …) 'label' AS @script;      -- method in the ScriptRegistry
 DEFINE ACTION Name (TYPE arg, …) 'label';
 DEFINE CONST  name value 'label';              -- value: 'txt' | 42 | n DAY
 

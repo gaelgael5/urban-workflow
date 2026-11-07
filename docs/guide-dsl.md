@@ -140,66 +140,51 @@ Sa signature (`TEXT`, `INTEGER`, `DECIMAL`) type les arguments : un
 littéral `'500'` passé à un paramètre `DECIMAL` arrive en `float` côté
 Python. L'implémentation est soit un callable Python enregistré sous le
 même nom (voir [guide-integration.md](guide-integration.md) §2), soit un
-**corps écrit dans le DSL** (ci-dessous).
+**script référencé** (ci-dessous).
 
-#### Règles écrites dans le DSL (`AS <expression>`)
+#### Règles implémentées par un script (`AS @script`)
 
-Extension urban-workflow : une règle simple peut porter sa logique dans sa
-déclaration, sans code. Référence complète : [guide-regles.md](guide-regles.md).
+Extension urban-workflow : le document de workflow ne porte pas de code.
+Une règle **référence** sa méthode, écrite à côté et chargée à
+l'initialisation du moteur dans un `ScriptRegistry`, comme les schémas :
 
 ```sql
 DEFINE RULE MontantInferieur (DECIMAL seuil) 'le montant est sous le seuil'
-    AS @IncomingEvent.Montant < seuil;
-DEFINE RULE Relancable (INTEGER jours) 'état ouvert depuis assez longtemps'
-    AS DAYS_BETWEEN(@state.CreationDate, NOW()) >= jours
-       AND @IncomingEvent.Canal IN ('web', 'mobile');
+    AS @montant_inferieur;
 ```
 
-Le corps peut s'étendre sur plusieurs lignes et contenir des commentaires
-(`--`, `/* */`) : il va de `AS` jusqu'au `;`.
+```sql
+-- montant_inferieur.expr
+@IncomingEvent.Montant < seuil
+```
 
-Elle s'appelle exactement comme une règle de code
-(`WHEN MontantInferieur(seuil = seuil_auto)`). Une règle a un corps OU une
-fonction enregistrée : les deux pour le même nom sont refusés au
-chargement. Tous les paramètres déclarés doivent être fournis à l'appel.
+La règle s'appelle exactement comme une règle de code
+(`WHEN MontantInferieur(seuil = seuil_auto)`) ; le script utilise les
+paramètres typés de la déclaration. Le langage du script est choisi au
+chargement : langage `expression` (fichiers `.expr` : comparaisons, `IN`,
+`IS NULL`, calcul, `NOW()`, `DAYS_BETWEEN`…), fonction Python, ou tout
+langage enregistré. Une règle a un script OU une fonction de code sous son
+nom, jamais les deux. Un nom de script inconnu est refusé au chargement.
 
-| Élément | Syntaxe |
-|---|---|
-| valeurs | `42`, `1.5`, `'texte'`, `TRUE`, `FALSE`, `NULL` |
-| références | paramètres de la règle, constantes (`DEFINE CONST`), chemins `@IncomingEvent.…`, `@state.…`, `@Workflow.…` |
-| calcul | `-x`, `*`, `/`, `+`, `-` |
-| comparaisons | `=`, `!=` (ou `<>`), `<`, `<=`, `>`, `>=`, `x [NOT] IN (a, b…)`, `x IS [NOT] NULL` |
-| logique | `NOT`, `AND`, `OR`, parenthèses |
-| fonctions | `NOW()`, `DAYS_BETWEEN(debut, fin)`, `HOURS_BETWEEN`, `MINUTES_BETWEEN`, `LENGTH(x)`, `CONTAINS(conteneur, element)` |
-
-Priorités usuelles, de la plus forte à la plus faible : moins unaire,
-`* /`, `+ -`, comparaisons, `NOT`, `AND`, `OR` (`NOT a = b` se lit
-`NOT (a = b)`). Les textes prennent des apostrophes : un nom nu inconnu est
-une erreur, pas un texte. `IN`, `IS`, `NULL`, `TRUE` et `FALSE` deviennent
-des mots réservés (en majuscules).
-
-**Une règle ne fait jamais échouer le traitement.** Une valeur absente vaut
-`NULL` ; une comparaison d'ordre impossible (`NULL`, types différents) est
-fausse ; un calcul impossible (`NULL`, division par zéro) donne `NULL` ;
-`AND`/`OR`/`NOT` lisent `NULL` comme faux. Les dates des documents (texte
-ISO 8601) se comparent à `NOW()` et servent aux fonctions d'écart.
-
-**Contrôles au chargement, à chaque appel.** Le corps est compilé là où la
-règle est appelée : `@state` y désigne l'état du bloc appelant (refusé si
-la règle est appelée dans `INITIALIZE WORKFLOW`), et un chemin
-`@IncomingEvent.…` est contrôlé contre le schéma de l'événement du bloc.
-L'erreur pointe le corps et cite l'appel.
+Référence complète (langages, langage `expression`, sémantique `NULL`,
+contrôles) : [guide-regles.md](guide-regles.md).
 
 ### Actions
 
 ```sql
 DEFINE ACTION NotifierValideur (TEXT niveau) 'demande d''approbation';
+DEFINE ACTION Archiver (TEXT dossier) 'archivage' AS @archiver;
 ```
 
 Une action est un **message poussé vers l'extérieur** (bus, file, API…)
 quand le workflow la déclenche. Contrairement aux règles, elle n'a pas
 d'implémentation Python : sa matérialisation en JSON passe par un template
 (voir [guide-integration.md](guide-integration.md) §4).
+
+Extension urban-workflow : une action peut aussi référencer une méthode
+(`AS @script`), pour la même raison que les règles. La référence est
+vérifiée au chargement ; l'exécution des méthodes d'action reste à cadrer
+(aujourd'hui sans effet).
 
 Règles et actions partagent le même espace de noms : déclarer `RULE X`
 puis `ACTION X` est une erreur.
@@ -631,7 +616,7 @@ MATCHING (K = 'v' …)                      -- routage des événements
 
 DEFINE EVENT  Nom 'libellé' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Nom (TYPE arg, …) 'libellé';     -- TYPE : TEXT|INTEGER|DECIMAL
-DEFINE RULE   Nom (TYPE arg, …) 'libellé' AS expression;   -- corps dans le DSL
+DEFINE RULE   Nom (TYPE arg, …) 'libellé' AS @script;      -- méthode dans le ScriptRegistry
 DEFINE ACTION Nom (TYPE arg, …) 'libellé';
 DEFINE CONST  nom valeur 'libellé';            -- valeur : 'txt' | 42 | n DAY
 
