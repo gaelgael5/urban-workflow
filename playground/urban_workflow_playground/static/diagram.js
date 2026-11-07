@@ -157,22 +157,88 @@
   }
 
   // ------------------------------------------------------------------
-  // Positions (persistées par nom de workflow)
+  // Positions — stockage remplaçable
   // ------------------------------------------------------------------
+  //
+  // La mise en page reste hors du document de workflow (décision du
+  // 2026-11-07) : positions par NOM d'état, enregistrées par un « store »
+  //   { load(workflow) -> Promise<{Etat: {x, y}} | null>,
+  //     save(workflow, positions) }
+  // Par défaut : le serveur s'il a un répertoire de mise en page
+  // (GET/PUT /api/layout/{workflow} → fichiers <workflow>.layout.json),
+  // sinon le localStorage du navigateur. Une application qui intègre le
+  // diagramme branche le sien par PlaygroundDiagram.setLayoutStore().
 
-  function positionsKey() {
-    return "uw-playground-diagram:" + (model && model.name ? model.name : "?");
+  function workflowName() {
+    return model && model.name ? model.name : "?";
   }
+
+  var localLayoutStore = {
+    load: function (workflow) {
+      try {
+        return Promise.resolve(
+          JSON.parse(localStorage.getItem("uw-playground-diagram:" + workflow)) || null);
+      } catch (e) { return Promise.resolve(null); }
+    },
+    save: function (workflow, value) {
+      try { localStorage.setItem("uw-playground-diagram:" + workflow, JSON.stringify(value)); }
+      catch (e) { /* stockage indisponible : positions de session seulement */ }
+    },
+  };
+
+  // Serveur d'abord ; s'il répond « pas de répertoire » (enabled: false) ou
+  // ne répond pas, on bascule sur le localStorage pour la session.
+  var serverLayoutEnabled = null;   // null = pas encore su
+  var serverLayoutStore = {
+    load: function (workflow) {
+      if (serverLayoutEnabled === false) { return localLayoutStore.load(workflow); }
+      return fetch("/api/layout/" + encodeURIComponent(workflow))
+        .then(function (r) { return r.ok ? r.json() : {enabled: false}; })
+        .then(function (data) {
+          serverLayoutEnabled = !!data.enabled;
+          if (!data.enabled) { return localLayoutStore.load(workflow); }
+          return data.layout ? data.layout.states : null;
+        })
+        .catch(function () {
+          serverLayoutEnabled = false;
+          return localLayoutStore.load(workflow);
+        });
+    },
+    save: function (workflow, value) {
+      if (!serverLayoutEnabled) { localLayoutStore.save(workflow, value); return; }
+      fetch("/api/layout/" + encodeURIComponent(workflow), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({version: 1, workflow: workflow, states: value}),
+      }).then(function (r) {
+        if (!r.ok) { setStatus("mise en page non enregistrée (" + r.status + ")", false); }
+      }).catch(function () { setStatus("mise en page non enregistrée", false); });
+    },
+  };
+
+  var layoutStore = serverLayoutStore;
+  var saveTimer = null;
+
   function loadPositions() {
-    try { return JSON.parse(localStorage.getItem(positionsKey())) || {}; }
-    catch (e) { return {}; }
-  }
-  function savePositions() {
-    try { localStorage.setItem(positionsKey(), JSON.stringify(positions)); }
-    catch (e) { /* stockage indisponible : positions de session seulement */ }
+    return Promise.resolve(layoutStore.load(workflowName()))
+      .then(function (value) { return value && typeof value === "object" ? value : {}; })
+      .catch(function () { return {}; });
   }
 
-  function autoLayout() {
+  // Regroupe les enregistrements rapprochés (déplacements successifs) :
+  // une seule écriture, avec le nom du workflow au moment de l'édition.
+  function savePositions() {
+    var workflow = workflowName();
+    var snapshot = JSON.parse(JSON.stringify(positions));
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { layoutStore.save(workflow, snapshot); }
+      catch (e) { setStatus("mise en page non enregistrée", false); }
+    }, 250);
+  }
+
+  /** Niveau BFS de chaque état depuis les initialiseurs. */
+  function layoutLevels() {
     var level = {};
     var queue = [];
     var adjacency = {};
@@ -205,9 +271,37 @@
         deepest = Math.max(deepest, level[state.name]);
       }
     });
+    model.states.forEach(function (state) {
+      if (level[state.name] === undefined) { level[state.name] = deepest + 1; }
+    });
+    return level;
+  }
+
+  /** Place UNIQUEMENT les états sans position (ajoutés dans le texte,
+   * absents du fichier) : dans la colonne de leur niveau, sous les états
+   * déjà placés de cette colonne — la mise en page manuelle est gardée. */
+  function placeMissing() {
+    var level = layoutLevels();
+    var missing = model.states.filter(function (s) { return !positions[s.name]; });
+    if (!missing.length) { return false; }
+    missing.forEach(function (state) {
+      var x = 280 + level[state.name] * 320;
+      var bottom = null;
+      Object.keys(positions).forEach(function (name) {
+        var p = positions[name];
+        if (Math.abs(p.x - x) < 160) { bottom = bottom === null ? p.y : Math.max(bottom, p.y); }
+      });
+      positions[state.name] = { x: x, y: bottom === null ? 60 : bottom + 160 };
+    });
+    return true;
+  }
+
+  /** « Réorganiser » : replace TOUS les états en couches. */
+  function autoLayout() {
+    var level = layoutLevels();
     var rows = {};
     model.states.forEach(function (state) {
-      var l = level[state.name] !== undefined ? level[state.name] : deepest + 1;
+      var l = level[state.name];
       rows[l] = rows[l] || 0;
       positions[state.name] = {
         x: 280 + l * 320,
@@ -788,12 +882,13 @@
         }
         model = data.model;
         assignUids();
-        positions = loadPositions();
-        var missing = model.states.some(function (s) { return !positions[s.name]; });
-        if (missing) { autoLayout(); }
-        selected = null;
-        rebuildGraph();
-        setStatus("diagramme importé · " + model.states.length + " état(s)", true);
+        return loadPositions().then(function (loaded) {
+          positions = loaded;
+          if (placeMissing()) { savePositions(); }
+          selected = null;
+          rebuildGraph();
+          setStatus("diagramme importé · " + model.states.length + " état(s)", true);
+        });
       })
       .catch(function () { setStatus("serveur injoignable", false); });
   }
@@ -870,7 +965,15 @@
   window.PlaygroundDiagram = {
     graph: graph,
     getModel: function () { return model; },
+    getPositions: function () { return positions; },
     select: select,
+    /** Remplace le stockage de la mise en page :
+     * {load(workflow) -> Promise<positions|null>|positions, save(workflow, positions)}.
+     * null = retour au stockage par défaut (serveur, sinon navigateur). */
+    setLayoutStore: function (store) {
+      layoutStore = store || serverLayoutStore;
+    },
+    reload: function () { importFromEditor(); },
   };
 
   document.getElementById("dg-add-state").onclick = function () {

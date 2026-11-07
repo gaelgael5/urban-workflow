@@ -18,13 +18,27 @@
 
   // Fonctions du langage d'expressions des scripts de règles (vue
   // Scripts) — miroir de urban_workflow.dsl.expressions.FUNCTIONS.
+  // Miroir de urban_workflow.dsl.expressions.FUNCTIONS, avec les types
+  // affichés par la complétion (les fonctions ne lèvent jamais : un argument
+  // du mauvais type donne NULL, ou FALSE pour CONTAINS).
   var RULE_FUNCTIONS = [
-    {name: "NOW", args: ""}, {name: "LENGTH", args: "valeur"},
-    {name: "CONTAINS", args: "conteneur, element"},
-    {name: "DAYS_BETWEEN", args: "debut, fin"},
-    {name: "HOURS_BETWEEN", args: "debut, fin"},
-    {name: "MINUTES_BETWEEN", args: "debut, fin"},
+    {name: "NOW", params: [], returns: "DATETIME",
+     doc: "date et heure courantes (horloge du moteur)"},
+    {name: "LENGTH", params: [["TEXT|LIST|OBJECT", "valeur"]], returns: "INTEGER",
+     doc: "longueur d'un texte, d'une liste ou d'un objet"},
+    {name: "CONTAINS", params: [["TEXT|LIST|OBJECT", "conteneur"], ["ANY", "element"]],
+     returns: "BOOLEAN", doc: "sous-chaîne, élément de liste ou clé d'objet"},
+    {name: "DAYS_BETWEEN", params: [["DATETIME", "debut"], ["DATETIME", "fin"]],
+     returns: "DECIMAL", doc: "nombre de jours de debut à fin"},
+    {name: "HOURS_BETWEEN", params: [["DATETIME", "debut"], ["DATETIME", "fin"]],
+     returns: "DECIMAL", doc: "nombre d'heures de debut à fin"},
+    {name: "MINUTES_BETWEEN", params: [["DATETIME", "debut"], ["DATETIME", "fin"]],
+     returns: "DECIMAL", doc: "nombre de minutes de debut à fin"},
   ];
+  RULE_FUNCTIONS.forEach(function (f) {
+    f.signature = f.name + "(" + f.params.map(function (p) {
+      return p[0] + " " + p[1]; }).join(", ") + ") → " + f.returns;
+  });
 
   CodeMirror.defineSimpleMode("workflow-dsl", {
     start: [

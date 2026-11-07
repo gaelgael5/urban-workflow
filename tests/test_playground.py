@@ -636,3 +636,58 @@ class TestScripts:
         assert data["ok"] is False
         (rule,) = data["symbols"]["rules"]
         assert rule["script"] == "montant_eleve"
+
+
+class TestLayout:
+    """Mise en page du diagramme : fichiers ``<workflow>.layout.json``."""
+
+    def test_disabled_without_directory(self, monkeypatch):
+        monkeypatch.delenv("PLAYGROUND_LAYOUT_DIR", raising=False)
+        assert client.get("/api/layout/Demo").json() == {"enabled": False, "layout": None}
+        response = client.put("/api/layout/Demo", json={"states": {}})
+        assert response.status_code == 404
+
+    def test_round_trip_writes_a_file(self, monkeypatch, tmp_path):
+        import json
+
+        monkeypatch.setenv("PLAYGROUND_LAYOUT_DIR", str(tmp_path))
+        assert client.get("/api/layout/Demo").json() == {"enabled": True, "layout": None}
+        body = {"states": {"Ouvert": {"x": 280, "y": 60.5}, "Clos": {"x": 600, "y": 100}}}
+        assert client.put("/api/layout/Demo", json=body).status_code == 200
+        saved = json.loads((tmp_path / "Demo.layout.json").read_text(encoding="utf-8"))
+        assert saved == {"version": 1, "workflow": "Demo", "states": body["states"]}
+        assert client.get("/api/layout/Demo").json()["layout"] == saved
+
+    def test_short_form_accepted(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("PLAYGROUND_LAYOUT_DIR", str(tmp_path))
+        response = client.put("/api/layout/Demo", json={"Ouvert": {"x": 1, "y": 2}})
+        assert response.json()["layout"]["states"] == {"Ouvert": {"x": 1, "y": 2}}
+
+    @pytest.mark.parametrize("name", ["..", "a..b", "-x", "a b", "%2e%2e"])
+    def test_unsafe_workflow_names_refused(self, monkeypatch, tmp_path, name):
+        monkeypatch.setenv("PLAYGROUND_LAYOUT_DIR", str(tmp_path))
+        response = client.put(f"/api/layout/{name}", json={"states": {}})
+        assert response.status_code in (400, 404)
+        assert list(tmp_path.iterdir()) == []
+
+    @pytest.mark.parametrize("states", [
+        {"A": {"x": "1", "y": 2}},
+        {"A": {"x": True, "y": 2}},
+        {"A": {"x": 1}},
+        {"A": [1, 2]},
+    ])
+    def test_invalid_positions_refused(self, monkeypatch, tmp_path, states):
+        monkeypatch.setenv("PLAYGROUND_LAYOUT_DIR", str(tmp_path))
+        response = client.put("/api/layout/Demo", json={"states": states})
+        assert response.status_code == 400
+        assert not (tmp_path / "Demo.layout.json").exists()
+
+    def test_layout_directory_api(self, tmp_path):
+        from urban_workflow_playground.layout import LayoutDirectory, LayoutError
+
+        store = LayoutDirectory(tmp_path / "sub")
+        assert store.load("Wf") is None
+        store.save("Wf", {"states": {"S": {"x": 0, "y": 0}}})
+        assert store.load("Wf")["states"] == {"S": {"x": 0, "y": 0}}
+        with pytest.raises(LayoutError):
+            store.save("../evil", {"states": {}})

@@ -212,6 +212,7 @@
       "<div data-ref='users'>" + usersHtml(e) + "</div>" +
       (script
         ? "<div class='sc-editor' data-ref='editor'></div>" +
+          "<div class='sc-signature' data-ref='signature' hidden></div>" +
           "<div class='diagnostics' data-ref='diags'></div>" +
           "<p class='hint-text'>Une expression, sur autant de lignes que voulu " +
           "(commentaires <code>--</code> et <code>/* */</code>). Paramètres des " +
@@ -253,10 +254,10 @@
       if (instance.state.completionActive) { return; }
       var token = instance.getTokenAt(instance.getCursor());
       if (token.type === "string" || token.type === "comment") { return; }
-      if (/[\w@.\[]/.test(change.text[0])) {
-        instance.showHint({hint: scriptHint, completeSingle: false});
-      }
+      // « ( » et « , » : début d'un argument, on repropose ce qui peut y aller.
+      if (/[\w@.\[(,]/.test(change.text[0])) { openHint(instance); }
     });
+    cm.on("cursorActivity", function (instance) { showSignature(instance); });
     showErrors(e.errors);
     if (pendingCursor) {
       cm.setCursor(pendingCursor);
@@ -313,6 +314,42 @@
     return items;
   }
 
+  function openHint(instance) {
+    instance.showHint({hint: scriptHint, completeSingle: false});
+  }
+
+  /** Après le choix d'un élément qui attend une suite (« @IncomingEvent. »,
+   * « IN ( », une fonction), on rouvre la complétion : sans cela, Tab
+   * ferme la liste et il faut redemander Ctrl+Espace. */
+  function reopenAfterPick(instance, result) {
+    CodeMirror.on(result, "pick", function (item) {
+      if (item.reopen) { setTimeout(function () { openHint(instance); }, 0); }
+    });
+    return result;
+  }
+
+  function functionItem(f) {
+    return {
+      text: f.name + "()",
+      displayText: f.signature + "  ·  fonction",
+      reopen: f.params.length > 0,
+      // Insère « NOM() » et place le curseur entre les parenthèses.
+      hint: function (instance, data, item) {
+        instance.replaceRange(item.text, data.from, data.to, "complete");
+        if (f.params.length) {
+          var c = instance.getCursor();
+          instance.setCursor(CodeMirror.Pos(c.line, c.ch - 1));
+        }
+      },
+    };
+  }
+
+  function constantLabel(c) {
+    if (typeof c === "string") { return "constante"; }
+    return "constante" + (c.value !== undefined && c.value !== null
+      ? " = " + JSON.stringify(c.value) : "");
+  }
+
   function scriptHint(instance) {
     var symbols = bridge.getSymbols();
     var cursor = instance.getCursor();
@@ -326,11 +363,11 @@
         ? pathItems("@state.", symbols.state_properties, symbols.base_state_paths)
         : pathItems("@IncomingEvent.", symbols.event_properties, symbols.base_paths);
       var typedPath = path[0].toLowerCase();
-      return {
+      return reopenAfterPick(instance, {
         list: items.filter(function (i) { return i.text.toLowerCase().indexOf(typedPath) === 0; }),
         from: CodeMirror.Pos(cursor.line, cursor.ch - path[0].length),
         to: cursor,
-      };
+      });
     }
 
     var match = /[@\w.]*$/.exec(lineText);
@@ -341,29 +378,97 @@
         if (seen[p.name]) { return; }
         seen[p.name] = true;
         candidates.push({text: p.name,
-                         displayText: p.name + "  ·  paramètre " + p.type + " de " + u.decl.name});
+                         displayText: p.name + "  ·  " + p.type + "  ·  paramètre de " + u.decl.name});
       });
     });
     (symbols.constants || []).forEach(function (c) {
       var name = c.name || c;
-      candidates.push({text: name, displayText: name + "  ·  constante"});
+      candidates.push({text: name, displayText: name + "  ·  " + constantLabel(c)});
     });
-    bridge.ruleFunctions.forEach(function (f) {
-      candidates.push({text: f.name + "(" + (f.args ? "" : ")"),
-                       displayText: f.name + "(" + f.args + ")  ·  fonction"});
-    });
-    ["@IncomingEvent.", "@state."].forEach(function (p) {
-      candidates.push({text: p, displayText: p});
-    });
-    ["AND ", "OR ", "NOT ", "IN (", "IS NULL", "IS NOT NULL", "TRUE", "FALSE", "NULL"]
-      .forEach(function (k) { candidates.push({text: k, displayText: k.trim()}); });
-    return {
+    bridge.ruleFunctions.forEach(function (f) { candidates.push(functionItem(f)); });
+    [["@IncomingEvent.", "événement entrant"], ["@state.", "état du bloc appelant"]]
+      .forEach(function (p) {
+        candidates.push({text: p[0], displayText: p[0] + "  ·  " + p[1], reopen: true});
+      });
+    [["AND ", "BOOLEAN AND BOOLEAN → BOOLEAN"], ["OR ", "BOOLEAN OR BOOLEAN → BOOLEAN"],
+     ["NOT ", "NOT BOOLEAN → BOOLEAN"], ["IN (", "valeur IN (liste) → BOOLEAN", true],
+     ["IS NULL", "valeur IS NULL → BOOLEAN"], ["IS NOT NULL", "valeur IS NOT NULL → BOOLEAN"],
+     ["TRUE", "BOOLEAN"], ["FALSE", "BOOLEAN"], ["NULL", "valeur absente"]]
+      .forEach(function (k) {
+        candidates.push({text: k[0], displayText: k[0].trim() + "  ·  " + k[1], reopen: !!k[2]});
+      });
+    return reopenAfterPick(instance, {
       list: candidates.filter(function (i) {
         return !typed || i.text.toLowerCase().indexOf(typed) === 0;
       }),
       from: CodeMirror.Pos(cursor.line, cursor.ch - typed.length),
       to: cursor,
-    };
+    });
+  }
+
+  /** Fonction dont le curseur est dans les parenthèses, et rang de
+   * l'argument courant — balayage du texte avant le curseur en ignorant
+   * chaînes et commentaires. */
+  function enclosingCall(instance) {
+    var text = instance.getRange(CodeMirror.Pos(0, 0), instance.getCursor());
+    var stack = [];
+    var i = 0;
+    while (i < text.length) {
+      var ch = text[i];
+      if (ch === "'") {
+        var end = i + 1;
+        while (end < text.length) {
+          if (text[end] === "'" && text[end + 1] === "'") { end += 2; continue; }
+          if (text[end] === "'") { break; }
+          end++;
+        }
+        i = end + 1;
+        continue;
+      }
+      if (text.startsWith("--", i)) {
+        var nl = text.indexOf("\n", i);
+        i = nl < 0 ? text.length : nl;
+        continue;
+      }
+      if (text.startsWith("/*", i)) {
+        var close = text.indexOf("*/", i + 2);
+        i = close < 0 ? text.length : close + 2;
+        continue;
+      }
+      if (ch === "(") {
+        var name = /([A-Za-z_][\w]*)\s*$/.exec(text.slice(0, i));
+        stack.push({name: name ? name[1].toUpperCase() : "", arg: 0});
+      } else if (ch === ")") {
+        stack.pop();
+      } else if (ch === "," && stack.length) {
+        stack[stack.length - 1].arg++;
+      }
+      i++;
+    }
+    for (var k = stack.length - 1; k >= 0; k--) {
+      var f = bridge.ruleFunctions.filter(function (x) { return x.name === stack[k].name; })[0];
+      if (f) { return {fn: f, arg: stack[k].arg}; }
+    }
+    return null;
+  }
+
+  /** Bandeau de signature sous l'éditeur, argument courant en gras. */
+  function showSignature(instance) {
+    var el = detailEl.querySelector("[data-ref='signature']");
+    if (!el) { return; }
+    var call = enclosingCall(instance);
+    if (!call) { el.hidden = true; return; }
+    var f = call.fn;
+    el.innerHTML = "";
+    el.appendChild(document.createTextNode(f.name + "("));
+    f.params.forEach(function (p, index) {
+      if (index) { el.appendChild(document.createTextNode(", ")); }
+      var span = document.createElement(index === call.arg ? "b" : "span");
+      span.textContent = p[0] + " " + p[1];
+      el.appendChild(span);
+    });
+    el.appendChild(document.createTextNode(") → " + f.returns + "  —  " + f.doc));
+    el.hidden = false;
   }
 
   // ------------------------------------------------------------------

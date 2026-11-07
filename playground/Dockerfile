@@ -20,7 +20,15 @@ COPY playground playground
 # [schemas] seul : le playground valide des schémas YAML ; [sql] n'est pas
 # utilisé par l'IHM, donc non installé.
 RUN pip install "./[schemas]" ./playground \
-    && useradd --system --uid 10001 --no-create-home playground
+    && useradd --system --uid 10001 --no-create-home playground \
+    && mkdir -p /data/layouts && chown playground /data/layouts
+
+# Mise en page des diagrammes : fichiers <workflow>.layout.json servis par
+# GET/PUT /api/layout/{workflow}. Le répertoire existe dans l'image avec le
+# bon propriétaire : un volume nommé monté dessus en hérite à sa création
+# (sinon il appartiendrait à root et l'utilisateur non root ne pourrait
+# pas y écrire).
+ENV PLAYGROUND_LAYOUT_DIR=/data/layouts
 
 USER playground
 EXPOSE 8000

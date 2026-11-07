@@ -25,8 +25,8 @@ Site web local pour écrire et tester des scripts de workflow
   ouvre les propriétés (événement, garde `WHEN`, blocs
   `EXECUTE`/`STORE`, cible `SWITCH`, priorité des branches) ;
   « Générer le DSL → éditeur » rend le script **canonique** et le
-  valide par l'analyse réelle. Les positions sont mémorisées dans le
-  navigateur par nom de workflow.
+  valide par l'analyse réelle. Les positions sont enregistrées hors du
+  script (voir « Mise en page du diagramme »).
 
 ## Lancement
 
@@ -36,9 +36,51 @@ urban-workflow-playground            # http://127.0.0.1:8777
 ```
 
 ou `python -m urban_workflow_playground`. Variables : `PLAYGROUND_HOST`
-(défaut `127.0.0.1`), `PLAYGROUND_PORT` (défaut `8777`).
+(défaut `127.0.0.1`), `PLAYGROUND_PORT` (défaut `8777`),
+`PLAYGROUND_LAYOUT_DIR` (répertoire des mises en page, voir ci-dessous).
 
 Depuis un clone du dépôt : `pip install -e ./playground`.
+
+## Mise en page du diagramme
+
+Comme les schémas et les scripts, la position des états n'est **pas** dans
+le document de workflow : elle vit dans un fichier à côté,
+`<workflow>.layout.json`, indexé par nom d'état :
+
+```json
+{"version": 1, "workflow": "Reclamation",
+ "states": {"Ouvert": {"x": 280, "y": 60}, "Clos": {"x": 600, "y": 100}}}
+```
+
+Un état absent du fichier (ajouté dans l'éditeur de texte, par exemple) est
+placé automatiquement, **seul** : les autres gardent leur place.
+« Réorganiser » replace tout.
+
+Trois manières de l'enregistrer :
+
+- **fichiers sur le serveur** — avec `PLAYGROUND_LAYOUT_DIR=/chemin`, le
+  playground lit et écrit `/chemin/<workflow>.layout.json` via
+  `GET /api/layout/{workflow}` (`{"enabled": true, "layout": …|null}`) et
+  `PUT /api/layout/{workflow}` (le document ci-dessus, ou la forme courte
+  `{"Etat": {"x": …, "y": …}}`). Nom de workflow et positions contrôlés,
+  écriture atomique. `urban_workflow_playground.layout.LayoutDirectory`
+  fait la même chose depuis Python ;
+- **navigateur** — sans `PLAYGROUND_LAYOUT_DIR` (`enabled: false`), les
+  positions restent dans le `localStorage` ;
+- **stockage de l'application** — une application qui intègre le
+  diagramme branche le sien :
+
+  ```js
+  PlaygroundDiagram.setLayoutStore({
+    load: (workflow) => fetch(`/mon-api/${workflow}/layout`).then(r => r.json()),
+    save: (workflow, positions) => fetch(`/mon-api/${workflow}/layout`,
+      {method: "PUT", body: JSON.stringify(positions)}),
+  });
+  PlaygroundDiagram.reload();   // relit les positions avec ce stockage
+  ```
+
+  `load` rend `{Etat: {x, y}}` (ou une promesse, ou `null`) ;
+  `setLayoutStore(null)` revient au stockage par défaut.
 
 ## Notes
 

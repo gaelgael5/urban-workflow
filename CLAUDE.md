@@ -170,7 +170,7 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   ordinaux ①② = priorité des branches, inspecteur flottant (événement
   avec datalist, WHEN, EXECUTE/STORE, SWITCH, ↑↓ priorité, RECURSIVE),
   « Relier » = drag magnétique, « Réorganiser » = BFS en couches,
-  positions en localStorage par nom de workflow, événements utilisés
+  positions hors du DSL (voir « Mise en page du diagramme »), événements utilisés
   non déclarés auto-déclarés à la génération. Pont
   `window.PlaygroundBridge` exposé par app.js ; poignée de test
   `window.PlaygroundDiagram`.
@@ -181,6 +181,24 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   branche. Tests Playwright : drags au rythme réel (pauses entre
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
+
+## Hors plan — Mise en page du diagramme (fait, 2026-11-07)
+
+- Positions par nom d'état dans `<workflow>.layout.json`
+  (`{"version":1,"workflow":…,"states":{Etat:{x,y}}}`), jamais dans le DSL.
+  `urban_workflow_playground/layout.py` (`LayoutDirectory`,
+  `normalize_layout` : nom de workflow = identifiant sans `..`, x/y finis,
+  écriture atomique). Routes `GET/PUT /api/layout/{workflow}`, actives si
+  `PLAYGROUND_LAYOUT_DIR` (lu à chaque requête) ; image : `/data/layouts`
+  + volume nommé `layouts` dans le compose.
+- Front `diagram.js` : store `{load → Promise, save}` remplaçable
+  (`PlaygroundDiagram.setLayoutStore`, `reload`) ; défaut = serveur si
+  `enabled`, sinon localStorage. `placeMissing()` ne place que les états
+  sans position (avant : un seul manquant ré-étalait tout).
+- Vue Scripts : `RULE_FUNCTIONS` typées (`params`, `returns`, `doc`,
+  `signature`), complétion qui se rouvre après une fonction / `@…​.` /
+  `IN (` (`item.reopen` + événement `pick`), bandeau de signature
+  (`enclosingCall`).
 
 ## Hors plan — États modélisés, `@state`, `@IncomingEvent` (fait)
 

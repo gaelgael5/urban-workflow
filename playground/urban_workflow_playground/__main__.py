@@ -1,4 +1,10 @@
-"""``python -m urban_workflow_playground`` — démarre le serveur du playground."""
+"""``python -m urban_workflow_playground`` — démarre le serveur du playground.
+
+Variables d'environnement : ``PLAYGROUND_HOST``, ``PLAYGROUND_PORT`` et
+``PLAYGROUND_LAYOUT_DIR`` (répertoire des fichiers ``<workflow>.layout.json``
+de la mise en page des diagrammes ; sans elle, le navigateur garde les
+positions dans son propre stockage).
+"""
 
 import os
 

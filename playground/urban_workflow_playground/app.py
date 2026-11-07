@@ -22,11 +22,12 @@ dans un ``ScriptRegistry``.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -52,6 +53,8 @@ from urban_workflow.exceptions import DslSyntaxError, WorkflowError
 from urban_workflow.outputs import default_memory_output
 from urban_workflow.scripts import Script, ScriptLanguage, ScriptRegistry
 from urban_workflow.templating.context import json_safe
+
+from .layout import LayoutDirectory, LayoutError
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -538,6 +541,41 @@ def base_event_schema() -> dict[str, Any]:
     from urban_workflow.schemas import BASE_EVENT_SCHEMA
 
     return BASE_EVENT_SCHEMA
+
+
+def _layout_directory() -> LayoutDirectory | None:
+    # Lu à chaque requête (pas au chargement du module) : la configuration
+    # suit l'environnement du processus, et les tests la font varier.
+    path = os.environ.get("PLAYGROUND_LAYOUT_DIR", "").strip()
+    return LayoutDirectory(path) if path else None
+
+
+@app.get("/api/layout/{workflow}")
+def get_layout(workflow: str) -> dict[str, Any]:
+    """Mise en page enregistrée du diagramme d'un workflow.
+
+    ``enabled: false`` quand aucun répertoire n'est configuré : le
+    navigateur garde alors ses positions dans son propre stockage.
+    """
+    directory = _layout_directory()
+    if directory is None:
+        return {"enabled": False, "layout": None}
+    try:
+        return {"enabled": True, "layout": directory.load(workflow)}
+    except (LayoutError, ValueError) as exc:  # nom refusé ou fichier corrompu
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@app.put("/api/layout/{workflow}")
+def put_layout(workflow: str, data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    directory = _layout_directory()
+    if directory is None:
+        raise HTTPException(status_code=404, detail="no layout directory configured "
+                            "(PLAYGROUND_LAYOUT_DIR)")
+    try:
+        return {"enabled": True, "layout": directory.save(workflow, data)}
+    except LayoutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @app.get("/api/base-state-schema")
