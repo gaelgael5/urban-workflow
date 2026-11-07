@@ -109,6 +109,9 @@ class LayoutDirectory:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(layout, handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
+            # mkstemp crée en 0600 : une mise en page n'est pas un secret, et
+            # le fichier doit rester lisible par l'application qui le relit.
+            os.chmod(tmp, 0o644)
             os.replace(tmp, file)
         except BaseException:
             Path(tmp).unlink(missing_ok=True)

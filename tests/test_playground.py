@@ -691,3 +691,13 @@ class TestLayout:
         assert store.load("Wf")["states"] == {"S": {"x": 0, "y": 0}}
         with pytest.raises(LayoutError):
             store.save("../evil", {"states": {}})
+
+    def test_layout_file_is_readable(self, tmp_path):
+        import os
+        import stat
+
+        from urban_workflow_playground.layout import LayoutDirectory
+
+        LayoutDirectory(tmp_path).save("Wf", {"states": {}})
+        mode = stat.S_IMODE(os.stat(tmp_path / "Wf.layout.json").st_mode)
+        assert mode & 0o044 == 0o044
