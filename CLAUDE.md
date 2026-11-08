@@ -75,6 +75,10 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   installation + fumée testées dans un venv vierge
   (`--find-links dist`). `conftest.py` racine ajoute `playground/` au
   `sys.path` ; la CI installe `-e ./playground` dans la matrice.
+- **0.2.0** (2026-11-08) : les deux paquets passent en 0.2.0 (artefacts,
+  jslt, scripts, composants) ; le playground exige `urban-workflow>=0.2.0`.
+  Wheels vérifiées en venv vierge (contenu complet, exemple §9 du guide,
+  montage sous préfixe, paquet JS).
 - L'idée de « paquets par pays » a été abandonnée par l'utilisateur
   (mauvaise conversation) — ne pas la relancer.
 

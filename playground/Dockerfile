@@ -2,7 +2,7 @@
 # du dépôt (cf. docker-compose.yml) : le moteur ET le playground sont installés
 # DEPUIS LES SOURCES du dépôt, pas depuis PyPI, pour que la machine de test
 # serve exactement ce que porte la branche déployée (le playground déclare
-# `urban-workflow>=0.1.0` : sans l'install du socle local, pip irait le tirer
+# `urban-workflow>=0.2.0` : sans l'install du socle local, pip irait le tirer
 # de PyPI et on testerait une autre version du moteur).
 FROM python:3.12-slim
 
