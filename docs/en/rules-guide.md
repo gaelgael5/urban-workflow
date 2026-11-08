@@ -3,7 +3,8 @@
 > How a DSL rule references its method (`DEFINE RULE … AS @script`), how
 > to load scripts, and the reference of the `expression` language. The
 > rest of the DSL is in [dsl-guide.md](dsl-guide.md); code rules in
-> [integration-guide.md](integration-guide.md) §2.
+> [integration-guide.md](integration-guide.md) §2. Version française :
+> [../guide-regles.md](../guide-regles.md).
 
 ## 1. Principle: the workflow references, the script implements
 

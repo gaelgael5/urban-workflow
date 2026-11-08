@@ -78,10 +78,10 @@ English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
 
 ## Playground
 
-Un site web local pour écrire les scripts avec **intellisense**,
-diagnostics positionnés, paramétrage des règles métier et simulation
-d'événements sur le vrai moteur — distribution séparée
-[`urban-workflow-playground`](playground/README.md) :
+Des **composants web indépendants** (éditeur avec intellisense,
+diagramme, schémas, scripts, simulation sur le vrai moteur…) qu'une
+application monte selon ses besoins, et une page qui les assemble —
+distribution séparée [`urban-workflow-playground`](playground/README.md) :
 
 ```bash
 pip install urban-workflow-playground

@@ -171,9 +171,8 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   avec datalist, WHEN, EXECUTE/STORE, SWITCH, ↑↓ priorité, RECURSIVE),
   « Relier » = drag magnétique, « Réorganiser » = BFS en couches,
   positions hors du DSL (voir « Mise en page du diagramme »), événements utilisés
-  non déclarés auto-déclarés à la génération. Pont
-  `window.PlaygroundBridge` exposé par app.js ; poignée de test
-  `window.PlaygroundDiagram`.
+  non déclarés auto-déclarés à la génération (pont et poignées globales d'alors remplacés depuis par les composants,
+  voir « Composants graphiques indépendants »).
 - **Piège X6 contourné** : une sélection active (attrs modifiés par le
   highlight) casse la recherche de cible du drag magnétique → entrer en
   mode Relier désélectionne, les clics n'y sélectionnent pas, et la
@@ -191,9 +190,9 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   écriture atomique). Routes `GET/PUT /api/layout/{workflow}`, actives si
   `PLAYGROUND_LAYOUT_DIR` (lu à chaque requête) ; image : `/data/layouts`
   + volume nommé `layouts` dans le compose.
-- Front `diagram.js` : store `{load → Promise, save}` remplaçable
-  (`PlaygroundDiagram.setLayoutStore`, `reload`) ; défaut = serveur si
-  `enabled`, sinon localStorage. `placeMissing()` ne place que les états
+- Composant `diagram` : store `{load → Promise, save}` remplaçable
+  (option `layoutStore`, `instance.setLayoutStore`, `reload`) ; défaut =
+  serveur si `enabled`, sinon localStorage. `placeMissing()` ne place que les états
   sans position (avant : un seul manquant ré-étalait tout).
 - Vue Scripts : `RULE_FUNCTIONS` typées (`params`, `returns`, `doc`,
   `signature`), complétion qui se rouvre après une fonction / `@…​.` /
@@ -254,7 +253,7 @@ le corps en ligne `AS <expression>` a été SUPPRIMÉ.
   `UnknownScriptError`. `ExpressionLanguage` (`.expr`) dans
   `dsl/expressions.py` (import paresseux depuis le registre : le DSL
   importe `scripts`). `FUNCTIONS` (NOW, LENGTH, CONTAINS, *_BETWEEN) —
-  miroir `RULE_FUNCTIONS` dans `static/app.js`. Sémantique « jamais
+  miroir `UrbanWorkflow.RULE_FUNCTIONS` dans `static/uw/core.js`. Sémantique « jamais
   d'exception ».
 - Visiteur (`scripts=`) : `DeclaredFunction.script_ref` ; référence
   inconnue = erreur positionnée sur `AS @…` ; script + fonction de code
@@ -313,6 +312,46 @@ arguments de l'action), `TemplateRegistry` GARDÉ SÉPARÉ.
 - Dialecte urban-json 0.2.1 : chemins `$.x`, pas de commentaires `//`,
   `size`/`count`/`tostring` absents ; fonction inconnue détectée à
   l'exécution seulement. Docs : `docs/guide-artefacts.md` (+ en).
+
+## Hors plan — Composants graphiques indépendants (fait, 2026-11-08)
+
+Décision utilisateur : « des composants graphiques indépendants que
+l'utilisateur peut utiliser au gré de ses besoins » (pas une page figée).
+- `static/uw/` (ES5, sans build) : `core.js` = `UrbanWorkflow.createWorkspace`
+  (script, règles simulées, schémas, scripts, événements, dernière analyse ;
+  analyse auto différée ; persistance `storage: "local" | false | {load,save}`,
+  clés `uw-playground-*` inchangées ; événements `change`/`analyze`/
+  `analyze-error`/`reveal`), `define`/`mount`/`components`, langages
+  CodeMirror ; composants `editor`, `status`, `rules`, `schemas`,
+  `structure`, `simulation`, `help` (panels.js), `diagram`, `events`/
+  `states` (models.js, OBJECT_KINDS), `scripts`, `examples`, `tabs`.
+  Aucun id fixe (data-ref + uid), plusieurs instances possibles, aucun
+  composant ne connaît les autres : `ws.reveal(composant, détail)` + le
+  conteneur `tabs` qui active l'onglet. `insertText` passe par l'éditeur
+  monté (historique d'annulation), sinon remplacement du texte.
+- Page de référence = `static/page.js` (une composition) ; `window.Playground`
+  = poignée de tests. Anciens globaux (`PlaygroundBridge`,
+  `PlaygroundDiagram`, `PlaygroundScripts`) SUPPRIMÉS.
+- Serveur : `create_app(python_functions=, layout_dir=, title=)`, `app =
+  create_app()` ; fonctions métier gardées au niveau module avec param
+  `functions` ; URL relatives partout (montage sous préfixe testé) ;
+  `apiBase` déduit de l'URL de core.js / du paquet ; paquets
+  `static/urban-workflow.{js,css}` (`COMPONENT_SCRIPTS`, ordre de
+  chargement). `package-data` inclut `static/uw/*` (sinon absent de l'image).
+- CSS : `uw/urban-workflow.css` sous `.uw`, variables `--uw-*` ; `style.css`
+  = mise en page de la page seule. Doc : `playground/README.md` (guide
+  d'intégration complet). Tests : `TestEmbedding`.
+
+## Hors plan — Documentation du moteur (audit du 2026-11-08)
+
+Audit doc ↔ code : corrigé — branche sans SWITCH (refusée), mots réservés
+(sensibles à la casse ; PARAMETER/TIME/WITH), tableaux d'erreurs
+(chargement / traitement, `urban_workflow.exceptions`), chaîne de sorties
+personnalisée (contrat Transaction), paramètres oubliés, champs métier de
+`@state` toujours vides. `guide-integration.md` §9 = exemple complet
+(schémas + script de règle + artefact jslt + template) et §10 récap des
+imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
+(`TestGuideIntegration`) — modifier le guide = modifier le test.
 
 ## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 

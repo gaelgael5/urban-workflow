@@ -270,7 +270,9 @@ DEFINE STATE Tri 'aiguillage' AS @schema_Tri
   données métier du payload. Il ne porte rien de propre à un workflow.
 - **`@state`** : l'instance de l'état du bloc `DEFINE STATE` où l'on écrit
   — socle `Name`, `Uuid`, `CreationDate` (entrée dans l'état), `EventId`
-  (l'événement qui a créé l'instance) + champs du schéma de l'état. Dans
+  (l'événement qui a créé l'instance) + champs du schéma de l'état
+  (déclarés et contrôlés, mais **toujours absents pour l'instant** : leur
+  calcul n'est pas encore cadré, ils valent donc `NULL`). Dans
   `ON EVENT`, c'est l'état courant ; dans `ON ENTER`, l'instance qui vient
   d'être créée. **Indisponible dans `INITIALIZE WORKFLOW`** (aucun état
   n'existe encore) : erreur positionnée.
@@ -394,8 +396,20 @@ appliquée, les suivantes sont ignorées. Une branche peut :
 
 - changer d'état (`SWITCH cible`) — la cible doit exister, c'est vérifié
   au chargement ;
-- exécuter des actions avant de changer d'état (`EXECUTE … SWITCH …`) ;
-- exécuter des actions **sans changer d'état** (branche sans `SWITCH`).
+- exécuter des actions avant de changer d'état (`EXECUTE … SWITCH …`).
+
+**Chaque branche se termine par un `SWITCH`.** La grammaire accepte une
+branche faite seulement d'actions, mais le moteur la refuse au chargement
+(`MissingStateError: missing state name`). Pour exécuter des actions sans
+changer d'état, basculer vers l'état courant :
+
+```sql
+DEFINE STATE EnValidation 'en attente d''un valideur'
+    ON EVENT Relance
+        EXECUTE NotifierValideur(niveau = 'relance', dossier = @Workflow.ExternalId)
+        SWITCH EnValidation        -- reste dans l'état (nouvelle instance d'état)
+;
+```
 
 La branche sans `WHEN` en dernière position sert de **cas par défaut**.
 
@@ -607,21 +621,34 @@ Au chargement d'un répertoire, les fragments sont résolus par nom de
 fichier et visités avant le script qui les inclut : leurs déclarations
 sont disponibles comme si elles étaient locales.
 
-## 10. Les erreurs du parseur
+## 10. Les erreurs
 
-Le chargement échoue tôt, avec des messages positionnés :
+Le chargement échoue tôt, avec des messages positionnés
+(`fichier:ligne:colonne`) :
 
 | Erreur | Exemple de cause |
 |---|---|
-| `DslSyntaxError` | Syntaxe invalide, `;` manquant — chaque erreur porte fichier, ligne, colonne |
+| `DslSyntaxError` | Syntaxe invalide, `;` manquant — chaque erreur porte fichier, ligne, colonne ; aussi pour une erreur de syntaxe **dans un script** (`montant_eleve.expr:2:5`) |
 | `InvalidMethodReferenceError` | `EXECUTE Inconnue(…)` sans `DEFINE ACTION`, ou `WHEN RegleNonEnregistree(…)` |
 | `InvalidArgumentNameError` | Argument absent de la signature déclarée |
 | `MissingArgumentNameError` | Paramètre déclaré non fourni |
-| `DuplicatedArgumentNameError` | Doublon : déclaration, paramètre, argument, état, événement d'un état |
-| `InvalidArgumentValueError` | `'abc'` passé à un paramètre `INTEGER` |
-| `MissingStateError` | `SWITCH EtatInexistant` |
+| `DuplicatedArgumentNameError` | Doublon : argument, paramètre, déclaration (état, événement, constante, artefact), initialiseur, événement d'un état, propriété `UNIQUE` |
+| `InvalidArgumentValueError` | `'abc'` passé à un paramètre `INTEGER` ; chemin `@IncomingEvent.X` absent du schéma ; `@state` dans `INITIALIZE WORKFLOW` ; `@artifact.Inconnu` |
+| `MissingStateError` | `SWITCH EtatInexistant`, ou branche sans `SWITCH` |
+| `UnknownSchemaError` | `AS @schema` absent du `SchemaRegistry` |
+| `UnknownScriptError` | `AS @script` ou `USING @script` absent du `ScriptRegistry` |
 
-Toutes héritent de `WorkflowError`.
+Pendant le traitement d'un événement, deux erreurs propres au langage
+interrompent l'intégration (l'événement pourra être rejoué) :
+
+| Erreur | Cause |
+|---|---|
+| `EventSchemaError` | le payload ne respecte pas le schéma de l'événement (`AS @schema`) |
+| `ArtifactError` | le JSON produit par un artefact ne respecte pas son schéma, ou son script échoue |
+
+Toutes héritent de `WorkflowError` et s'importent de
+`urban_workflow.exceptions` ; la liste complète, avec les erreurs du
+moteur, est au §8 de [guide-integration.md](guide-integration.md).
 
 ## 11. Aide-mémoire
 
@@ -645,7 +672,7 @@ DEFINE STATE Etat 'libellé'
     ON ENTER STATE | ON EXIT STATE | ON ENTER AND EXIT STATE
         [WHEN cond] [WAITING n UNITE BEFORE] actions
     ON EVENT Nom
-        [WHEN cond] [actions] [SWITCH Cible]   -- branches dans l'ordre, la 1re vraie gagne
+        [WHEN cond] [actions] SWITCH Cible     -- branches dans l'ordre, la 1re vraie gagne
     EXPIRE AFTER n UNITE
         [WHEN cond] [actions] SWITCH Cible
 ;
@@ -658,3 +685,9 @@ STORE (Cle = 'valeur' …)                  -- écrit dans @Workflow.Cle
 -- conditions :
 WHEN Regle(a = 1) AND (NOT Autre(b = 'x') OR Tierce(c = @IncomingEvent.K))
 ```
+
+**Mots réservés** — interdits comme noms d'événement, d'état, de règle…
+lorsqu'ils sont écrits en majuscules (les mots-clés sont sensibles à la
+casse : `Etat` ou `state` restent libres) : `ACTION`, `AFTER`, `AND`, `ARTIFACT`, `AS`, `BEFORE`, `CONCURENCY`, `CONST`, `DAY`, `DECIMAL`, `DEFINE`, `DESCRIPTION`, `ENTER`, `EVENT`, `EXECUTE`, `EXIT`, `EXPIRE`, `FALSE`, `FRAGMENT`, `HOUR`, `IN`, `INCLUDE`, `INITIALIZE`, `INTEGER`, `IS`, `MATCHING`, `MINUTE`, `NAME`, `NOT`, `NULL`, `ON`, `OR`, `PARAMETER`, `RECURSIVE`, `RULE`, `STATE`, `STORE`, `SWITCH`, `TEXT`, `TIME`, `TRUE`, `UNIQUE`, `USING`, `VERSION`, `WAITING`, `WHEN`, `WITH`, `WORKFLOW`.
+`PARAMETER`, `TIME` et `WITH` sont réservés par la grammaire sans être
+utilisés aujourd'hui.

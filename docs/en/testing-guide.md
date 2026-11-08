@@ -16,19 +16,19 @@ isolation:
   no context mutation;
 - **defensive**: data missing from the payload is a normal case (return
   `False`), not an exception;
-- **named and typed**: the Python signature is the contract — `WHEN`
-  calls in the script are validated against it at load time.
+- **named and typed**: the Python signature is the contract — the parser
+  validates the script's `WHEN` calls against it.
 
 ```python
-# rules.py
+# regles.py
 from urban_workflow import FunctionRegistry, RunContext
 
 rules = FunctionRegistry("rule")
 
-@rules.register("AmountBelow")
-def amount_below(ctx: RunContext, threshold: float) -> bool:
-    amount = ctx.incoming_event.extended_datas.get("Amount")
-    return amount is not None and float(amount) < threshold
+@rules.register("MontantInferieur")
+def montant_inferieur(ctx: RunContext, seuil: float) -> bool:
+    montant = ctx.incoming_event.extended_datas.get("Montant")
+    return montant is not None and float(montant) < seuil
 ```
 
 ### Testing a rule alone
@@ -40,15 +40,15 @@ from urban_workflow import IncomingEvent, RunContext, Workflow
 
 def make_ctx(**payload) -> RunContext:
     return RunContext(
-        workflow=Workflow(workflow_name="PurchaseValidation", external_id="PR-1"),
-        incoming_event=IncomingEvent(name="RequestSubmitted",
+        workflow=Workflow(workflow_name="ValidationAchat", external_id="DA-1"),
+        incoming_event=IncomingEvent(name="DemandeSoumise",
                                      extended_datas=dict(payload)),
     )
 
-def test_amount_below():
-    assert amount_below(make_ctx(Amount=120), threshold=500.0) is True
-    assert amount_below(make_ctx(Amount=900), threshold=500.0) is False
-    assert amount_below(make_ctx(), threshold=500.0) is False   # missing data
+def test_montant_inferieur():
+    assert montant_inferieur(make_ctx(Montant=120), seuil=500.0) is True
+    assert montant_inferieur(make_ctx(Montant=900), seuil=500.0) is False
+    assert montant_inferieur(make_ctx(), seuil=500.0) is False   # missing data
 ```
 
 For a rule that inspects history (`ctx.workflow.events`), append
@@ -62,24 +62,24 @@ of the compiled conditions**, without running the engine.
 
 ```python
 from urban_workflow.dsl import parse_config
-from rules import rules
+from regles import rules
 
-def test_flow_structure():
+def test_structure_du_circuit():
     config = parse_config(SCRIPT, rules=rules, filename="validation.wf")
 
     assert set(config.states) == {
-        "Dispatch", "Incomplete", "UnderReview", "Approved", "Rejected", "Expired",
+        "Tri", "Incomplete", "EnValidation", "Approuvee", "Rejetee", "Expiree",
     }
-    transition = config.states["UnderReview"].events["ApprovalGranted"].transitions[0]
-    assert transition.target_state is config.states["Approved"]
+    transition = config.states["EnValidation"].events["ValidationAccordee"].transitions[0]
+    assert transition.target_state is config.states["Approuvee"]
 
-def test_dispatch_condition():
+def test_condition_du_tri():
     config = parse_config(SCRIPT, rules=rules)
-    branches = config.states["Dispatch"].events["RequestSubmitted"].transitions
+    branches = config.states["Tri"].events["DemandeSoumise"].transitions
 
     # WHEN closures evaluate directly against a hand-built context.
     assert branches[0].when_rule(make_ctx()) is True            # incomplete
-    assert branches[1].when_rule(make_ctx(Amount=120)) is True  # below threshold
+    assert branches[1].when_rule(make_ctx(Montant=120)) is True # below threshold
     assert branches[2].when_rule is None                        # default branch
 ```
 
@@ -93,12 +93,12 @@ from urban_workflow.exceptions import (
     DslSyntaxError, InvalidMethodReferenceError, MissingStateError,
 )
 
-def test_undeclared_action():
-    script = SCRIPT.replace("NotifyApprover(", "Unknown(")
+def test_action_non_declaree():
+    script = SCRIPT.replace("NotifierValideur(", "Inconnue(")
     with pytest.raises(InvalidMethodReferenceError, match=r"validation\.wf:\d+:\d+"):
         parse_config(script, rules=rules, filename="validation.wf")
 
-def test_positioned_syntax_error():
+def test_erreur_de_syntaxe_positionnee():
     with pytest.raises(DslSyntaxError) as excinfo:
         parse_config("NAME x DEFINE EVENT e 'e'", rules=rules)  # missing ;
     assert excinfo.value.errors[0].line >= 1
@@ -107,7 +107,7 @@ def test_positioned_syntax_error():
 ### Functional log
 
 Every rule evaluation traces a line in `ctx.functional_log`
-(`AmountBelow(threshold=500.0) -> True`): handy in assertions to verify
+(`MontantInferieur(seuil=500.0) -> True`): handy in assertions to verify
 *why* a branch was taken.
 
 ## 3. Testing output templates
@@ -118,18 +118,18 @@ without the engine:
 ```python
 from urban_workflow.templating import TemplateRegistry, build_action_document
 
-def test_notify_approver_template():
+def test_template_notifier_valideur():
     registry = TemplateRegistry().add_directory("templates/")
 
-    ctx = make_ctx(Amount=900)
-    action = notify_action_config.map(ctx)       # ResultActionConfig.map
-    body = registry.transform("NotifyApprover",
+    ctx = make_ctx(Montant=900)
+    action = config_action_notifier.map(ctx)     # ResultActionConfig.map
+    body = registry.transform("NotifierValideur",
                               build_action_document(ctx, action))
 
     assert body == {
-        "Order": "notify",
-        "Case": "PR-1",
-        "Amount": 900,
+        "Ordre": "notifier",
+        "Dossier": "DA-1",
+        "Montant": 900,
     }
 ```
 
@@ -152,7 +152,7 @@ from urban_workflow.outputs import default_memory_output
 import pytest
 
 @pytest.fixture
-def engine_and_storage():
+def moteur():
     storage = MemoryStorage()
     configs = WorkflowsConfig().add_document(parse_config(SCRIPT, rules=rules))
     processor = WorkflowProcessor(configs, WorkflowFactory())
@@ -162,17 +162,30 @@ def engine_and_storage():
     processor.output_actions = default_memory_output(storage)
     return WorkflowEngine(processor), storage
 
-def event(name, case, **data):
-    return {"Name": name, "Uuid": str(uuid4()), "ExternalId": case,
-            "Type": "purchase", **data}
+def evenement(nom, dossier, **donnees):
+    return {"Name": nom, "Uuid": str(uuid4()), "ExternalId": dossier,
+            "Type": "achat", **donnees}
 
-def test_auto_approval(engine_and_storage):
-    engine, storage = engine_and_storage
-    engine.evaluate_event(event("RequestSubmitted", "PR-1", Amount=120))
+def test_approbation_automatique(moteur):
+    engine, storage = moteur
+    engine.evaluate_event(evenement("DemandeSoumise", "DA-1", Montant=120))
 
-    case = storage.get_by(Workflow, "PR-1", "external_id")[0]
-    assert case.current_state == "Approved"
-    assert case.extended_datas["Status"] == "approved"      # STORE
+    dossier = storage.get_by(Workflow, "DA-1", "external_id")[0]
+    assert dossier.current_state == "Approuvee"
+    assert dossier.extended_datas["Statut"] == "approuvee"      # STORE
+
+def test_refus(moteur):
+    engine, storage = moteur
+    engine.evaluate_event(evenement("DemandeSoumise", "DA-2", Montant=900))
+    engine.evaluate_event(evenement("ValidationRefusee", "DA-2",
+                                    Motif="budget épuisé"))
+
+    dossier = storage.get_by(Workflow, "DA-2", "external_id")[0]
+    assert dossier.current_state == "Rejetee"
+    # The message pushed on refusal carries the incoming event's reason.
+    notification = next(a for a in dossier.last_event.actions
+                        if a.name == "NotifierDemandeur")
+    assert notification.execute_message["Body"]["Arguments"]["motif"] == "budget épuisé"
 ```
 
 ### Testing an expiry
@@ -181,26 +194,26 @@ Expiry is simulated by replaying the reminder yourself, as the deferred
 bus would:
 
 ```python
-def test_expiry(engine_and_storage):
-    engine, storage = engine_and_storage
-    engine.evaluate_event(event("RequestSubmitted", "PR-3", Amount=900))
-    case = storage.get_by(Workflow, "PR-3", "external_id")[0]
-    assert case.current_state == "UnderReview"
+def test_expiration(moteur):
+    engine, storage = moteur
+    engine.evaluate_event(evenement("DemandeSoumise", "DA-3", Montant=900))
+    dossier = storage.get_by(Workflow, "DA-3", "external_id")[0]
+    assert dossier.current_state == "EnValidation"
 
-    # The deferred reminder was pushed on entering the state.
-    reminder = storage.get_all(PushedAction)[-1]
-    assert reminder.execute_message["Body"]["Delay"] == 3 * 24 * 60
+    # The deferred reminder was pushed on the bus on entering the state.
+    rappel = storage.get_all(PushedAction)[-1]
+    assert rappel.execute_message["Body"]["Delay"] == 3 * 24 * 60
 
     # When due, the bus would send the __expired event back:
-    engine.evaluate_event(event(
-        "__expired", "PR-3",
-        WorkflowId=str(case.uuid), CurrentState="UnderReview",
+    engine.evaluate_event(evenement(
+        "__expired", "DA-3",
+        WorkflowId=str(dossier.uuid), CurrentState="EnValidation",
     ))
-    case = storage.get_by(Workflow, "PR-3", "external_id")[0]
-    assert case.current_state == "Expired"
+    dossier = storage.get_by(Workflow, "DA-3", "external_id")[0]
+    assert dossier.current_state == "Expiree"
 ```
 
-A stale reminder (the state changed meanwhile) must be a no-op — a
+And a stale reminder (the state changed meanwhile) must be a no-op — a
 `CurrentState` different from the actual state leaves the workflow alone.
 
 ## 5. Controlling time
@@ -214,16 +227,16 @@ from urban_workflow import WorkflowClock
 
 NOW = datetime(2026, 11, 3, 10, 0, tzinfo=timezone.utc)
 
-def test_frozen_output_date(engine_and_storage):
-    engine, storage = engine_and_storage
+def test_date_de_sortie_figee(moteur):
+    engine, storage = moteur
     with WorkflowClock.frozen(NOW):
-        engine.evaluate_event(event("RequestSubmitted", "PR-4", Amount=120))
+        engine.evaluate_event(evenement("DemandeSoumise", "DA-4", Montant=120))
     action = storage.get_all(PushedAction)[0]
     assert action.execute_message["Body"]["PushedAt"] == NOW.isoformat()
 ```
 
 `WorkflowClock.set_provider(...)` / `reset()` exist for finer control (a
-step-by-step clock).
+clock that advances step by step).
 
 ## 6. Pitfalls and idioms
 
@@ -231,7 +244,8 @@ step-by-step clock).
   already-integrated uuid (replay protection). A test reusing the same
   uuid "does nothing" the second time — by design.
 - **`MATCHING` applies at creation**: a test event without the filter's
-  pairs creates no instance — include them in the test's event factory.
+  pairs creates no instance — remember to include them in the test's
+  event factory.
 - **Test the kind, not the implementation**: `EXECUTE` → `$_push`,
   `STORE` → `$_update`, custom kind → as-is. The output chain is tested by
   checking `storage.get_all(PushedAction)` and the workflow's
@@ -243,4 +257,4 @@ step-by-step clock).
   `tests/test_dsl.py` (language goldens), `tests/test_engine.py` (engine),
   `tests/test_engine_dsl.py` (DSL end-to-end), `tests/test_templating.py`
   (templates), `tests/test_storage_sql.py` (SQL persistence),
-  `tests/test_docs_examples.py` (the guides' worked example).
+  `tests/test_docs_examples.py` (guide examples, executed as written).

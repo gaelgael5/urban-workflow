@@ -224,3 +224,48 @@ class TestCircuitDeValidation:
             "Approuvee",
             "EnValidation",
         ]
+
+
+# ----------------------------------------------------------------------
+# Les blocs de code du guide d'intégration s'exécutent TELS QU'ÉCRITS
+# ----------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+GUIDE = Path(__file__).resolve().parent.parent / "docs" / "guide-integration.md"
+
+
+def _python_block(heading: str) -> str:
+    """Premier bloc ```python qui suit le titre ``heading`` du guide."""
+    text = GUIDE.read_text(encoding="utf-8")
+    after = text[text.index(heading):]
+    start = after.index("```python\n") + len("```python\n")
+    return after[start:after.index("\n```", start)]
+
+
+class TestGuideIntegration:
+    def test_exemple_complet_de_bout_en_bout(self, capsys):
+        pytest.importorskip("yaml")
+        pytest.importorskip("jsonschema")
+        exec(compile(_python_block("## 9. Exemple complet"), "guide-integration §9", "exec"), {})
+        lines = capsys.readouterr().out.splitlines()
+        assert lines[0] == "Facturee"
+        assert lines[1].startswith('AlerterCommercial {"Header": {"canal": "bus-commandes"}')
+        assert lines[2].endswith(
+            '"corps": {"reference": "CMD-1", "client": "ACME", "montant": 1500, '
+            '"devise": "EUR"}}}'
+        )
+        assert lines[3] == "refusé : [\"<racine>: 'Client' is a required property\"]"
+        assert lines[4] == "interrompu : ['montant: 0 is less than or equal to the minimum of 0']"
+        assert lines[5] == "[]"
+
+    def test_recapitulatif_des_imports(self):
+        block = _python_block("## 10. Récapitulatif des imports")
+        try:
+            import sqlalchemy  # noqa: F401
+        except ImportError:
+            # Job CI sans l'extra [sql] : la dernière ligne ne peut pas marcher.
+            block = "\n".join(
+                line for line in block.splitlines() if "storage_sql" not in line
+            )
+        exec(compile(block, "guide-integration §10", "exec"), {})
