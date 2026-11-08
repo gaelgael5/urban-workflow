@@ -236,6 +236,8 @@ li.CodeMirror-hint-active { background: var(--uw-accent); color: #0b0e13; }
   flex: 1 1 120px; background: var(--uw-bg); border: 1px solid var(--uw-border);
   color: var(--uw-text); padding: 5px 8px; border-radius: 4px;
 }
+/* Formulaire en colonne : une base de 120px y deviendrait une hauteur. */
+.uw .uw-schema-form input:not([type]) { flex: none; }
 .uw .uw-schema-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .uw .uw-schema-form textarea {
   width: 100%; background: var(--uw-bg); color: var(--uw-text);
