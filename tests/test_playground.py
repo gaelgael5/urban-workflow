@@ -163,7 +163,7 @@ class TestStatic:
 
     def test_diagram_assets_served(self):
         assert client.get("/static/vendor/x6.min.js").status_code == 200
-        assert client.get("/static/diagram.js").status_code == 200
+        assert client.get("/static/uw/diagram.js").status_code == 200
 
 
 SCHEMA_SCRIPT = """
@@ -348,7 +348,7 @@ class TestAssetVersioning:
         import re
 
         html = client.get("/").text
-        refs = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
+        refs = re.findall(r'(?:href|src)="(static/[^"]+)"', html)
         assert refs, "la page doit référencer ses fichiers statiques"
         for ref in refs:
             assert re.search(r"\?v=[0-9a-f]{12}$", ref), ref
@@ -357,8 +357,8 @@ class TestAssetVersioning:
         import re
 
         html = client.get("/").text
-        ref = re.search(r'src="(/static/app\.js\?v=[0-9a-f]+)"', html).group(1)
-        assert client.get(ref).status_code == 200
+        ref = re.search(r'src="(static/uw/core\.js\?v=[0-9a-f]+)"', html).group(1)
+        assert client.get("/" + ref).status_code == 200
 
     def test_index_is_revalidated_on_each_load(self):
         assert client.get("/").headers["cache-control"] == "no-cache"
@@ -903,3 +903,98 @@ class TestArtifactsInPlayground:
         assert arguments["corps"]["reference"] == "CMD-1"
         assert arguments["client"] == "ACME"
         assert "ArtifactError" in second["error"] and "montant" in second["error"]
+
+
+class TestEmbedding:
+    """Composants indépendants (décision du 2026-11-08) : une application
+    cliente monte l'API où elle veut, avec ses propres fonctions Python et
+    son répertoire de mise en page, et charge les composants d'un bloc."""
+
+    def test_page_uses_only_relative_urls(self):
+        # Une URL absolue (/static/…, /api/…) casserait le montage sous préfixe.
+        import re
+
+        html = client.get("/").text
+        assert not re.findall(r'(?:href|src)="/', html)
+
+    def test_app_mounted_under_a_prefix_serves_page_assets_and_api(self):
+        from fastapi import FastAPI
+        from urban_workflow_playground.app import create_app
+
+        parent = FastAPI()
+        parent.mount("/outils/workflow", create_app())
+        host = TestClient(parent)
+        html = host.get("/outils/workflow/").text
+        assert "playground DSL" in html
+        import re
+
+        for ref in re.findall(r'(?:href|src)="(static/[^"]+)"', html):
+            assert host.get("/outils/workflow/" + ref).status_code == 200, ref
+        response = host.post("/outils/workflow/api/analyze", json={"script": SCRIPT})
+        assert response.status_code == 200
+        assert "symbols" in response.json()
+
+    def test_bundle_concatenates_every_component(self):
+        from urban_workflow_playground.app import COMPONENT_SCRIPTS
+
+        response = client.get("/static/urban-workflow.js")
+        assert response.status_code == 200
+        assert "javascript" in response.headers["content-type"]
+        text = response.text
+        for name in COMPONENT_SCRIPTS:
+            assert f"/* ---- uw/{name} ---- */" in text
+        for component in ("editor", "status", "diagram", "scripts", "rules", "schemas",
+                          "structure", "simulation", "help", "examples", "tabs"):
+            assert f'UW.define("{component}"' in text, component
+        # « events » et « states » : un même composant, deux paramétrages.
+        assert "OBJECT_KINDS" in text and "events: {" in text and "states: {" in text
+        assert text.index("uw/core.js") < text.index("uw/editor.js")
+
+    def test_bundle_css_is_served(self):
+        response = client.get("/static/urban-workflow.css")
+        assert response.status_code == 200
+        assert ".uw" in response.text
+
+    def test_application_python_functions_replace_the_examples(self):
+        from urban_workflow_playground.app import create_app
+
+        def plafond_ok(ctx, montant):
+            """Montant sous le plafond de l'application."""
+            return montant is not None and float(montant) < 1000
+
+        host = TestClient(create_app(python_functions={"plafond_ok": plafond_ok}))
+        script = (
+            "NAME P VERSION 1\n"
+            "DEFINE EVENT E 'e';\n"
+            "DEFINE RULE Plafond (DECIMAL montant) 'plafond' AS @plafond_ok;\n"
+            "INITIALIZE WORKFLOW\n"
+            "    ON EVENT E RECURSIVE SWITCH Tri\n"
+            "DEFINE STATE Tri 'tri'\n"
+            "    ON EVENT E\n"
+            "        WHEN Plafond(montant = @IncomingEvent.Montant)\n"
+            "            SWITCH Ok\n"
+            "        SWITCH Ko\n"
+            ";\n"
+            "DEFINE STATE Ok 'ok';\nDEFINE STATE Ko 'ko';\n"
+        )
+        data = host.post("/api/analyze", json={"script": script}).json()
+        assert data["ok"] is True, data["errors"]
+        assert [p["name"] for p in data["symbols"]["python_scripts"]] == ["plafond_ok"]
+        sim = host.post("/api/simulate", json={"script": script, "events": [
+            {"Name": "E", "Uuid": "e1111111-1111-4111-8111-111111111111",
+             "ExternalId": "A", "Montant": 10},
+            {"Name": "E", "Uuid": "e2222222-2222-4222-8222-222222222222",
+             "ExternalId": "B", "Montant": 5000},
+        ]}).json()
+        assert [w["state"] for w in sim["workflows"]] == ["Ok", "Ko"]
+        # Les exemples du playground ne sont plus publiés par cette application.
+        assert "iban_valide" not in str(data["symbols"]["python_scripts"])
+
+    def test_application_layout_dir_overrides_the_environment(self, tmp_path, monkeypatch):
+        from urban_workflow_playground.app import create_app
+
+        monkeypatch.delenv("PLAYGROUND_LAYOUT_DIR", raising=False)
+        host = TestClient(create_app(layout_dir=tmp_path))
+        assert host.get("/api/layout/Demo").json() == {"enabled": True, "layout": None}
+        host.put("/api/layout/Demo", json={"Ouvert": {"x": 1, "y": 2}})
+        assert (tmp_path / "Demo.layout.json").exists()

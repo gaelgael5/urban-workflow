@@ -1,6 +1,12 @@
 """API du playground : analyse (diagnostics + symboles) et simulation.
 
-Deux endpoints :
+``create_app(python_functions=…, layout_dir=…)`` fabrique l'application
+(FastAPI) ; ``app`` est celle par défaut (``python -m
+urban_workflow_playground``). Une application cliente peut la monter sous un
+préfixe (``parent.mount("/outils/workflow", create_app(...))``) : la page et
+les composants n'utilisent que des URL relatives.
+
+Endpoints principaux :
 
 - ``POST /api/analyze`` — analyse un script avec les règles paramétrées ;
   retourne les erreurs **positionnées** (syntaxe et sémantique), les
@@ -24,11 +30,12 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -72,7 +79,9 @@ _CALLED_AT = re.compile(
 # exécution de code arbitraire (jslt = transformation JSON urban-json).
 _BROWSER_LANGUAGES = ("expression", "jslt")
 
-app = FastAPI(title="urban-workflow playground")
+# Fonctions Python côté serveur, référençables par « AS @nom » : celles de
+# l'application (create_app(python_functions=…)), sinon les exemples.
+PythonFunctions = Mapping[str, Callable[..., Any]]
 
 
 # ----------------------------------------------------------------------
@@ -191,6 +200,7 @@ class _InvalidScript(ScriptLanguage):
 
 def _build_script_registry(
     settings: list[ScriptSetting],
+    functions: PythonFunctions = PYTHON_SCRIPTS,
 ) -> tuple[ScriptRegistry, list[dict[str, Any]]]:
     """Charge les scripts de la vue Scripts ; erreurs positionnées DANS
     chaque script (champ ``script``). Toujours un registre : dans le
@@ -202,7 +212,7 @@ def _build_script_registry(
     — aucun code Python venu du navigateur n'est exécuté."""
     registry = ScriptRegistry()
     registry.register_language(_InvalidScript())
-    for name, func in PYTHON_SCRIPTS.items():
+    for name, func in functions.items():
         registry.add_function(name, func)
     errors: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -210,9 +220,9 @@ def _build_script_registry(
         if not setting.name or setting.name in seen:
             continue
         seen.add(setting.name)
-        if setting.name in PYTHON_SCRIPTS:
+        if setting.name in functions:
             errors.append({**_error_entry(
-                f"@{setting.name} est une fonction Python fournie par le playground : "
+                f"@{setting.name} est une fonction Python fournie par le serveur : "
                 "nom réservé, choisir un autre nom"), "script": setting.name})
             continue
         if setting.language not in _BROWSER_LANGUAGES:
@@ -583,7 +593,6 @@ def _summary(config) -> dict[str, Any]:
 # ----------------------------------------------------------------------
 
 
-@app.get("/healthz")
 def healthz() -> dict[str, str]:
     # Sonde volontairement triviale : le playground n'a ni base ni dépendance
     # externe, « le process répond » est tout ce qu'il y a à vérifier. Visée
@@ -591,7 +600,6 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/base-event-schema")
 def base_event_schema() -> dict[str, Any]:
     # Source unique du socle : la vue « Événements » l'affiche en lecture
     # seule sans en garder une copie côté navigateur qui divergerait.
@@ -600,21 +608,21 @@ def base_event_schema() -> dict[str, Any]:
     return BASE_EVENT_SCHEMA
 
 
-def _layout_directory() -> LayoutDirectory | None:
-    # Lu à chaque requête (pas au chargement du module) : la configuration
-    # suit l'environnement du processus, et les tests la font varier.
-    path = os.environ.get("PLAYGROUND_LAYOUT_DIR", "").strip()
+def _layout_directory(layout_dir: str | os.PathLike[str] | None = None) -> LayoutDirectory | None:
+    # Répertoire donné à create_app, sinon PLAYGROUND_LAYOUT_DIR lu à chaque
+    # requête (pas au chargement du module) : la configuration suit
+    # l'environnement du processus, et les tests la font varier.
+    path = str(layout_dir) if layout_dir else os.environ.get("PLAYGROUND_LAYOUT_DIR", "").strip()
     return LayoutDirectory(path) if path else None
 
 
-@app.get("/api/layout/{workflow}")
-def get_layout(workflow: str) -> dict[str, Any]:
+def get_layout(workflow: str, layout_dir: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     """Mise en page enregistrée du diagramme d'un workflow.
 
     ``enabled: false`` quand aucun répertoire n'est configuré : le
     navigateur garde alors ses positions dans son propre stockage.
     """
-    directory = _layout_directory()
+    directory = _layout_directory(layout_dir)
     if directory is None:
         return {"enabled": False, "layout": None}
     try:
@@ -623,9 +631,10 @@ def get_layout(workflow: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-@app.put("/api/layout/{workflow}")
-def put_layout(workflow: str, data: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    directory = _layout_directory()
+def put_layout(
+    workflow: str, data: dict[str, Any], layout_dir: str | os.PathLike[str] | None = None
+) -> dict[str, Any]:
+    directory = _layout_directory(layout_dir)
     if directory is None:
         raise HTTPException(status_code=404, detail="no layout directory configured "
                             "(PLAYGROUND_LAYOUT_DIR)")
@@ -635,7 +644,6 @@ def put_layout(workflow: str, data: dict[str, Any] = Body(...)) -> dict[str, Any
         raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
-@app.get("/api/base-state-schema")
 def base_state_schema() -> dict[str, Any]:
     # Source unique du socle des états (vue « États »).
     from urban_workflow.schemas import BASE_STATE_SCHEMA
@@ -643,15 +651,16 @@ def base_state_schema() -> dict[str, Any]:
     return BASE_STATE_SCHEMA
 
 
-@app.post("/api/analyze")
-def analyze(request: AnalyzeRequest) -> dict[str, Any]:
+def analyze(
+    request: AnalyzeRequest, functions: PythonFunctions = PYTHON_SCRIPTS
+) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     summary: dict[str, Any] | None = None
     symbols = _symbols_from_text(request.script)
 
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     errors.extend(_error_entry(problem) for problem in schema_problems)
-    script_registry, script_errors = _build_script_registry(request.scripts)
+    script_registry, script_errors = _build_script_registry(request.scripts, functions)
 
     parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
     for error in parser.errors:
@@ -683,7 +692,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     symbols["scripts"] = [
         {"name": s.name, "language": s.language} for s in request.scripts if s.name
     ]
-    symbols["python_scripts"] = describe_python_scripts()
+    symbols["python_scripts"] = describe_python_scripts(functions)
     symbols["jslt_functions"] = _jslt_functions()
     symbols.setdefault("event_details", [])
 
@@ -729,7 +738,6 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     }
 
 
-@app.post("/api/diagram")
 def diagram(request: DiagramRequest) -> dict[str, Any]:
     """Script DSL → modèle de surface (structure fidèle pour la vue diagramme)."""
     try:
@@ -745,15 +753,17 @@ def diagram(request: DiagramRequest) -> dict[str, Any]:
     return {"ok": True, "errors": [], "model": model.to_dict()}
 
 
-@app.post("/api/generate")
-def generate(request: GenerateRequest) -> dict[str, Any]:
+def generate(
+    request: GenerateRequest, functions: PythonFunctions = PYTHON_SCRIPTS
+) -> dict[str, Any]:
     """Modèle de surface → script DSL canonique, validé par l'analyse réelle."""
     script = render_script(SurfaceModel.from_dict(request.model))
     analysis = analyze(
         AnalyzeRequest(
             script=script, rules=request.rules, schemas=request.schemas,
             scripts=request.scripts,
-        )
+        ),
+        functions,
     )
     return {
         "ok": analysis["ok"],
@@ -786,8 +796,9 @@ def _jslt_functions() -> list[dict[str, Any]]:
     return _JSLT_FUNCTIONS
 
 
-@app.post("/api/artifact-preview")
-def artifact_preview(request: ArtifactPreviewRequest) -> dict[str, Any]:
+def artifact_preview(
+    request: ArtifactPreviewRequest, functions: PythonFunctions = PYTHON_SCRIPTS
+) -> dict[str, Any]:
     """Produit un artefact sur un événement d'exemple (vue Scripts).
 
     Même script, même document et même validation que pendant le
@@ -802,7 +813,7 @@ def artifact_preview(request: ArtifactPreviewRequest) -> dict[str, Any]:
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     if schema_problems:
         return {"ok": False, "error": " ; ".join(schema_problems)}
-    script_registry, script_errors = _build_script_registry(request.scripts)
+    script_registry, script_errors = _build_script_registry(request.scripts, functions)
     if any(e.get("script") for e in script_errors):
         first = script_errors[0]
         return {"ok": False, "error": f"script @{first['script']} : {first['message']}"}
@@ -838,14 +849,15 @@ def artifact_preview(request: ArtifactPreviewRequest) -> dict[str, Any]:
     return {"ok": True, "value": json_safe(value)}
 
 
-@app.post("/api/simulate")
-def simulate(request: SimulateRequest) -> dict[str, Any]:
+def simulate(
+    request: SimulateRequest, functions: PythonFunctions = PYTHON_SCRIPTS
+) -> dict[str, Any]:
     registry = _build_registry(request.rules, request.script)
 
     schema_registry, schema_problems = _build_schema_registry(request.schemas)
     if schema_problems:
         return {"ok": False, "error": " ; ".join(schema_problems), "steps": []}
-    script_registry, script_errors = _build_script_registry(request.scripts)
+    script_registry, script_errors = _build_script_registry(request.scripts, functions)
     if script_errors:
         problems = [f"script @{e['script']} {e['line']}:{e['column']} : {e['message']}"
                     for e in script_errors]
@@ -939,9 +951,36 @@ def simulate(request: SimulateRequest) -> dict[str, Any]:
 # Fichiers statiques
 # ----------------------------------------------------------------------
 
+# Ordre de chargement des composants (core d'abord : il définit
+# window.UrbanWorkflow). Source unique pour le paquet concaténé servi aux
+# applications clientes ; index.html liste les mêmes fichiers.
+COMPONENT_SCRIPTS = (
+    "core.js", "editor.js", "panels.js", "diagram.js", "models.js",
+    "scripts.js", "examples.js", "tabs.js",
+)
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
+def _bundle(names: tuple[str, ...]) -> bytes:
+    parts = []
+    for name in names:
+        # Un « ; » entre fichiers : une IIFE collée à la suivante serait lue
+        # comme un appel de fonction.
+        parts.append(f"/* ---- uw/{name} ---- */\n".encode())
+        parts.append((STATIC_DIR / "uw" / name).read_bytes())
+        parts.append(b"\n;\n")
+    return b"".join(parts)
+
+
+_BUNDLE_JS = _bundle(COMPONENT_SCRIPTS)
+_BUNDLE_CSS = (STATIC_DIR / "uw" / "urban-workflow.css").read_bytes()
+
 
 def _versioned_index() -> str:
-    """index.html dont chaque URL /static/… porte ?v=<empreinte du fichier>.
+    """index.html dont chaque URL static/… porte ?v=<empreinte du fichier>.
 
     Sans cela, après un déploiement, le navigateur combinait la page neuve
     avec un app.js/style.css périmés tirés de son cache (StaticFiles ne pose
@@ -949,34 +988,125 @@ def _versioned_index() -> str:
     empreinte PAR FICHIER plutôt qu'un numéro de version global : seul ce qui
     a changé est retéléchargé, les vendors (x6 ≈ 1 Mo) restent en cache.
     Calculé une fois au chargement du module : les fichiers ne bougent pas
-    sans redéploiement, donc sans redémarrage du process.
+    sans redéploiement, donc sans redémarrage du process. URL relatives :
+    la page marche aussi montée sous un préfixe.
     """
     def stamp(match: re.Match[str]) -> str:
         attr, rel = match.group(1), match.group(2)
-        digest = hashlib.sha256((STATIC_DIR / rel).read_bytes()).hexdigest()[:12]
-        return f'{attr}="/static/{rel}?v={digest}"'
+        return f'{attr}="static/{rel}?v={_digest((STATIC_DIR / rel).read_bytes())}"'
 
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    return re.sub(r'(href|src)="/static/([^"?#]+)"', stamp, html)
+    return re.sub(r'(href|src)="static/([^"?#]+)"', stamp, html)
 
 
 _INDEX_HTML = _versioned_index()
 
 
-@app.get("/")
 def index() -> HTMLResponse:
     # no-cache = revalider à chaque chargement : la page est minuscule, et
     # c'est elle qui porte les empreintes des fichiers à jour.
     return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache"})
 
 
-@app.get("/favicon.ico", include_in_schema=False)
 def favicon() -> FileResponse:
-    # La page déclare /static/favicon.svg, mais certains clients (onglets
+    # La page déclare static/favicon.svg, mais certains clients (onglets
     # ouverts sur une autre route, lecteurs de flux, outils) réclament quand
     # même /favicon.ico à la racine : on y sert le même SVG plutôt que de
     # maintenir un .ico binaire en double.
     return FileResponse(STATIC_DIR / "favicon.svg", media_type="image/svg+xml")
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# ----------------------------------------------------------------------
+# Application
+# ----------------------------------------------------------------------
+
+
+def create_app(
+    *,
+    python_functions: PythonFunctions | None = None,
+    layout_dir: str | os.PathLike[str] | None = None,
+    title: str = "urban-workflow playground",
+) -> FastAPI:
+    """Fabrique l'application du playground (page, composants, API).
+
+    - ``python_functions`` : fonctions Python ``(ctx, **params)`` que les
+      workflows référencent par ``AS @nom`` (``ScriptRegistry.add_function``) ;
+      leurs noms sont réservés. Par défaut, les exemples de
+      ``python_scripts`` ; ``{}`` pour n'en publier aucune ;
+    - ``layout_dir`` : répertoire des fichiers ``<workflow>.layout.json`` du
+      diagramme ; par défaut ``PLAYGROUND_LAYOUT_DIR`` (lu à chaque requête),
+      sinon le navigateur garde les positions.
+
+    Monter sous un préfixe : ``parent.mount("/outils/workflow", create_app())``
+    puis ouvrir ``/outils/workflow/`` (barre finale comprise : les URL de la
+    page sont relatives).
+    """
+    functions: PythonFunctions = PYTHON_SCRIPTS if python_functions is None else dict(python_functions)
+    application = FastAPI(title=title)
+
+    @application.get("/healthz")
+    def _healthz() -> dict[str, str]:
+        return healthz()
+
+    @application.get("/api/base-event-schema")
+    def _base_event_schema() -> dict[str, Any]:
+        return base_event_schema()
+
+    @application.get("/api/base-state-schema")
+    def _base_state_schema() -> dict[str, Any]:
+        return base_state_schema()
+
+    @application.get("/api/layout/{workflow}")
+    def _get_layout(workflow: str) -> dict[str, Any]:
+        return get_layout(workflow, layout_dir)
+
+    @application.put("/api/layout/{workflow}")
+    def _put_layout(workflow: str, data: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        return put_layout(workflow, data, layout_dir)
+
+    @application.post("/api/analyze")
+    def _analyze(request: AnalyzeRequest) -> dict[str, Any]:
+        return analyze(request, functions)
+
+    @application.post("/api/diagram")
+    def _diagram(request: DiagramRequest) -> dict[str, Any]:
+        return diagram(request)
+
+    @application.post("/api/generate")
+    def _generate(request: GenerateRequest) -> dict[str, Any]:
+        return generate(request, functions)
+
+    @application.post("/api/artifact-preview")
+    def _artifact_preview(request: ArtifactPreviewRequest) -> dict[str, Any]:
+        return artifact_preview(request, functions)
+
+    @application.post("/api/simulate")
+    def _simulate(request: SimulateRequest) -> dict[str, Any]:
+        return simulate(request, functions)
+
+    @application.get("/")
+    def _index() -> HTMLResponse:
+        return index()
+
+    @application.get("/favicon.ico", include_in_schema=False)
+    def _favicon() -> FileResponse:
+        return favicon()
+
+    # Paquets pour les applications clientes : une balise <script> et une
+    # <link> au lieu de la liste des fichiers. Déclarés avant le montage de
+    # /static, qui sinon les intercepterait.
+    @application.get("/static/urban-workflow.js", include_in_schema=False)
+    def _bundle_js() -> Response:
+        return Response(_BUNDLE_JS, media_type="text/javascript",
+                        headers={"ETag": _digest(_BUNDLE_JS), "Cache-Control": "no-cache"})
+
+    @application.get("/static/urban-workflow.css", include_in_schema=False)
+    def _bundle_css() -> Response:
+        return Response(_BUNDLE_CSS, media_type="text/css",
+                        headers={"ETag": _digest(_BUNDLE_CSS), "Cache-Control": "no-cache"})
+
+    application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    return application
+
+
+app = create_app()

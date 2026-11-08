@@ -4,187 +4,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>urban-workflow — playground DSL</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/vendor/codemirror.css">
-<link rel="stylesheet" href="/static/vendor/show-hint.css">
-<link rel="stylesheet" href="/static/vendor/lint.css">
-<link rel="stylesheet" href="/static/vendor/schema-editor.css">
-<link rel="stylesheet" href="/static/style.css">
+<!-- URL relatives (sans « / » initial) : le playground fonctionne aussi
+     monté sous un préfixe (/outils/workflow/) dans une autre application. -->
+<link rel="icon" type="image/svg+xml" href="static/favicon.svg">
+<link rel="stylesheet" href="static/vendor/codemirror.css">
+<link rel="stylesheet" href="static/vendor/show-hint.css">
+<link rel="stylesheet" href="static/vendor/lint.css">
+<link rel="stylesheet" href="static/vendor/schema-editor.css">
+<link rel="stylesheet" href="static/uw/urban-workflow.css">
+<link rel="stylesheet" href="static/style.css">
 </head>
 <body>
+<!-- Page de référence : UNE composition possible des composants
+     (static/uw/*.js). Une application cliente monte ceux qu'elle veut, où
+     elle veut — voir le README du playground. -->
 <header>
   <h1>urban-workflow <span>playground DSL</span></h1>
   <div class="header-actions">
-    <select id="example-select" title="Exemples">
-      <option value="">Exemples…</option>
-      <option value="validation">Circuit de validation</option>
-      <option value="regles">Règles et scripts</option>
-      <option value="etats">États et switch viable</option>
-      <option value="python">Scripts Python</option>
-      <option value="artefacts">Artefacts JSON</option>
-      <option value="minimal">Script minimal</option>
-      <option value="casse">Script avec erreurs</option>
-    </select>
-    <span id="status" class="status">—</span>
+    <span id="examples"></span>
+    <span id="status"></span>
   </div>
 </header>
-
 <main>
-  <section class="editor-pane">
-    <div class="view-toggle">
-      <button id="view-editor" class="active">Éditeur</button>
-      <button id="view-diagram">Diagramme</button>
-      <button id="view-events" title="Lister les événements et éditer leur structure">Événements</button>
-      <button id="view-states" title="Lister les états et éditer leur structure">États</button>
-      <button id="view-scripts" title="Écrire les méthodes des règles (DEFINE RULE … AS @script)">Scripts</button>
-      <span id="diagram-tools" hidden>
-        <button id="dg-add-state" title="Ajouter un état">＋ État</button>
-        <button id="dg-link-mode"
-                title="Tracer des transitions en glissant d'un état vers un autre">Relier</button>
-        <button id="dg-layout" title="Réorganiser automatiquement">Réorganiser</button>
-        <button id="dg-import" title="Reconstruire le diagramme depuis le script">⇠ Importer le DSL</button>
-        <button id="dg-generate" class="primary"
-                title="Générer le script canonique et l'ouvrir dans l'éditeur">Générer le DSL → éditeur</button>
-      </span>
-      <span id="diagram-status" class="hint-text"></span>
-    </div>
-    <div id="editor-view" class="view active">
-      <textarea id="editor"></textarea>
-      <div id="diagnostics" class="diagnostics"></div>
-    </div>
-    <div id="events-view" class="view">
-      <nav id="ev-list" class="ev-list" aria-label="Événements du script"></nav>
-      <section id="ev-detail" class="ev-detail"></section>
-    </div>
-    <div id="states-view" class="view">
-      <nav id="st-list" class="ev-list" aria-label="États du script"></nav>
-      <section id="st-detail" class="ev-detail"></section>
-    </div>
-    <div id="scripts-view" class="view">
-      <nav id="sc-list" class="ev-list" aria-label="Scripts des règles"></nav>
-      <section id="sc-detail" class="ev-detail"></section>
-    </div>
-    <div id="diagram-view" class="view">
-      <div id="diagram-canvas"></div>
-      <div id="inspector" hidden></div>
-      <div class="canvas-hint">glisser les états pour les placer ·
-        « Relier » puis glisser d'un état (ou de ⚡) vers un état pour créer
-        une transition · clic sur un état ou une flèche = propriétés ·
-        l'ordre des branches d'un même événement fait la priorité des gardes</div>
-    </div>
-  </section>
-
+  <section id="main-tabs" class="editor-pane"></section>
   <aside class="side-pane">
-    <nav class="tabs">
-      <button data-tab="rules" class="active">Paramétrage</button>
-      <button data-tab="structure">Structure</button>
-      <button data-tab="simulate">Simulation</button>
-      <button data-tab="help">Aide</button>
-      <button id="side-collapse" class="side-toggle" type="button"
-              title="Replier le panneau" aria-label="Replier le panneau"
-              aria-expanded="true">»</button>
-    </nav>
-
-    <div id="tab-rules" class="tab active">
-      <p class="hint-text">Règles métier disponibles pour les conditions
-      <code>WHEN</code> : nom, paramètres typés et résultat simulé.
-      Sauvegardé dans le navigateur. Les règles qui référencent un script
-      (<code>AS @…</code>, vue Scripts) sont évaluées pour de vrai.</p>
-      <div id="rules-list"></div>
-      <form id="rule-form">
-        <input id="rule-name" placeholder="NomDeLaRegle" required
-               pattern="[A-Za-z][A-Za-z0-9_]*">
-        <input id="rule-params" placeholder="TEXT champ, DECIMAL seuil">
-        <label class="inline"><input type="checkbox" id="rule-result" checked> vraie</label>
-        <button type="submit">Ajouter</button>
-      </form>
-
-      <h4 class="section-title">Schémas <small>(événements et états, JSON Schema en YAML)</small></h4>
-      <p class="hint-text">Référencés par <code>DEFINE EVENT … AS @nom;</code>
-      (payload validé : socle commun + schéma) ou <code>DEFINE STATE … AS @nom</code>
-      (champs métier de l'état). Éditables aussi dans les vues Événements et États.</p>
-      <div id="schemas-list"></div>
-      <form id="schema-form">
-        <input id="schema-name" placeholder="schema_MonEvenement" required
-               pattern="[A-Za-z][A-Za-z0-9_]*">
-        <textarea id="schema-yaml" spellcheck="false" rows="5"
-placeholder="type: object
-properties:
-  Montant: {type: number, minimum: 0}
-required: [Montant]"></textarea>
-        <button type="submit">Ajouter le schéma</button>
-      </form>
-    </div>
-
-    <div id="tab-structure" class="tab">
-      <div id="structure"></div>
-    </div>
-
-    <div id="tab-simulate" class="tab">
-      <p class="hint-text">Une liste JSON d'événements, rejoués dans
-      l'ordre sur un moteur en mémoire.</p>
-      <textarea id="events-input" spellcheck="false"></textarea>
-      <button id="run-simulation">Rejouer les événements</button>
-      <div id="simulation-result"></div>
-    </div>
-
-    <div id="tab-help" class="tab">
-      <ul class="hint-text">
-        <li><kbd>Ctrl</kbd>+<kbd>Espace</kbd> : complétion (aussi automatique en tapant).</li>
-        <li>La complétion est contextuelle : événements après <code>ON EVENT</code>,
-            états après <code>SWITCH</code>, règles après <code>WHEN</code>/<code>AND</code>/<code>OR</code>/<code>NOT</code>,
-            actions après <code>EXECUTE</code>, chemins après <code>@</code>.</li>
-        <li>Les erreurs (syntaxe et validation) sont soulignées dans l'éditeur
-            et listées sous celui-ci — cliquer pour y aller.</li>
-        <li><code>DEFINE EVENT X '…' AS @schema UNIQUE (Prop, …);</code> :
-            le schéma (panneau Paramétrage) valide le payload ; UNIQUE et la
-            propriété <code>DedupKey</code> de l'émetteur (prioritaire)
-            bloquent les doublons en simulation.</li>
-        <li><code>regle(p = @IncomingEvent.Montant)</code> : chemin dans
-            l'événement entrant (socle + payload, <code>@IncomingEvent.Client.Pays</code>,
-            <code>@IncomingEvent.Lignes[0].Qte</code>). Taper
-            <code>@IncomingEvent.</code> propose les propriétés de l'événement du
-            bloc <code>ON EVENT</code> courant ; un chemin absent du schéma est
-            signalé.</li>
-        <li><code>@state.…</code> : l'instance de l'état du bloc
-            <code>DEFINE STATE</code> courant (socle <code>Name</code>,
-            <code>Uuid</code>, <code>CreationDate</code>, <code>EventId</code>
-            + champs du schéma de l'état). Une instance est créée à chaque
-            <code>SWITCH</code> ; indisponible dans <code>INITIALIZE WORKFLOW</code>.</li>
-<li><code>DEFINE RULE R (DECIMAL seuil) '…' AS @montant_eleve;</code> :
-            la règle est implémentée par le script <code>@montant_eleve</code>,
-            écrit dans la vue <b>Scripts</b> (hors du workflow) et évalué par le
-            moteur. Langage <code>expression</code> : opérateurs
-            <code>= != &lt; &lt;= &gt; &gt;=</code>, <code>+ - * /</code>,
-            <code>IN (…)</code>, <code>IS [NOT] NULL</code>, <code>AND/OR/NOT</code> ;
-            fonctions <code>NOW()</code>, <code>DAYS_BETWEEN(a, b)</code>,
-            <code>HOURS_BETWEEN</code>, <code>MINUTES_BETWEEN</code>,
-            <code>LENGTH(x)</code>, <code>CONTAINS(x, y)</code> ; valeur absente =
-            <code>NULL</code> ; plusieurs lignes et commentaires permis.
-            <code>DEFINE ACTION … AS @script</code> est accepté (référence
-            vérifiée, exécution à venir).</li>
-        <li>Vues <b>Événements</b> et <b>États</b> : liste des objets du
-            script ; pour chacun, le socle commun (non modifiable) et l'éditeur
-            visuel du schéma métier, synchronisé avec son YAML et le panneau
-            Paramétrage. « Créer le schéma métier » ajoute
-            <code>AS @schema_…</code> à la déclaration.</li>
-        <li>Référence du langage : <code>docs/guide-dsl.md</code> ; scripts des
-            règles : <code>docs/guide-regles.md</code>.</li>
-      </ul>
-    </div>
+    <button id="side-collapse" class="side-toggle" type="button"
+            title="Replier le panneau" aria-label="Replier le panneau"
+            aria-expanded="true">»</button>
+    <div id="side-tabs"></div>
   </aside>
 </main>
 
-<script src="/static/vendor/codemirror.js"></script>
-<script src="/static/vendor/simple.js"></script>
-<script src="/static/vendor/show-hint.js"></script>
-<script src="/static/vendor/lint.js"></script>
-<script src="/static/vendor/x6.min.js"></script>
-<script src="/static/examples.js"></script>
-<script src="/static/app.js"></script>
-<script src="/static/diagram.js"></script>
-<script src="/static/vendor/schema-editor.js"></script>
-<script src="/static/models.js"></script>
-<script src="/static/scripts.js"></script>
+<script src="static/vendor/codemirror.js"></script>
+<script src="static/vendor/simple.js"></script>
+<script src="static/vendor/show-hint.js"></script>
+<script src="static/vendor/lint.js"></script>
+<script src="static/vendor/x6.min.js"></script>
+<script src="static/vendor/schema-editor.js"></script>
+<script src="static/uw/core.js"></script>
+<script src="static/uw/editor.js"></script>
+<script src="static/uw/panels.js"></script>
+<script src="static/uw/diagram.js"></script>
+<script src="static/uw/models.js"></script>
+<script src="static/uw/scripts.js"></script>
+<script src="static/uw/examples.js"></script>
+<script src="static/uw/tabs.js"></script>
+<script src="static/page.js"></script>
 </body>
 </html>

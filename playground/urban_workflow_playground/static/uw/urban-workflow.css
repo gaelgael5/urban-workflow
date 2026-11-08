@@ -1,0 +1,299 @@
+/* urban-workflow — styles des composants (static/uw/*.js).
+ *
+ * Tout est rangé sous la classe .uw, posée par UrbanWorkflow.mount sur
+ * l'élément de chaque composant : rien ne déborde sur la page hôte. Les
+ * couleurs sont des variables --uw-* redéfinissables par l'application
+ * (sur :root ou sur n'importe quel conteneur des composants). */
+
+:root {
+  --uw-bg: #11151c;
+  --uw-panel: #1a2029;
+  --uw-border: #2b3442;
+  --uw-text: #d8dee9;
+  --uw-muted: #7f8ea3;
+  --uw-accent: #5fb3f0;
+  --uw-ok: #4cc38a;
+  --uw-ko: #e5484d;
+  --uw-mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+
+.uw, .uw * { box-sizing: border-box; }
+.uw { color: var(--uw-text); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+.uw [hidden] { display: none !important; }
+
+/* :where() garde la spécificité nulle : les règles à classe (.tabs button,
+   .ev-item…) priment. :not(.jsonjoy…) : ces règles, hors @layer,
+   écraseraient sinon les boutons de l'éditeur de schémas (ses styles
+   Tailwind sont en @layer, et un style hors couche l'emporte toujours). */
+:where(.uw) :where(button, select):where(:not(.jsonjoy, .jsonjoy *)) {
+  background: var(--uw-border);
+  color: var(--uw-text);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+}
+:where(.uw) :where(button):where(:not(.jsonjoy, .jsonjoy *)):hover { background: #3a4656; }
+.uw button.primary { background: var(--uw-accent); color: #0b0e13; font-weight: 600; }
+
+.uw .hint-text { color: var(--uw-muted); font-size: 12.5px; }
+.uw .hint-text code, .uw .rule-row code { color: var(--uw-accent); }
+.uw kbd { background: var(--uw-border); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+.uw .notice { color: var(--uw-muted); font-size: 12.5px; }
+.uw .notice.ko { color: var(--uw-ko); }
+.uw label.inline { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.uw .section-title {
+  margin: 18px 0 4px; font-size: 13px;
+  border-top: 1px solid var(--uw-border); padding-top: 12px;
+}
+.uw .section-title small { color: var(--uw-muted); font-weight: normal; }
+
+/* ---------- statut ---------- */
+.uw-status { font-size: 13px; color: var(--uw-muted); }
+.uw-status.ok { color: var(--uw-ok); }
+.uw-status.ko { color: var(--uw-ko); }
+
+/* ---------- éditeur (texte du workflow) ---------- */
+.uw-editor { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.uw-editor-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.uw-editor-host .CodeMirror { flex: 1; height: auto; min-height: 200px; }
+.uw .CodeMirror {
+  font: 13px/1.5 var(--uw-mono);
+  background: var(--uw-bg);
+  color: var(--uw-text);
+}
+.uw .CodeMirror-gutters { background: var(--uw-panel); border-right: 1px solid var(--uw-border); }
+.uw .CodeMirror-linenumber { color: var(--uw-muted); }
+.uw .CodeMirror-cursor { border-color: var(--uw-text); }
+.uw .CodeMirror-selected { background: #2b3442 !important; }
+.uw .cm-keyword { color: #c792ea; font-weight: 600; }
+.uw .cm-string { color: #ecc48d; }
+.uw .cm-comment { color: #637777; font-style: italic; }
+.uw .cm-number { color: #f78c6c; }
+.uw .cm-variable-2 { color: #7fdbca; }
+.uw .cm-variable { color: #d8dee9; }
+.uw .cm-s-default .cm-builtin { color: #82aaff; }  /* le défaut (#30a) est illisible sur fond sombre */
+.uw .cm-operator { color: #89ddff; }
+
+/* La liste de complétion est rendue sur <body>, hors des composants. */
+.CodeMirror-hints {
+  background: var(--uw-panel);
+  border: 1px solid var(--uw-border);
+  font: 12px/1.6 Consolas, monospace;
+}
+.CodeMirror-hint { color: var(--uw-text); }
+li.CodeMirror-hint-active { background: var(--uw-accent); color: #0b0e13; }
+
+.uw .diagnostics {
+  max-height: 140px; overflow: auto;
+  border-top: 1px solid var(--uw-border); background: var(--uw-panel);
+}
+.uw .diag {
+  padding: 4px 12px; color: var(--uw-ko); cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid var(--uw-border);
+}
+.uw .diag:hover { background: #242c38; }
+
+/* ---------- onglets ---------- */
+.uw-tabs { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.uw-tabs > .tabs { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--uw-border); background: var(--uw-panel); }
+.uw-tabs > .tabs > button {
+  padding: 8px 12px; background: none; border: none; border-radius: 0;
+  color: var(--uw-muted); cursor: pointer; font-size: 13px;
+}
+.uw-tabs > .tabs > button.active { color: var(--uw-text); border-bottom: 2px solid var(--uw-accent); }
+.uw-tab-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.uw-tab-panel { display: none; flex: 1; min-height: 0; overflow: auto; }
+.uw-tab-panel.active { display: block; }
+/* Un seul composant dans l'onglet : il prend toute la hauteur (éditeur,
+   diagramme, listes) ; plusieurs : ils s'empilent et l'onglet défile. */
+.uw-tab-panel.single.active { display: flex; flex-direction: column; overflow: hidden; }
+/* L'élément de l'onglet EST celui du composant (UrbanWorkflow.mount y pose
+   .uw-<nom>) : on ne lui donne que sa place, son affichage reste le sien. */
+.uw-tab-panel.single > .uw-tab-part { flex: 1; min-height: 0; }
+/* Composants de panneau : marge intérieure propre, où qu'ils soient montés. */
+.uw-rules, .uw-schemas, .uw-structure, .uw-simulation, .uw-help { padding: 12px; overflow: auto; }
+
+/* ---------- diagramme ---------- */
+.uw-diagram { display: flex; flex-direction: column; min-height: 320px; height: 100%; }
+.uw-toolbar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 10px; background: var(--uw-panel); border-bottom: 1px solid var(--uw-border);
+}
+.uw-toolbar [data-ref="link-mode"].on { background: var(--uw-ok); color: #0b0e13; }
+.uw-diagram-status { margin-left: auto; }
+.uw-diagram-status.ko { color: var(--uw-ko); }
+.uw-diagram-status.ok { color: var(--uw-ok); }
+.uw-diagram-body { flex: 1; position: relative; min-height: 0; }
+.uw-diagram-canvas { position: absolute; inset: 0; }
+.uw .canvas-hint {
+  position: absolute; bottom: 6px; left: 12px; right: 12px;
+  color: var(--uw-muted); font-size: 11.5px; z-index: 5; pointer-events: none;
+}
+.uw-inspector {
+  position: absolute; top: 10px; right: 10px; width: 310px;
+  max-height: calc(100% - 50px); overflow: auto;
+  background: var(--uw-panel); border: 1px solid var(--uw-border); border-radius: 6px;
+  padding: 10px 12px 12px; z-index: 6; font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+.uw-inspector h3 { margin: 0 0 6px; font-size: 13.5px; }
+.uw-inspector h3 small { color: var(--uw-muted); font-weight: normal; }
+.uw .insp-row { margin: 8px 0 0; }
+.uw .insp-row > label { display: block; color: var(--uw-muted); font-size: 12px; margin-bottom: 2px; }
+.uw .insp-row input, .uw .insp-row select, .uw .insp-row textarea {
+  width: 100%; background: var(--uw-bg); border: 1px solid var(--uw-border);
+  color: var(--uw-text); border-radius: 4px; padding: 5px 8px; font-size: 13px;
+}
+.uw .insp-row textarea { font: 11.5px/1.5 Consolas, monospace; resize: vertical; min-height: 36px; }
+.uw .exec-item { display: flex; gap: 4px; margin: 4px 0; align-items: flex-start; }
+.uw .exec-item textarea { flex: 1; }
+.uw .exec-item .remove { background: none; border: none; color: var(--uw-muted); cursor: pointer; }
+.uw .exec-item .remove:hover { color: var(--uw-ko); }
+.uw .insp-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.uw .insp-actions .danger { color: var(--uw-ko); }
+.uw .insp-add {
+  color: var(--uw-accent); background: none; border: 1px dashed var(--uw-border);
+  border-radius: 4px; padding: 5px; font-size: 12.5px; width: 100%; margin-top: 4px;
+}
+
+/* ---------- listes + détail (événements, états, scripts) ---------- */
+.uw-events, .uw-states, .uw-scripts { display: flex; min-height: 0; height: 100%; }
+.uw .ev-list {
+  flex: 0 0 230px; overflow: auto; padding: 8px;
+  border-right: 1px solid var(--uw-border);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.uw .ev-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  text-align: left; padding: 8px 10px; background: var(--uw-bg);
+  border: 1px solid var(--uw-border); border-radius: 6px;
+}
+.uw .ev-item.active { border-color: var(--uw-accent); background: #1d2836; }
+.uw .ev-name { font-weight: 600; color: var(--uw-text); }
+.uw .ev-label { font-size: 12px; color: var(--uw-muted); }
+.uw .ev-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.uw .ev-badge {
+  font-size: 11px; padding: 1px 6px; border-radius: 8px;
+  background: #22364a; color: var(--uw-accent); font-family: Consolas, monospace;
+}
+.uw .ev-badge.muted { background: var(--uw-border); color: var(--uw-muted); }
+.uw .ev-badge.warn { background: #4a3a1a; color: #f0b45f; }
+.uw .ev-badge.ko { background: #4a1f24; color: var(--uw-ko); }
+.uw .ev-detail { flex: 1; overflow: auto; padding: 10px 16px 24px; min-width: 0; }
+.uw .ev-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.uw .ev-head h3 { margin: 4px 0; }
+.uw .ev-editor { border: 1px solid var(--uw-border); border-radius: 8px; }
+/* Le socle ne se modifie pas : on le montre en retrait plutôt que d'en
+   masquer les détails (ses formats uuid/date-time renseignent l'émetteur). */
+.uw .ev-editor.locked { opacity: .78; border-style: dashed; }
+.uw .ev-yaml { margin-top: 10px; }
+.uw .ev-yaml textarea {
+  width: 100%; min-height: 160px; font: 12px/1.5 Consolas, monospace;
+  background: var(--uw-bg); color: var(--uw-text); border: 1px solid var(--uw-border); resize: vertical;
+}
+
+/* Scripts : éditeur du script + règles encore sans script. */
+.uw .sc-editor { border: 1px solid var(--uw-border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
+.uw .sc-editor .CodeMirror { height: auto; min-height: 140px; max-height: 60vh; }
+.uw .sc-editor .CodeMirror-scroll { min-height: 140px; max-height: 60vh; }
+.uw .sc-free-title { margin: 10px 0 0; }
+.uw .sc-free { display: flex; align-items: center; gap: 6px; }
+.uw .sc-free code { flex: 1; color: var(--uw-accent); word-break: break-all; }
+.uw .sc-free button { font-size: 11px; padding: 2px 6px; }
+/* Bandeau de signature de la fonction en cours de saisie. */
+.uw .sc-signature { font: 12px var(--uw-mono); color: var(--uw-muted); padding: 2px 4px 6px; }
+.uw .sc-signature b { color: var(--uw-accent); font-weight: 600; }
+/* Aperçu du JSON produit par un artefact (scripts jslt). */
+.uw .sc-preview { border: 1px solid var(--uw-border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.uw .sc-preview-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.uw .sc-preview textarea {
+  width: 100%; font: 12px var(--uw-mono); background: var(--uw-bg); color: var(--uw-text);
+  border: 1px solid var(--uw-border); border-radius: 6px;
+}
+.uw .sc-preview-out {
+  white-space: pre-wrap; font-size: 12px; margin: 6px 0 0; padding: 6px 8px;
+  border-radius: 6px; background: var(--uw-bg); max-height: 40vh; overflow: auto;
+}
+.uw .sc-preview-out.ok { color: var(--uw-ok); }
+.uw .sc-preview-out.ko { color: #ef6b73; }
+
+/* ---------- règles, schémas ---------- */
+.uw .rule-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 0;
+  border-bottom: 1px solid var(--uw-border); font-size: 13px;
+}
+.uw .rule-row code { flex: 1; word-break: break-all; }
+.uw .rule-row small { color: var(--uw-muted); }
+.uw .rule-row.dsl-rule { cursor: pointer; }
+.uw .rule-row.overridden { opacity: .5; }
+.uw .rule-row.overridden code { text-decoration: line-through; }
+.uw .rule-row .remove { background: none; border: none; color: var(--uw-muted); cursor: pointer; }
+.uw .rule-row .remove:hover { color: var(--uw-ko); }
+.uw .uw-inline-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.uw .uw-inline-form input:not([type]), .uw .uw-schema-form input:not([type]) {
+  flex: 1 1 120px; background: var(--uw-bg); border: 1px solid var(--uw-border);
+  color: var(--uw-text); padding: 5px 8px; border-radius: 4px;
+}
+.uw .uw-schema-form { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.uw .uw-schema-form textarea {
+  width: 100%; background: var(--uw-bg); color: var(--uw-text);
+  border: 1px solid var(--uw-border); border-radius: 4px;
+  font: 12px/1.5 Consolas, monospace; padding: 6px 8px; resize: vertical;
+}
+
+/* ---------- structure ---------- */
+.uw .node { padding: 3px 0 3px 8px; font-size: 13px; }
+.uw .node.init { color: var(--uw-accent); }
+.uw .node.state { margin-top: 8px; border-top: 1px solid var(--uw-border); padding-top: 8px; }
+.uw .node.transition { padding-left: 24px; color: var(--uw-muted); }
+.uw .node em { color: #ecc48d; font-style: normal; }
+.uw .node small { color: var(--uw-muted); }
+
+/* ---------- simulation ---------- */
+.uw .uw-events-input {
+  width: 100%; height: 160px; background: var(--uw-bg); color: var(--uw-text);
+  border: 1px solid var(--uw-border); border-radius: 4px;
+  font: 12px/1.5 Consolas, monospace; padding: 8px; resize: vertical;
+}
+.uw .uw-run { margin: 8px 0; }
+.uw .sim-step { border-top: 1px solid var(--uw-border); padding: 8px 0; }
+.uw .sim-step h4, .uw-simulation h4 { margin: 4px 0; font-size: 13.5px; }
+.uw .sim-ctx {
+  background: var(--uw-bg); border: 1px solid var(--uw-border); border-radius: 4px;
+  padding: 8px; margin: 6px 0; font-size: 13px;
+}
+.uw .sim-action { margin-top: 6px; }
+.uw .sim-action pre, .uw .sim-ctx pre {
+  background: #0b0e13; padding: 6px; border-radius: 4px; overflow: auto;
+  font-size: 11.5px; margin: 4px 0 0; max-height: 160px;
+}
+.uw .sim-log { margin-top: 6px; color: var(--uw-muted); font: 11.5px/1.6 Consolas, monospace; }
+
+/* Thème de l'éditeur de schémas (jsonjoy-builder) aligné sur la palette.
+   Variables posées sur .jsonjoy elle-même, hors couche : elles l'emportent
+   sur celles du paquet (déclarées en @layer) et s'appliquent aussi aux
+   boîtes de dialogue, rendues en portail sur <body>. */
+.jsonjoy {
+  --jsonjoy-background: #1a2029;
+  --jsonjoy-foreground: #d8dee9;
+  --jsonjoy-card: #1a2029;
+  --jsonjoy-card-foreground: #d8dee9;
+  --jsonjoy-popover: #1a2029;
+  --jsonjoy-popover-foreground: #d8dee9;
+  --jsonjoy-primary: #5fb3f0;
+  --jsonjoy-primary-foreground: #0b0e13;
+  --jsonjoy-secondary: #2b3442;
+  --jsonjoy-secondary-foreground: #d8dee9;
+  --jsonjoy-muted: #242c38;
+  --jsonjoy-muted-foreground: #7f8ea3;
+  --jsonjoy-accent: #2b3442;
+  --jsonjoy-accent-foreground: #d8dee9;
+  --jsonjoy-destructive: #e5484d;
+  --jsonjoy-destructive-foreground: #f8fafc;
+  --jsonjoy-border: #2b3442;
+  --jsonjoy-input: #2b3442;
+  --jsonjoy-ring: #5fb3f0;
+  color-scheme: dark;
+}

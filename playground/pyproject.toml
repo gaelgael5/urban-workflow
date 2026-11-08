@@ -36,4 +36,4 @@ urban-workflow-playground = "urban_workflow_playground.__main__:main"
 include = ["urban_workflow_playground*"]
 
 [tool.setuptools.package-data]
-urban_workflow_playground = ["static/*", "static/vendor/*"]
+urban_workflow_playground = ["static/*", "static/uw/*", "static/vendor/*"]

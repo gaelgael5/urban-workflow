@@ -1,4 +1,4 @@
-/* Vues « Événements » et « États » : listent les objets du script et
+/* Composants « events » et « states » : listent les objets du script et
  * éditent leur structure avec l'éditeur visuel de schémas du portail Miles
  * (window.UWSchemaEditor, bundle vendor/schema-editor.js).
  *
@@ -11,83 +11,78 @@
  * Un seul composant, deux paramétrages (OBJECT_KINDS) : les deux vues
  * doivent se comporter à l'identique, une copie divergerait.
  *
- * Source de vérité inchangée : le script (déclarations) et les schémas du
- * panneau (YAML). Ces vues ne font que les modifier par le pont
- * window.PlaygroundBridge ; elles se redessinent à chaque analyse.
+ * Source de vérité inchangée : le script (déclarations) et les schémas
+ * (YAML) de l'espace de travail. Ces composants ne font que les modifier ;
+ * ils se redessinent à chaque analyse.
+ *
+ *   UrbanWorkflow.mount("events", el, {workspace})
  */
 (function () {
   "use strict";
 
-  var bridge = window.PlaygroundBridge;
-  var Editor = window.UWSchemaEditor;
+  var UW = window.UrbanWorkflow;
 
   var OBJECT_KINDS = {
     events: {
       keyword: "EVENT",
       details: "event_details",
       fallbackNames: "events",
-      baseUrl: "/api/base-event-schema",
-      listId: "ev-list",
-      detailId: "ev-detail",
+      baseUrl: "api/base-event-schema",
+      label: "Événements",
       empty: "Aucun événement dans le script.",
       baseTitle: "socle commun à tout événement — non modifiables",
       canDeclare: true,
       showUnique: true,
-      exportName: "PlaygroundEvents",
     },
     states: {
       keyword: "STATE",
       details: "state_details",
       fallbackNames: "states",
-      baseUrl: "/api/base-state-schema",
-      listId: "st-list",
-      detailId: "st-detail",
+      baseUrl: "api/base-state-schema",
+      label: "États",
       empty: "Aucun état dans le script.",
       baseTitle: "socle de toute instance d'état (posé au SWITCH) — non modifiables",
       canDeclare: false,
       showUnique: false,
-      exportName: "PlaygroundStates",
     },
   };
 
-  if (!Editor) {
-    // Bundle absent (installation incomplète) : on le dit plutôt que de
-    // laisser des vues vides.
-    Object.keys(OBJECT_KINDS).forEach(function (view) {
-      document.getElementById(OBJECT_KINDS[view].detailId).innerHTML =
-        "<p class='notice ko'>Éditeur de schémas indisponible " +
-        "(static/vendor/schema-editor.js).</p>";
-    });
-    return;
-  }
-
-  Object.keys(OBJECT_KINDS).forEach(function (view) {
-    createModelView(view, OBJECT_KINDS[view]);
+  Object.keys(OBJECT_KINDS).forEach(function (name) {
+    var kind = OBJECT_KINDS[name];
+    UW.define(name, function (el, options) {
+      return createModelView(el, options.workspace, kind);
+    }, {label: kind.label, description: name === "events"
+      ? "Événements du script : socle commun et schéma métier éditable"
+      : "États du script : socle commun et schéma métier éditable"});
   });
 
-  function createModelView(viewName, kind) {
-  var listEl = document.getElementById(kind.listId);
-  var detailEl = document.getElementById(kind.detailId);
-  // Éléments du détail repérés par data-ref DANS cette vue : les deux vues
-  // coexistent dans la page, des id fixes se télescoperaient.
-  function ref(name) { return detailEl.querySelector("[data-ref='" + name + "']"); }
+  function createModelView(el, ws, kind) {
+  var Editor = window.UWSchemaEditor;
+  el.innerHTML = "<nav class='ev-list' data-ref='list'></nav>" +
+    "<section class='ev-detail' data-ref='detail'></section>";
+  var listEl = UW.util.ref(el, "list");
+  var detailEl = UW.util.ref(el, "detail");
+  if (!Editor) {
+    // Bundle absent (installation incomplète) : on le dit plutôt que de
+    // laisser un composant vide.
+    detailEl.innerHTML = "<p class='notice ko'>Éditeur de schémas indisponible " +
+      "(static/vendor/schema-editor.js).</p>";
+    return {};
+  }
+  // Éléments du détail repérés par data-ref DANS ce composant : plusieurs
+  // instances coexistent dans la page, des id fixes se télescoperaient.
+  function ref(name) { return UW.util.ref(detailEl, name); }
 
   var baseSchema = null;      // socle, chargé une fois
   var selected = null;        // nom de l'événement affiché
   var shownKey = "";          // ce qui est affiché (évite de remonter les éditeurs)
   var mounted = [];           // instances React à démonter au changement
-  var visible = false;
 
-  function esc(text) {
-    return String(text == null ? "" : text)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function reEscape(text) { return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  var esc = UW.util.esc;
+  var reEscape = UW.util.reEscape;
 
   function events() {
-    var symbols = bridge.getSymbols();
+    var symbols = ws.getSymbols();
     if (symbols[kind.details] && symbols[kind.details].length) {
       return symbols[kind.details].map(function (d) {
         // Un état est toujours déclaré (DEFINE STATE) ; seuls les
@@ -105,9 +100,7 @@
   }
 
   function findSchema(name) {
-    var found = null;
-    bridge.getSchemas().forEach(function (s) { if (s.name === name) { found = s; } });
-    return found;
+    return ws.findSchema(name);
   }
 
   // ------------------------------------------------------------------
@@ -116,31 +109,31 @@
 
   /** Ajoute « AS @schema » à la déclaration de l'objet. */
   function addSchemaClause(eventName, schemaName) {
-    var script = bridge.getScript();
+    var script = ws.getScript();
     // DEFINE EVENT|STATE nom 'libellé'? — AS se place juste après
     // (grammaire : key comment? (AS …)? …).
     var re = new RegExp("\\bDEFINE\\s+" + kind.keyword + "\\s+" + reEscape(eventName) +
                         "\\b(\\s*'(?:[^']|'')*')?", "i");
     var match = re.exec(script);
     if (!match) { return false; }
-    bridge.insertText(match.index + match[0].length, " AS @" + schemaName);
+    ws.insertText(match.index + match[0].length, " AS @" + schemaName);
     return true;
   }
 
   /** Déclare un événement utilisé mais absent des DEFINE EVENT. */
   function declareEvent(eventName) {
-    var script = bridge.getScript();
+    var script = ws.getScript();
     var line = "DEFINE EVENT " + eventName + " '" + eventName + "';\n";
     // Après la dernière déclaration d'événement si elle existe, sinon avant
     // la première déclaration/section du script.
     var last = null, re = /\bDEFINE\s+EVENT\b[^;]*;[^\n]*\n?/gi, m;
     while ((m = re.exec(script)) !== null) { last = m; }
     if (last) {
-      bridge.insertText(last.index + last[0].length, line);
+      ws.insertText(last.index + last[0].length, line);
       return;
     }
     var first = /^[ \t]*(DEFINE|INITIALIZE)\b/im.exec(script);
-    bridge.insertText(first ? first.index : script.length, line);
+    ws.insertText(first ? first.index : script.length, line);
   }
 
   // ------------------------------------------------------------------
@@ -261,7 +254,7 @@
       createBtn.onclick = function () {
         var name = schemaNameFor(ev.name);
         if (!findSchema(name)) {
-          bridge.setSchema(name, "type: object\nproperties: {}\n");
+          ws.setSchema(name, "type: object\nproperties: {}\n");
         }
         if (!addSchemaClause(ev.name, name)) {
           createBtn.insertAdjacentHTML("afterend",
@@ -272,7 +265,7 @@
     var createMissing = ref("create-missing");
     if (createMissing) {
       createMissing.onclick = function () {
-        bridge.setSchema(ev.schema_ref, "type: object\nproperties: {}\n");
+        ws.setSchema(ev.schema_ref, "type: object\nproperties: {}\n");
       };
     }
 
@@ -312,7 +305,7 @@
         yamlEl.value = text;
         yamlError.hidden = true;
         showClash(schema);
-        bridge.setSchema(setting.name, text);
+        ws.setSchema(setting.name, text);
       },
     });
 
@@ -326,7 +319,7 @@
       yamlError.hidden = true;
       instance.update({value: next.value});
       showClash(next.value);
-      bridge.setSchema(setting.name, yamlEl.value);
+      ws.setSchema(setting.name, yamlEl.value);
     };
   }
 
@@ -336,14 +329,13 @@
   function schemaNameFor(name) {
     var candidate = "schema_" + name;
     if (kind.keyword !== "STATE") { return candidate; }
-    var usedByEvent = (bridge.getSymbols().event_details || []).some(function (e) {
+    var usedByEvent = (ws.getSymbols().event_details || []).some(function (e) {
       return e.schema_ref === candidate;
     });
     return usedByEvent ? candidate + "_state" : candidate;
   }
 
   function render() {
-    if (!visible) { return; }
     renderList();
     renderDetail();
   }
@@ -352,20 +344,17 @@
   // Branchements
   // ------------------------------------------------------------------
 
-  fetch(kind.baseUrl)
-    .then(function (r) { return r.json(); })
+  ws.api(kind.baseUrl)
     .then(function (schema) { baseSchema = schema; shownKey = ""; render(); })
-    .catch(function () { /* le socle manquera ; le reste de la vue fonctionne */ });
+    .catch(function () { /* le socle manquera ; le reste du composant fonctionne */ });
 
-  bridge.onAnalyze(function () { render(); });
+  var off = ws.on("analyze", function () { render(); });
+  render();
 
-  document.addEventListener("uw:view", function (e) {
-    visible = e.detail === viewName;
-    if (visible) { shownKey = ""; render(); }
-  });
-
-  window[kind.exportName] = {
+  return {
+    activate: function () { shownKey = ""; render(); },
     select: function (name) { selected = name; shownKey = ""; render(); },
+    destroy: function () { off(); unmountAll(); },
   };
   }
 })();

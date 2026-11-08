@@ -1,4 +1,7 @@
-/* Vue diagramme : dessiner le workflow (X6) et générer le DSL.
+/* Composant « diagram » : dessiner le workflow (X6) et générer le DSL.
+ *
+ *   var d = UrbanWorkflow.mount("diagram", el, {workspace, layoutStore});
+ *   d.setLayoutStore({load, save}); d.reload();
  *
  * Source de vérité de la vue : un « modèle de surface » (le JSON de
  * /api/diagram — états, transitions, déclarations, expressions en texte
@@ -9,7 +12,7 @@
 (function () {
   "use strict";
 
-  var bridge = window.PlaygroundBridge;
+  var UW = window.UrbanWorkflow;
 
   var COLORS = {
     bg: "#11151c", panel: "#1a2029", border: "#2b3442", text: "#d8dee9",
@@ -18,6 +21,29 @@
   };
   var IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/;
   var INIT_ID = "$init";
+
+  UW.define("diagram", function (el, options) {
+  var ws = options.workspace;
+  var self = {};
+  el.innerHTML =
+    "<div class='uw-toolbar'>" +
+    "<button type='button' data-ref='add-state' title='Ajouter un état'>＋ État</button>" +
+    "<button type='button' data-ref='link-mode' title='Tracer des transitions en glissant " +
+    "d\'un état vers un autre'>Relier</button>" +
+    "<button type='button' data-ref='layout' title='Réorganiser automatiquement'>Réorganiser</button>" +
+    "<button type='button' data-ref='import' title='Reconstruire le diagramme depuis le " +
+    "script'>⇠ Importer le DSL</button>" +
+    "<button type='button' class='primary' data-ref='generate' title='Générer le script " +
+    "canonique et le mettre dans l\'espace de travail'>Générer le DSL</button>" +
+    "<span class='hint-text uw-diagram-status' data-ref='status'></span></div>" +
+    "<div class='uw-diagram-body'><div class='uw-diagram-canvas' data-ref='canvas'></div>" +
+    "<div class='uw-inspector' data-ref='inspector' hidden></div>" +
+    "<div class='canvas-hint'>glisser les états pour les placer · « Relier » puis glisser " +
+    "d'un état (ou de ⚡) vers un état pour créer une transition · clic sur un état ou une " +
+    "flèche = propriétés · l'ordre des branches d'un même événement fait la priorité des " +
+    "gardes</div></div>";
+  function ref(name) { return UW.util.ref(el, name); }
+  var datalistId = UW.util.uid("uw-events");
 
   var model = null;          // modèle de surface courant (null = pas importé)
   var positions = {};        // nom d'état -> {x, y}
@@ -30,7 +56,7 @@
   // ------------------------------------------------------------------
 
   var graph = new X6.Graph({
-    container: document.getElementById("diagram-canvas"),
+    container: ref("canvas"),
     autoResize: true,
     // Rendu SYNCHRONE, obligatoire ici : rebuildGraph() fait clearCells()
     // puis ré-ajoute les MÊMES ids. En rendu asynchrone (défaut X6), la
@@ -192,8 +218,7 @@
   var serverLayoutStore = {
     load: function (workflow) {
       if (serverLayoutEnabled === false) { return localLayoutStore.load(workflow); }
-      return fetch("/api/layout/" + encodeURIComponent(workflow))
-        .then(function (r) { return r.ok ? r.json() : {enabled: false}; })
+      return ws.api("api/layout/" + encodeURIComponent(workflow))
         .then(function (data) {
           serverLayoutEnabled = !!data.enabled;
           if (!data.enabled) { return localLayoutStore.load(workflow); }
@@ -206,17 +231,15 @@
     },
     save: function (workflow, value) {
       if (!serverLayoutEnabled) { localLayoutStore.save(workflow, value); return; }
-      fetch("/api/layout/" + encodeURIComponent(workflow), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({version: 1, workflow: workflow, states: value}),
-      }).then(function (r) {
-        if (!r.ok) { setStatus("mise en page non enregistrée (" + r.status + ")", false); }
-      }).catch(function () { setStatus("mise en page non enregistrée", false); });
+      ws.api("api/layout/" + encodeURIComponent(workflow),
+             {version: 1, workflow: workflow, states: value}, "PUT")
+        .then(function (data) {
+          if (!data || data.detail) { setStatus("mise en page non enregistrée", false); }
+        }).catch(function () { setStatus("mise en page non enregistrée", false); });
     },
   };
 
-  var layoutStore = serverLayoutStore;
+  var layoutStore = options.layoutStore || serverLayoutStore;
   var saveTimer = null;
 
   function loadPositions() {
@@ -548,7 +571,7 @@
 
   function exitLinkMode() {
     linkMode = false;
-    var button = document.getElementById("dg-link-mode");
+    var button = ref("link-mode");
     button.classList.remove("on");
     button.textContent = "Relier";
   }
@@ -557,20 +580,9 @@
   // Inspecteur (panneau de propriétés)
   // ------------------------------------------------------------------
 
-  var inspector = document.getElementById("inspector");
+  var inspector = ref("inspector");
 
-  function h(tag, attrs, children) {
-    var element = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (key) {
-      if (key === "text") { element.textContent = attrs[key]; }
-      else if (key.indexOf("on") === 0) { element[key] = attrs[key]; }
-      else if (key === "checked" || key === "value" || key === "hidden") {
-        element[key] = attrs[key];
-      } else { element.setAttribute(key, attrs[key]); }
-    });
-    (children || []).forEach(function (child) { element.appendChild(child); });
-    return element;
-  }
+  var h = UW.util.h;
 
   function row(labelText, control) {
     return h("div", { class: "insp-row" }, [
@@ -579,17 +591,19 @@
   }
 
   function eventInput(value, onchange) {
-    var list = document.getElementById("dsl-event-names");
+    // Une datalist par instance : deux diagrammes dans la page ne
+    // partagent pas leurs noms d'événements.
+    var list = document.getElementById(datalistId);
     if (!list) {
-      list = h("datalist", { id: "dsl-event-names" });
-      document.body.appendChild(list);
+      list = h("datalist", { id: datalistId });
+      el.appendChild(list);
     }
     list.innerHTML = "";
     eventNames().forEach(function (name) {
       list.appendChild(h("option", { value: name }));
     });
     return h("input", {
-      value: value, list: "dsl-event-names", spellcheck: "false",
+      value: value, list: datalistId, spellcheck: "false",
       onchange: onchange,
     });
   }
@@ -859,21 +873,17 @@
   // Statut + imports / génération
   // ------------------------------------------------------------------
 
-  var statusEl = document.getElementById("diagram-status");
+  var statusEl = ref("status");
 
   function setStatus(text, ok) {
     statusEl.textContent = text || "";
-    statusEl.className = "hint-text " + (ok === undefined ? "" : ok ? "ok" : "ko");
+    statusEl.className = "hint-text uw-diagram-status " +
+      (ok === undefined ? "" : ok ? "ok" : "ko");
   }
 
   function importFromEditor() {
     setStatus("import du script…");
-    fetch("/api/diagram", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: bridge.getScript() }),
-    })
-      .then(function (r) { return r.json(); })
+    return ws.api("api/diagram", { script: ws.getScript() })
       .then(function (data) {
         if (!data.ok) {
           setStatus("script non importable : " +
@@ -901,82 +911,44 @@
     }
     ensureEventDeclarations();
     setStatus("génération…");
-    fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: model, rules: bridge.getRules(), schemas: bridge.getSchemas(),
-        scripts: bridge.getScripts(),
-      }),
+    return ws.api("api/generate", {
+      model: model, rules: ws.getRules(), schemas: ws.getSchemas(),
+      scripts: ws.getScripts(),
     })
-      .then(function (r) { return r.json(); })
       .then(function (data) {
-        bridge.setScript(data.script);
+        ws.setScript(data.script, self);
         if (data.ok) {
           setStatus("script généré ✓", true);
         } else {
           setStatus("script généré avec " + data.errors.length +
                     " erreur(s) — voir l'éditeur", false);
         }
-        showView("editor");
+        // Le script est dans l'espace de travail ; un conteneur qui porte
+        // un éditeur l'affiche.
+        ws.reveal("editor");
+        return data;
       })
       .catch(function () { setStatus("serveur injoignable", false); });
   }
 
   // ------------------------------------------------------------------
-  // Barre d'outils + bascule de vue
+  // Barre d'outils
   // ------------------------------------------------------------------
 
-  var VIEWS = ["editor", "diagram", "events", "states", "scripts"];
-
-  function showView(which) {
-    VIEWS.forEach(function (name) {
-      document.getElementById("view-" + name).classList.toggle("active", name === which);
-      document.getElementById(name + "-view").classList.toggle("active", name === which);
-    });
-    document.getElementById("diagram-tools").hidden = which !== "diagram";
-    if (which === "editor") {
-      bridge.refreshEditor();
-    } else if (which === "diagram" && !model) {
-      importFromEditor();
-    }
-    // Les autres vues (models.js) se branchent sur cet événement plutôt que
-    // d'être connues d'ici.
-    document.dispatchEvent(new CustomEvent("uw:view", {detail: which}));
-  }
-
-  VIEWS.forEach(function (name) {
-    document.getElementById("view-" + name).onclick = function () { showView(name); };
-  });
-  document.getElementById("dg-import").onclick = importFromEditor;
-  document.getElementById("dg-generate").onclick = generateToEditor;
-  document.getElementById("dg-layout").onclick = function () {
+  ref("import").onclick = function () { importFromEditor(); };
+  ref("generate").onclick = function () { generateToEditor(); };
+  ref("layout").onclick = function () {
     if (!model) { return; }
     autoLayout();
     rebuildGraph();
   };
-  document.getElementById("dg-link-mode").onclick = function () {
+  ref("link-mode").onclick = function () {
     linkMode = !linkMode;
     this.classList.toggle("on", linkMode);
     this.textContent = linkMode ? "Relier ✓" : "Relier";
     if (linkMode) { select(null); }
   };
-  // Poignée de debug / tests UI (non documentée, API non garantie).
-  window.PlaygroundDiagram = {
-    graph: graph,
-    getModel: function () { return model; },
-    getPositions: function () { return positions; },
-    select: select,
-    /** Remplace le stockage de la mise en page :
-     * {load(workflow) -> Promise<positions|null>|positions, save(workflow, positions)}.
-     * null = retour au stockage par défaut (serveur, sinon navigateur). */
-    setLayoutStore: function (store) {
-      layoutStore = store || serverLayoutStore;
-    },
-    reload: function () { importFromEditor(); },
-  };
-
-  document.getElementById("dg-add-state").onclick = function () {
+  ref("add-state").onclick = function () {
     if (!model) { return; }
     var base = "Etat";
     var index = model.states.length + 1;
@@ -994,4 +966,27 @@
     selected = { kind: "state", su: state._uid };
     rebuildGraph();
   };
+
+  // Import au premier affichage (pas au montage : un diagramme caché dans
+  // un onglet n'a pas de taille, et le script n'est peut-être pas encore là).
+  return Object.assign(self, {
+    graph: graph,
+    activate: function () {
+      // X6 suit seul la taille de son conteneur (autoResize).
+      if (!model) { importFromEditor(); }
+    },
+    getModel: function () { return model; },
+    getPositions: function () { return positions; },
+    select: select,
+    /** Remplace le stockage de la mise en page :
+     * {load(workflow) -> Promise<positions|null>|positions, save(workflow, positions)}.
+     * null = retour au stockage par défaut (serveur, sinon navigateur). */
+    setLayoutStore: function (store) { layoutStore = store || serverLayoutStore; },
+    /** Relit le script de l'espace de travail (et les positions). */
+    reload: function () { return importFromEditor(); },
+    /** Génère le script canonique dans l'espace de travail. */
+    generate: function () { return generateToEditor(); },
+    destroy: function () { graph.dispose(); },
+  });
+  }, {label: "Diagramme", description: "Vue graphique éditable du workflow"});
 })();

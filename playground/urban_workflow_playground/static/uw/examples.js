@@ -1,6 +1,17 @@
-// Exemples préchargés du playground.
-window.PLAYGROUND_EXAMPLES = {
+/* Exemples préchargés, et composant « examples » (liste déroulante qui
+ * charge un exemple dans l'espace de travail).
+ *
+ *   UrbanWorkflow.mount("examples", el, {workspace})
+ *   UrbanWorkflow.mount("examples", el, {workspace, examples: {mon: {label, script, …}}})
+ */
+(function () {
+"use strict";
+
+var UW = window.UrbanWorkflow;
+
+UW.examples = {
   validation: {
+    label: "Circuit de validation",
     script: `NAME ValidationAchat VERSION 1
 DESCRIPTION 'circuit de validation des demandes d''achat'
 MATCHING (Type = 'achat')
@@ -94,6 +105,7 @@ DEFINE STATE Expiree 'validation expirée sans réponse' ;
   },
 
   regles: {
+    label: "Règles et scripts",
     script: `NAME Reclamations VERSION 1
 DESCRIPTION 'réclamations clients — règles implémentées par des scripts'
 
@@ -194,6 +206,7 @@ DEFINE STATE Close 'réclamation close' ;
   },
 
   etats: {
+    label: "États et switch viable",
     script: `NAME Abonnement VERSION 1
 DESCRIPTION 'abonnement — états modélisés, @state et switch viable'
 
@@ -289,6 +302,7 @@ DEFINE STATE Resilie  'abonnement résilié' ;
   },
 
   python: {
+    label: "Scripts Python",
     script: `NAME OuvertureCompte VERSION 1
 DESCRIPTION 'ouverture de compte — règles en Python et en expression'
 
@@ -382,6 +396,7 @@ DEFINE STATE Rejetee 'demande rejetée' ;
   },
 
   artefacts: {
+    label: "Artefacts JSON",
     script: `NAME Commandes VERSION 1
 DESCRIPTION 'facturation des commandes — artefacts JSON produits par jslt'
 
@@ -487,6 +502,7 @@ DEFINE STATE Livree 'commande livrée'
   },
 
   minimal: {
+    label: "Script minimal",
     script: `NAME Demo VERSION 1
 
 DEFINE EVENT Ouverture 'ouverture du dossier';
@@ -509,6 +525,7 @@ DEFINE STATE Ferme 'dossier fermé' ;
   },
 
   casse: {
+    label: "Script avec erreurs",
     script: `NAME Casse VERSION 1
 
 DEFINE EVENT Ouverture 'ouverture';
@@ -528,3 +545,23 @@ DEFINE STATE Ouvert 'dossier ouvert'
     events: [],
   },
 };
+
+UW.define("examples", function (el, options) {
+  var ws = options.workspace;
+  var examples = options.examples || UW.examples;
+  var select = document.createElement("select");
+  select.title = "Exemples";
+  select.innerHTML = "<option value=''>Exemples…</option>" +
+    Object.keys(examples).map(function (key) {
+      return "<option value='" + UW.util.esc(key) + "'>" +
+        UW.util.esc(examples[key].label || key) + "</option>";
+    }).join("");
+  select.onchange = function () {
+    var example = examples[select.value];
+    select.value = "";
+    if (example) { ws.loadExample(example); }
+  };
+  el.appendChild(select);
+  return {select: select};
+}, {label: "Exemples", description: "Charger un exemple dans l'espace de travail"});
+})();

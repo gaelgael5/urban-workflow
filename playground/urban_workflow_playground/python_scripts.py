@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -94,16 +94,25 @@ PYTHON_SCRIPTS: dict[str, Callable[..., Any]] = {
 }
 
 
-def describe() -> list[dict[str, Any]]:
-    """Catalogue pour la vue Scripts : nom, paramètres, doc, source."""
+def describe(functions: Mapping[str, Callable[..., Any]] | None = None) -> list[dict[str, Any]]:
+    """Catalogue pour la vue Scripts : nom, paramètres, doc, source.
+
+    ``functions`` : celles d'une application (``create_app(python_functions=…)``) ;
+    par défaut, les exemples de ce module."""
     catalogue = []
-    for name, func in PYTHON_SCRIPTS.items():
+    for name, func in (PYTHON_SCRIPTS if functions is None else functions).items():
         params = list(inspect.signature(func).parameters)[1:]  # sans ctx
+        try:
+            source = inspect.getsource(func)
+        except (OSError, TypeError):
+            # Fonction sans source lisible (C, générée, lambda d'un REPL) :
+            # elle reste utilisable, seule la lecture de son code manque.
+            source = ""
         catalogue.append({
             "name": name,
             "language": "python",
             "params": params,
             "doc": inspect.getdoc(func) or "",
-            "source": inspect.getsource(func),
+            "source": source,
         })
     return catalogue

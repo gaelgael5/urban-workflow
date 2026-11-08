@@ -1,4 +1,4 @@
-/* Vue « Scripts » : méthodes des règles référencées par
+/* Composant « scripts » : méthodes des règles référencées par
  * « DEFINE RULE … AS @nom » (décision du 2026-11-07 : pas de code dans le
  * document de workflow), et scripts jslt des artefacts
  * « DEFINE ARTIFACT … USING @nom » (2026-11-08), avec aperçu du JSON produit.
@@ -10,38 +10,34 @@
  * chemins @) et erreurs positionnées DANS le script (champ « script » des
  * erreurs de /api/analyze).
  *
- * Source de vérité : les scripts du playground (localStorage, pont
- * window.PlaygroundBridge) et le script du workflow pour les références.
+ * Source de vérité : les scripts de l'espace de travail et le script du
+ * workflow pour les références.
+ *
+ *   UrbanWorkflow.mount("scripts", el, {workspace})
  */
 (function () {
   "use strict";
 
-  var bridge = window.PlaygroundBridge;
-  var listEl = document.getElementById("sc-list");
-  var detailEl = document.getElementById("sc-detail");
+  var UW = window.UrbanWorkflow;
+  var esc = UW.util.esc;
+  var reEscape = UW.util.reEscape;
+
+  UW.define("scripts", function (el, options) {
+  var ws = options.workspace;
+  el.innerHTML = "<nav class='ev-list' data-ref='list'></nav>" +
+    "<section class='ev-detail' data-ref='detail'></section>";
+  var listEl = UW.util.ref(el, "list");
+  var detailEl = UW.util.ref(el, "detail");
 
   var selected = null;     // nom du script affiché
-  var visible = false;
-  var lastErrors = [];
+  var lastErrors = ws.getErrors();
   var cm = null;           // éditeur du script affiché
   var cmName = null;       // script chargé dans cm
   var marks = [];
   var saveTimer = null;
   var pendingCursor = null;
 
-  function esc(text) {
-    return String(text == null ? "" : text)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function reEscape(text) { return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-
-  function findScript(name) {
-    var found = null;
-    bridge.getScripts().forEach(function (s) { if (s.name === name) { found = s; } });
-    return found;
-  }
+  function findScript(name) { return ws.findScript(name); }
 
   function signature(d) {
     if (d.kind === "artifact") { return "@artifact." + d.name; }
@@ -53,7 +49,7 @@
   /** [{name, users: [{kind, decl}], written}] — référencés d'abord (ordre
    * des déclarations), puis écrits mais inutilisés. */
   function entries() {
-    var symbols = bridge.getSymbols();
+    var symbols = ws.getSymbols();
     var byName = {}, order = [];
     function entry(name) {
       if (!byName[name]) { byName[name] = {name: name, users: []}; order.push(name); }
@@ -71,7 +67,7 @@
                                     decl: Object.assign({kind: "artifact"}, d)});
       }
     });
-    bridge.getScripts().forEach(function (s) { entry(s.name); });
+    ws.getScripts().forEach(function (s) { entry(s.name); });
     var python = {};
     (symbols.python_scripts || []).forEach(function (p) { python[p.name] = p; });
     // Fonctions Python fournies par le serveur : listées si un workflow les
@@ -86,7 +82,7 @@
   }
 
   function rulesWithoutScript() {
-    return (bridge.getSymbols().rules || []).filter(function (d) { return !d.script; });
+    return (ws.getSymbols().rules || []).filter(function (d) { return !d.script; });
   }
 
   /** MontantEleve → montant_eleve (nom de script proposé). */
@@ -103,12 +99,12 @@
 
   /** Ajoute « AS @script » à DEFINE RULE nom (…) 'libellé'?. */
   function addScriptClause(ruleName, scriptName) {
-    var script = bridge.getScript();
+    var script = ws.getScript();
     var re = new RegExp("\\bDEFINE\\s+RULE\\s+" + reEscape(ruleName) +
                         "\\s*\\([^)]*\\)(\\s*'(?:[^']|'')*')?", "i");
     var match = re.exec(script);
     if (!match) { return false; }
-    bridge.insertText(match.index + match[0].length, " AS @" + scriptName);
+    ws.insertText(match.index + match[0].length, " AS @" + scriptName);
     return true;
   }
 
@@ -175,7 +171,7 @@
         row.querySelector("button").onclick = function () {
           var name = scriptNameFor(d.name);
           if (!addScriptClause(d.name, name)) { return; }
-          bridge.setScriptSource(name, newSource([{kind: "rule", decl: d}]));
+          ws.setScriptSource(name, newSource([{kind: "rule", decl: d}]));
           selected = name;
           render();
         };
@@ -189,7 +185,7 @@
   function renderPythonCatalogue(list) {
     var used = {};
     list.forEach(function (e) { used[e.name] = true; });
-    var others = (bridge.getSymbols().python_scripts || []).filter(function (p) {
+    var others = (ws.getSymbols().python_scripts || []).filter(function (p) {
       return !used[p.name];
     });
     if (!others.length) { return; }
@@ -210,7 +206,7 @@
   }
 
   function pythonEntry(name) {
-    var p = (bridge.getSymbols().python_scripts || []).filter(function (x) {
+    var p = (ws.getSymbols().python_scripts || []).filter(function (x) {
       return x.name === name;
     })[0];
     return p ? {name: name, users: [], python: p, written: true, errors: []} : null;
@@ -254,7 +250,6 @@
   }
 
   function render() {
-    if (!visible) { return; }
     var list = entries();
     if (!selected || (!list.some(function (e) { return e.name === selected; }) && !pythonEntry(selected))) {
       selected = list.length ? list[0].name : null;
@@ -325,14 +320,14 @@
 
     if (!script) {
       detailEl.querySelector("[data-ref='create']").onclick = function () {
-        bridge.setScriptSource(e.name, newSource(e.users), languageFor(e.users));
+        ws.setScriptSource(e.name, newSource(e.users), languageFor(e.users));
         render();
       };
       return;
     }
     if (jslt && artifacts.length) { bindPreview(artifacts); }
     detailEl.querySelector("[data-ref='remove']").onclick = function () {
-      bridge.removeScript(e.name);
+      ws.removeScript(e.name);
       dropEditor();
       render();
     };
@@ -349,7 +344,7 @@
       clearTimeout(saveTimer);
       var name = cmName, editor = cm;
       saveTimer = setTimeout(function () {
-        bridge.setScriptSource(name, editor.getValue());
+        ws.setScriptSource(name, editor.getValue());
       }, 450);
     });
     cm.on("inputRead", function (instance, change) {
@@ -459,7 +454,7 @@
   }
 
   function scriptHint(instance) {
-    var symbols = bridge.getSymbols();
+    var symbols = ws.getSymbols();
     var cursor = instance.getCursor();
     var token = instance.getTokenAt(cursor);
     if (token.type === "string" || token.type === "comment") { return null; }
@@ -493,7 +488,7 @@
       var name = c.name || c;
       candidates.push({text: name, displayText: name + "  ·  " + constantLabel(c)});
     });
-    bridge.ruleFunctions.forEach(function (f) { candidates.push(functionItem(f)); });
+    UW.RULE_FUNCTIONS.forEach(function (f) { candidates.push(functionItem(f)); });
     [["@IncomingEvent.", "événement entrant"], ["@state.", "état du bloc appelant"]]
       .forEach(function (p) {
         candidates.push({text: p[0], displayText: p[0] + "  ·  " + p[1], reopen: true});
@@ -554,7 +549,7 @@
       i++;
     }
     for (var k = stack.length - 1; k >= 0; k--) {
-      var f = bridge.ruleFunctions.filter(function (x) { return x.name === stack[k].name; })[0];
+      var f = UW.RULE_FUNCTIONS.filter(function (x) { return x.name === stack[k].name; })[0];
       if (f) { return {fn: f, arg: stack[k].arg}; }
     }
     return null;
@@ -583,22 +578,10 @@
   // Scripts jslt (artefacts)
   // ------------------------------------------------------------------
 
-  CodeMirror.defineSimpleMode("jslt", {
-    start: [
-      {regex: /"(?:[^"\\]|\\.)*"/, token: "string"},
-      {regex: /\$(?:\.[A-Za-z_][\w]*|\[\d+\])*/, token: "variable-2"},
-      {regex: /\b(?:true|false|null|let|def|if|else|for|in)\b/, token: "keyword"},
-      {regex: /[A-Za-z_]\w*(?=\s*\()/, token: "builtin"},
-      {regex: /-?\d+(?:\.\d+)?/, token: "number"},
-      {regex: /==|!=|<=|>=|&&|\|\||[<>+*\/%!-]/, token: "operator"},
-      {regex: /[{}\[\]():,.]/, token: "punctuation"},
-    ],
-  });
-
   /** Chemins $.… : mêmes objets que les chemins @ du DSL, sous leurs noms
    * dans le document d'entrée (artifacts.script_document). */
   function jsltPathItems() {
-    var symbols = bridge.getSymbols();
+    var symbols = ws.getSymbols();
     var items = [], seen = {};
     function add(text, label) {
       if (seen[text]) { return; }
@@ -632,7 +615,7 @@
     var list = typed.charAt(0) === "$" ? jsltPathItems() : [];
     if (typed.charAt(0) !== "$") {
       list = [{text: "$.", displayText: "$.  ·  document d'entrée", reopen: true}];
-      (bridge.getSymbols().jslt_functions || []).forEach(function (f) {
+      (ws.getSymbols().jslt_functions || []).forEach(function (f) {
         list.push({
           text: f.name + "(",
           displayText: f.name + "(" + f.params.join(", ") + ")" +
@@ -653,7 +636,7 @@
   /** État où l'artefact est utilisé (premier DEFINE STATE qui contient
    * @artifact.Nom) : c'est lui que $.state désignera. */
   function stateUsing(artifactName) {
-    var text = bridge.getScript();
+    var text = ws.getScript();
     var at = text.search(new RegExp("@artifact\\." + reEscape(artifactName) + "\\b", "i"));
     if (at < 0) { return ""; }
     var before = text.slice(0, at), re = /\bDEFINE\s+STATE\s+(\w+)/gi, m, last = "";
@@ -662,8 +645,8 @@
   }
 
   function previewHtml(artifacts) {
-    var states = bridge.getSymbols().states || [];
-    var events = bridge.getSimulationEvents();
+    var states = ws.getSymbols().states || [];
+    var events = ws.getEvents();
     var sample = events.length ? events[0] : {Name: "Evenement", ExternalId: "X-1"};
     return "<div class='sc-preview'>" +
       "<div class='sc-preview-head'><b>Aperçu</b> " +
@@ -697,21 +680,16 @@
       }
       // Le texte en cours d'édition n'est peut-être pas encore enregistré
       // (délai de sauvegarde) : on l'envoie tel quel.
-      var scripts = bridge.getScripts().map(function (s) {
+      var scripts = ws.getScripts().map(function (s) {
         return s.name === cmName && cm ? Object.assign({}, s, {source: cm.getValue()}) : s;
       });
       out.className = "sc-preview-out";
       out.textContent = "production…";
-      fetch("/api/artifact-preview", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          script: bridge.getScript(), rules: bridge.getRules(),
-          schemas: bridge.getSchemas(), scripts: scripts,
-          artifact: artifactSel.value, event: event, state: stateSel.value,
-        }),
+      ws.api("api/artifact-preview", {
+        script: ws.getScript(), rules: ws.getRules(),
+        schemas: ws.getSchemas(), scripts: scripts,
+        artifact: artifactSel.value, event: event, state: stateSel.value,
       })
-        .then(function (r) { return r.json(); })
         .then(function (data) {
           out.className = "sc-preview-out " + (data.ok ? "ok" : "ko");
           out.textContent = data.ok
@@ -730,36 +708,39 @@
   // Branchements
   // ------------------------------------------------------------------
 
-  bridge.onAnalyze(function (data) {
-    lastErrors = data.errors || [];
-    render();
-  });
-
-  document.addEventListener("uw:view", function (event) {
-    visible = event.detail === "scripts";
-    if (visible) {
-      dropEditor();   // conteneur peut-être détaché depuis : on remonte
+  var offs = [
+    ws.on("analyze", function (data) {
+      lastErrors = data.errors || [];
       render();
-    }
-  });
+    }),
+    // Script écrit ailleurs (exemple chargé, autre composant) : le détail
+    // affiché doit suivre, sauf si c'est notre propre éditeur qui l'a écrit.
+    ws.on("change", function (c) {
+      if (c.what !== "scripts" || !cm) { return; }
+      var script = findScript(cmName);
+      if (!script || script.source !== cm.getValue()) { dropEditor(); render(); }
+    }),
+    ws.on("reveal", function (r) {
+      if (r.component !== "scripts" || !r.detail.script) { return; }
+      selected = r.detail.script;
+      pendingCursor = r.detail.line
+        ? CodeMirror.Pos(Math.max(0, r.detail.line - 1), r.detail.column || 0)
+        : null;
+      dropEditor();
+      render();
+    }),
+  ];
+  render();
 
-  document.addEventListener("uw:open-script", function (event) {
-    var detail = event.detail || {};
-    selected = detail.script;
-    pendingCursor = detail.line
-      ? CodeMirror.Pos(Math.max(0, detail.line - 1), detail.column || 0)
-      : null;
-    dropEditor();
-    document.getElementById("view-scripts").click();
-  });
-
-  // Poignée de tests UI (non documentée, API non garantie).
-  window.PlaygroundScripts = {
+  return {
+    activate: function () { if (cm) { cm.refresh(); } else { render(); } },
     runPreview: function () {
       var b = detailEl.querySelector("[data-ref='pv-run']");
       if (b) { b.click(); }
     },
     select: function (name) { selected = name; dropEditor(); render(); },
     editor: function () { return cm; },
+    destroy: function () { offs.forEach(function (off) { off(); }); },
   };
+  }, {label: "Scripts", description: "Scripts des règles (expression) et des artefacts (jslt)"});
 })();

@@ -1,20 +1,12 @@
-:root {
-  --bg: #11151c;
-  --panel: #1a2029;
-  --border: #2b3442;
-  --text: #d8dee9;
-  --muted: #7f8ea3;
-  --accent: #5fb3f0;
-  --ok: #4cc38a;
-  --ko: #e5484d;
-}
+/* Mise en page de la page de référence du playground (index.html). Les
+   styles des composants eux-mêmes sont dans uw/urban-workflow.css. */
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--uw-bg);
+  color: var(--uw-text);
   font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
   height: 100vh;
   display: flex;
@@ -26,432 +18,55 @@ header {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--uw-panel);
+  border-bottom: 1px solid var(--uw-border);
 }
 header h1 { font-size: 16px; margin: 0; }
-header h1 span { color: var(--muted); font-weight: normal; }
+header h1 span { color: var(--uw-muted); font-weight: normal; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
-
-.status { font-size: 13px; color: var(--muted); }
-.status.ok { color: var(--ok); }
-.status.ko { color: var(--ko); }
 
 main { flex: 1; display: flex; min-height: 0; }
 
-.editor-pane {
-  flex: 1.4;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-right: 1px solid var(--border);
-}
-.view-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 6px 10px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-}
-.view-toggle button.active { background: var(--accent); color: #0b0e13; }
-.view-toggle .primary { background: var(--accent); color: #0b0e13; font-weight: 600; }
-#dg-link-mode.on { background: var(--ok); color: #0b0e13; }
-#diagram-tools { display: flex; gap: 6px; flex-wrap: wrap; }
-#diagram-status { margin-left: auto; }
-#diagram-status.ko { color: var(--ko); }
-#diagram-status.ok { color: var(--ok); }
-
-.view { display: none; }
-#editor-view.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-#diagram-view.active { display: block; flex: 1; min-height: 0; position: relative; }
-#diagram-canvas { position: absolute; inset: 0; }
-[hidden] { display: none !important; }
-
-/* Vue « Événements » : liste à gauche, détail (socle + schéma métier) à droite. */
-#events-view.active, #states-view.active, #scripts-view.active {
-  display: flex; flex: 1; min-height: 0;
-}
-.ev-list {
-  flex: 0 0 230px;
-  overflow: auto;
-  padding: 8px;
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ev-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 8px 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.ev-item.active { border-color: var(--accent); background: #1d2836; }
-.ev-name { font-weight: 600; color: var(--text); }
-.ev-label { font-size: 12px; color: var(--muted); }
-.ev-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
-.ev-badge {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: #22364a;
-  color: var(--accent);
-  font-family: Consolas, monospace;
-}
-.ev-badge.muted { background: var(--border); color: var(--muted); }
-.ev-badge.warn { background: #4a3a1a; color: #f0b45f; }
-.ev-badge.ko { background: #4a1f24; color: var(--ko); }
-/* Vue « Scripts » : éditeur du script + règles encore sans script. */
-.sc-editor { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0; }
-.sc-editor .CodeMirror {
-  height: auto; min-height: 140px; max-height: 60vh;
-  /* Même thème que l'éditeur du workflow (#editor-view .CodeMirror). */
-  font: 13px/1.5 "Cascadia Code", "Fira Code", Consolas, monospace;
-  background: var(--bg);
-  color: var(--text);
-}
-.sc-editor .CodeMirror-scroll { min-height: 140px; max-height: 60vh; }
-.sc-free-title { margin: 10px 0 0; }
-.sc-free { display: flex; align-items: center; gap: 6px; }
-.sc-free code { flex: 1; color: var(--accent); word-break: break-all; }
-.sc-free button { font-size: 11px; padding: 2px 6px; }
-.rule-row.dsl-rule { cursor: pointer; }
-.ev-detail { flex: 1; overflow: auto; padding: 10px 16px 24px; min-width: 0; }
-.ev-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.ev-head h3 { margin: 4px 0; }
-.ev-editor { border: 1px solid var(--border); border-radius: 8px; }
-/* Le socle ne se modifie pas : on le montre en retrait plutôt que d'en
-   masquer les détails (ses formats uuid/date-time renseignent l'émetteur). */
-.ev-editor.locked { opacity: .78; border-style: dashed; }
-.ev-yaml { margin-top: 10px; }
-.ev-yaml textarea {
-  width: 100%;
-  min-height: 160px;
-  box-sizing: border-box;
-  font: 12px/1.5 Consolas, monospace;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  resize: vertical;
-}
-.notice { color: var(--muted); font-size: 12.5px; }
-.notice.ko { color: var(--ko); }
-.ev-detail button.primary { background: var(--accent); color: #0b0e13; font-weight: 600; }
-
-/* Thème de l'éditeur de schémas (jsonjoy-builder) aligné sur la palette du
-   playground. Variables posées sur .jsonjoy elle-même, hors couche : elles
-   l'emportent sur celles du paquet (déclarées en @layer) et s'appliquent
-   aussi aux boîtes de dialogue, rendues en portail sur <body>. */
-.jsonjoy {
-  --jsonjoy-background: #1a2029;
-  --jsonjoy-foreground: #d8dee9;
-  --jsonjoy-card: #1a2029;
-  --jsonjoy-card-foreground: #d8dee9;
-  --jsonjoy-popover: #1a2029;
-  --jsonjoy-popover-foreground: #d8dee9;
-  --jsonjoy-primary: #5fb3f0;
-  --jsonjoy-primary-foreground: #0b0e13;
-  --jsonjoy-secondary: #2b3442;
-  --jsonjoy-secondary-foreground: #d8dee9;
-  --jsonjoy-muted: #242c38;
-  --jsonjoy-muted-foreground: #7f8ea3;
-  --jsonjoy-accent: #2b3442;
-  --jsonjoy-accent-foreground: #d8dee9;
-  --jsonjoy-destructive: #e5484d;
-  --jsonjoy-destructive-foreground: #f8fafc;
-  --jsonjoy-border: #2b3442;
-  --jsonjoy-input: #2b3442;
-  --jsonjoy-ring: #5fb3f0;
-  color-scheme: dark;
-}
-.canvas-hint {
-  position: absolute;
-  bottom: 6px;
-  left: 12px;
-  right: 12px;
-  color: var(--muted);
-  font-size: 11.5px;
-  z-index: 5;
-  pointer-events: none;
-}
-
-#inspector {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 310px;
-  max-height: calc(100% - 50px);
-  overflow: auto;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 12px 12px;
-  z-index: 6;
-  font-size: 13px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-}
-#inspector h3 { margin: 0 0 6px; font-size: 13.5px; }
-#inspector h3 small { color: var(--muted); font-weight: normal; }
-.insp-row { margin: 8px 0 0; }
-.insp-row > label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 2px; }
-.insp-row input, .insp-row select, .insp-row textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 4px;
-  padding: 5px 8px;
-  font-size: 13px;
-}
-.insp-row textarea { font: 11.5px/1.5 Consolas, monospace; resize: vertical; min-height: 36px; }
-.exec-item { display: flex; gap: 4px; margin: 4px 0; align-items: flex-start; }
-.exec-item textarea { flex: 1; }
-.exec-item .remove { background: none; border: none; color: var(--muted); cursor: pointer; }
-.exec-item .remove:hover { color: var(--ko); }
-.insp-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
-.insp-actions .danger { color: var(--ko); }
-.insp-add {
-  color: var(--accent);
-  background: none;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  padding: 5px;
-  font-size: 12.5px;
-  width: 100%;
-  margin-top: 4px;
-}
-
-#editor-view .CodeMirror {
-  flex: 1;
-  height: auto;
-  font: 13px/1.5 "Cascadia Code", "Fira Code", Consolas, monospace;
-  background: var(--bg);
-  color: var(--text);
-}
-.CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--border); }
-.CodeMirror-linenumber { color: var(--muted); }
-.CodeMirror-cursor { border-color: var(--text); }
-.CodeMirror-selected { background: #2b3442 !important; }
-.cm-keyword { color: #c792ea; font-weight: 600; }
-.cm-string { color: #ecc48d; }
-.cm-comment { color: #637777; font-style: italic; }
-.cm-number { color: #f78c6c; }
-.cm-variable-2 { color: #7fdbca; }
-.cm-variable { color: #d8dee9; }
-.cm-s-default .cm-builtin { color: #82aaff; }  /* le thème par défaut (#30a) est illisible sur fond sombre */
-.cm-operator { color: #89ddff; }
-
-.CodeMirror-hints {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  font: 12px/1.6 Consolas, monospace;
-}
-.CodeMirror-hint { color: var(--text); }
-li.CodeMirror-hint-active { background: var(--accent); color: #0b0e13; }
-
-.diagnostics {
-  max-height: 140px;
-  overflow: auto;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-}
-.diag {
-  padding: 4px 12px;
-  color: var(--ko);
-  cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-}
-.diag:hover { background: #242c38; }
+.editor-pane { flex: 1.4; min-width: 0; border-right: 1px solid var(--uw-border); }
 
 .side-pane {
   flex: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 320px;
   max-width: 480px;
-  background: var(--panel);
+  background: var(--uw-panel);
 }
-
-.tabs { display: flex; border-bottom: 1px solid var(--border); }
-.tabs button {
-  flex: 1;
-  padding: 8px 4px;
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-}
-.tabs button.active {
-  color: var(--text);
-  border-bottom: 2px solid var(--accent);
-}
+#side-tabs { flex: 1; min-height: 0; }
+#side-tabs > .tabs { padding-right: 36px; }
+#side-tabs > .tabs > button { flex: 1; }
 
 /* Repli du panneau de droite : il reste une bande étroite portant le seul
-   bouton de réouverture, pour laisser toute la largeur au diagramme (X6 en
-   autoResize suit tout seul). */
-.tabs .side-toggle {
-  flex: 0 0 34px;
+   bouton de réouverture, pour laisser toute la largeur à la zone principale
+   (X6 en autoResize suit tout seul). */
+.side-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 34px;
+  height: 38px;
+  background: none;
+  border: none;
+  color: var(--uw-muted);
+  cursor: pointer;
   font-size: 16px;
   line-height: 1;
 }
-.tabs .side-toggle:hover { color: var(--text); }
-.side-pane.collapsed {
-  flex: 0 0 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-.side-pane.collapsed .tabs { border-bottom: none; }
-.side-pane.collapsed .tabs button[data-tab],
-.side-pane.collapsed .tab { display: none; }
-
-.tab { display: none; padding: 12px; overflow: auto; flex: 1; }
-.tab.active { display: block; }
-
-.hint-text { color: var(--muted); font-size: 12.5px; }
-.hint-text code, .rule-row code { color: var(--accent); }
-kbd {
-  background: var(--border);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-size: 11px;
-}
-
-.section-title {
-  margin: 18px 0 4px;
-  font-size: 13px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-}
-.section-title small { color: var(--muted); font-weight: normal; }
-#schema-form textarea {
-  width: 100%;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font: 12px/1.5 Consolas, monospace;
-  padding: 6px 8px;
-  resize: vertical;
-}
-
-.rule-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.rule-row code { flex: 1; word-break: break-all; }
-.rule-row.dsl-rule small { color: var(--muted); }
-.rule-row.overridden { opacity: .5; }
-.rule-row.overridden code { text-decoration: line-through; }
-.rule-row .remove {
-  background: none; border: none; color: var(--muted); cursor: pointer;
-}
-.rule-row .remove:hover { color: var(--ko); }
-
-#rule-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-#rule-form input[type="text"], #rule-form input:not([type]) {
-  flex: 1 1 120px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 5px 8px;
-  border-radius: 4px;
-}
-label.inline { display: flex; align-items: center; gap: 4px; font-size: 13px; }
-
-/* :not(.jsonjoy…) : ces règles globales, hors @layer, écraseraient sinon les
-   boutons de l'éditeur de schémas (ses styles Tailwind sont en @layer et un
-   style non rangé en couche l'emporte toujours, quelle que soit la
-   spécificité). :where() garde la spécificité nulle : les règles à classe
-   (.tabs button, .ev-item…) continuent de primer. */
-:where(button, select):where(:not(.jsonjoy, .jsonjoy *)) {
-  background: var(--border);
-  color: var(--text);
-  border: none;
-  border-radius: 4px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 13px;
-}
-:where(button):where(:not(.jsonjoy, .jsonjoy *)):hover { background: #3a4656; }
-
-#events-input {
-  width: 100%;
-  height: 160px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font: 12px/1.5 Consolas, monospace;
-  padding: 8px;
-  resize: vertical;
-}
-#run-simulation { margin: 8px 0; }
-
-.node { padding: 3px 0 3px 8px; font-size: 13px; }
-.node.init { color: var(--accent); }
-.node.state { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
-.node.transition { padding-left: 24px; color: var(--muted); }
-.node em { color: #ecc48d; font-style: normal; }
-.node small { color: var(--muted); }
-
-.sim-step { border-top: 1px solid var(--border); padding: 8px 0; }
-.sim-step h4, #simulation-result h4 { margin: 4px 0; font-size: 13.5px; }
-.sim-ctx {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
-  margin: 6px 0;
-  font-size: 13px;
-}
-.sim-action { margin-top: 6px; }
-.sim-action pre, .sim-ctx pre {
-  background: #0b0e13;
-  padding: 6px;
-  border-radius: 4px;
-  overflow: auto;
-  font-size: 11.5px;
-  margin: 4px 0 0;
-  max-height: 160px;
-}
-.sim-log {
-  margin-top: 6px;
-  color: var(--muted);
-  font: 11.5px/1.6 Consolas, monospace;
-}
+.side-toggle:hover { color: var(--uw-text); }
+.side-pane.collapsed { flex: 0 0 36px; min-width: 36px; max-width: 36px; }
+.side-pane.collapsed #side-tabs { display: none; }
 
 @media (max-width: 900px) {
   main { flex-direction: column; }
-  .side-pane { max-width: none; border-top: 1px solid var(--border); }
+  .editor-pane { min-height: 60vh; }
+  .side-pane { max-width: none; border-top: 1px solid var(--uw-border); }
   /* Empilé : le panneau replié devient une barre basse pleine largeur. */
-  .side-pane.collapsed { flex: 0 0 auto; min-width: 0; max-width: none; }
-  .side-pane.collapsed .tabs { justify-content: flex-end; }
+  .side-pane.collapsed { flex: 0 0 38px; min-width: 0; max-width: none; }
 }
-/* Bandeau de signature de la fonction en cours de saisie (vue Scripts). */
-.sc-signature {
-  font-family: var(--mono, ui-monospace, monospace); font-size: 12px;
-  color: var(--muted, #7f8ea3); padding: 2px 4px 6px;
-}
-.sc-signature b { color: var(--accent, #5fb3f0); font-weight: 600; }
-/* Aperçu du JSON produit par un artefact (vue Scripts, scripts jslt). */
-.sc-preview { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
-.sc-preview-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
-.sc-preview textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, ui-monospace, monospace);
-  font-size: 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
-.sc-preview-out { white-space: pre-wrap; font-size: 12px; margin: 6px 0 0; padding: 6px 8px;
-  border-radius: 6px; background: var(--bg); max-height: 40vh; overflow: auto; }
-.sc-preview-out.ok { color: var(--ok, #4cc38a); }
-.sc-preview-out.ko { color: #ef6b73; }
