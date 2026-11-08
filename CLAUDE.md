@@ -79,6 +79,11 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   jslt, scripts, composants) ; le playground exige `urban-workflow>=0.2.0`.
   Wheels vérifiées en venv vierge (contenu complet, exemple §9 du guide,
   montage sous préfixe, paquet JS).
+- **0.2.1** : pages PyPI en ANGLAIS (`readme = "README.en.md"`, résumés
+  anglais, liens absolus vers le tag `v0.2.1` — un lien relatif est mort
+  sur pypi.org) ; les `README.md` français restent dans le dépôt, liés
+  entre eux. Garde : `tests/test_packaging.py`. Le Dockerfile copie aussi
+  `README.en.md` (sinon la construction du socle échoue).
 - L'idée de « paquets par pays » a été abandonnée par l'utilisateur
   (mauvaise conversation) — ne pas la relancer.
 

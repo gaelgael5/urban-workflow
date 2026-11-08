@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "urban-workflow-playground"
-version = "0.2.0"
-description = "Composants web du DSL urban-workflow (éditeur avec intellisense, diagramme, schémas, scripts, simulation) à monter dans une application, et le playground qui les assemble."
-readme = "README.md"
+version = "0.2.1"
+description = "Web components for the urban-workflow DSL (editor with intellisense, diagram, schemas, scripts, simulation) to embed in an application, and the playground that assembles them."
+readme = "README.en.md"
 license = { text = "MIT" }
 authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
 requires-python = ">=3.10"

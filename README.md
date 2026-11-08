@@ -1,5 +1,7 @@
 # urban-workflow
 
+*Français · [English](README.en.md)*
+
 Moteur de workflow piloté par un **langage dédié** (DSL) — portage Python de
 [Black-Beard-Sdk/Workflow](https://github.com/Black-Beard-Sdk/Workflow)
 (.NET), dont le système de normalisation des sorties JSON est remplacé par

@@ -1,5 +1,7 @@
 # urban-workflow-playground
 
+*Français · [English](README.en.md)*
+
 Composants web pour écrire, visualiser et tester des workflows
 [urban-workflow](https://pypi.org/project/urban-workflow/), et le serveur
 qui leur fournit l'analyse et la simulation **réelles** (parseur ANTLR,

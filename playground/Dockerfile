@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /src
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md README.en.md LICENSE ./
 COPY urban_workflow urban_workflow
 COPY playground playground
 
