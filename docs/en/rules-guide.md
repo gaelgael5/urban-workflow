@@ -97,6 +97,81 @@ registered twice is rejected.
 The registry never executes `.py` files: loading Python code remains the
 application's decision, which then registers its functions.
 
+### Writing a rule in Python
+
+When the logic goes beyond what an expression can say (check digits,
+regular expressions, calendars, a call to an internal service), the rule
+references a Python function registered by the application:
+
+```python
+import re
+from urban_workflow import WorkflowClock
+
+def iban_valide(ctx, iban):
+    """Correct IBAN check digits (ISO 13616, modulo 97)."""
+    if not isinstance(iban, str):
+        return False                       # missing or wrong type: False
+    compact = iban.replace(" ", "").upper()
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", compact):
+        return False
+    digits = "".join(str(int(c, 36)) for c in compact[4:] + compact[:4])
+    return int(digits) % 97 == 1
+
+def email_valide(ctx, adresse):
+    return isinstance(adresse, str) and re.match(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$",
+                                                 adresse.strip()) is not None
+
+def jours_ouvres_depuis(ctx, depuis, jours):
+    """At least `jours` business days between `depuis` and now."""
+    ...                                    # WorkflowClock.now(), never datetime.now()
+
+scripts = (
+    ScriptRegistry()
+    .add_directory("scripts/")             # the .expr files
+    .add_function("iban_valide", iban_valide)
+    .add_function("email_valide", email_valide)
+    .add_function("jours_ouvres_depuis", jours_ouvres_depuis)
+)
+```
+
+```sql
+DEFINE RULE IbanValide (TEXT iban)      'valid IBAN'          AS @iban_valide;
+DEFINE RULE EmailValide (TEXT adresse)  'well-formed address' AS @email_valide;
+DEFINE RULE DelaiDepasse (TEXT depuis, INTEGER jours) 'business days elapsed'
+    AS @jours_ouvres_depuis;
+
+DEFINE STATE Controle 'check'
+    ON EVENT DemandeOuverture
+        WHEN NOT IbanValide(iban = @IncomingEvent.Iban) SWITCH Rejetee
+        WHEN NOT EmailValide(adresse = @IncomingEvent.Email) SWITCH AttenteCoordonnees
+        SWITCH Ouvert
+;
+DEFINE STATE AttenteDepot 'waiting for the deposit'
+    ON EVENT Relance
+        WHEN DelaiDepasse(depuis = @state.CreationDate, jours = '10') SWITCH Rejetee
+;
+```
+
+The contract of a rule function:
+
+- **Signature**: `(ctx, **params)`, with exactly the parameter names of the
+  declaration. Checked at load time: `DEFINE RULE IbanValide (TEXT compte)`
+  is rejected, since the function expects `iban`.
+- **Resolved arguments**: the function receives values, not paths.
+  `@IncomingEvent.Iban` arrives as text (or `None` when missing),
+  `jours = '10'` declared `INTEGER` arrives as `10`. An `@…` path is not
+  converted: `@state.CreationDate` arrives as a `datetime`. `ctx` (the
+  `RunContext`) is still available for the rest: `ctx.incoming_event`,
+  `ctx.workflow`.
+- **Never raise**: missing or malformed data gives `False`, as in the
+  `expression` language. An exception raised by the function would abort
+  the processing of the event.
+- **No side effects** (see §6), and time read through `WorkflowClock.now()`,
+  the same clock as `NOW()`.
+
+Both languages mix freely in one workflow: only the registry knows how each
+script is written.
+
 ### Adding a language
 
 A language is a `ScriptLanguage` subclass:
@@ -362,3 +437,10 @@ config = parse_config(workflow_text, schemas=schemas, scripts=scripts)
   same name is ignored and shown struck through.
 - The « Règles et scripts » and « États et switch viable » examples are
   complete and replay as is.
+- **Python**: the playground never executes Python sent by the browser (it
+  has no authentication). Like an application, it registers three functions
+  itself (`@iban_valide`, `@email_valide`, `@jours_ouvres_depuis`, in
+  `urban_workflow_playground/python_scripts.py`), shown read-only in the
+  Scripts view with their parameters. Their names are reserved, and a script
+  sent with a language other than `expression` is rejected with an error.
+  The « Scripts Python » example mixes them with an `expression` script.

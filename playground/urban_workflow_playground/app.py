@@ -55,6 +55,8 @@ from urban_workflow.scripts import Script, ScriptLanguage, ScriptRegistry
 from urban_workflow.templating.context import json_safe
 
 from .layout import LayoutDirectory, LayoutError
+from .python_scripts import PYTHON_SCRIPTS
+from .python_scripts import describe as describe_python_scripts
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -175,12 +177,35 @@ def _build_script_registry(
 ) -> tuple[ScriptRegistry, list[dict[str, Any]]]:
     """Charge les scripts de la vue Scripts ; erreurs positionnées DANS
     chaque script (champ ``script``). Toujours un registre : dans le
-    playground, une référence ``AS @nom`` est toujours vérifiée."""
+    playground, une référence ``AS @nom`` est toujours vérifiée.
+
+    Les fonctions Python du playground (``python_scripts``) sont
+    enregistrées d'abord, comme le ferait une application : leurs noms sont
+    réservés, et le navigateur ne peut écrire que des scripts ``expression``
+    — aucun code Python venu du navigateur n'est exécuté."""
     registry = ScriptRegistry()
     registry.register_language(_InvalidScript())
+    for name, func in PYTHON_SCRIPTS.items():
+        registry.add_function(name, func)
     errors: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for setting in settings:
-        if not setting.name or setting.name in registry:
+        if not setting.name or setting.name in seen:
+            continue
+        seen.add(setting.name)
+        if setting.name in PYTHON_SCRIPTS:
+            errors.append({**_error_entry(
+                f"@{setting.name} est une fonction Python fournie par le playground : "
+                "nom réservé, choisir un autre nom"), "script": setting.name})
+            continue
+        if setting.language != "expression":
+            # Avant : add_script(language="python") levait un TypeError non
+            # rattrapé (erreur 500). Le Python s'enregistre côté serveur.
+            errors.append({**_error_entry(
+                f"langage {setting.language!r} non modifiable dans le playground : "
+                "seuls les scripts « expression » s'écrivent ici (les fonctions "
+                "Python sont enregistrées par l'application)"), "script": setting.name})
+            registry.add(Script(setting.name, "invalide", origin=setting.name))
             continue
         try:
             # origin = nom : les positions s'écrivent « nom:ligne:col ».
@@ -626,6 +651,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     symbols["scripts"] = [
         {"name": s.name, "language": s.language} for s in request.scripts if s.name
     ]
+    symbols["python_scripts"] = describe_python_scripts()
     symbols.setdefault("event_details", [])
 
     # Propriétés connues pour la complétion de UNIQUE (…) : socle commun +

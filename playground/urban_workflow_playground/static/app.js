@@ -266,6 +266,10 @@
   /** Scripts connus : écrits (vue Scripts) puis seulement référencés. */
   function scriptNames() {
     var names = scriptSettings.map(function (s) { return s.name; });
+    // Fonctions Python fournies par le serveur : référençables comme les autres.
+    (symbols.python_scripts || []).forEach(function (p) {
+      if (names.indexOf(p.name) < 0) { names.push(p.name); }
+    });
     (symbols.rules || []).concat(symbols.actions || []).forEach(function (d) {
       if (d.script && names.indexOf(d.script) < 0) { names.push(d.script); }
     });

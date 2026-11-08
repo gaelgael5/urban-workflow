@@ -288,6 +288,99 @@ DEFINE STATE Resilie  'abonnement résilié' ;
     ],
   },
 
+  python: {
+    script: `NAME OuvertureCompte VERSION 1
+DESCRIPTION 'ouverture de compte — règles en Python et en expression'
+
+DEFINE EVENT  DemandeOuverture      'un client demande l''ouverture'
+    AS @schema_DemandeOuverture;
+DEFINE EVENT  CoordonneesCorrigees  'le client corrige ses coordonnées'
+    AS @schema_DemandeOuverture;
+DEFINE EVENT  DepotRecu             'le dépôt initial est arrivé';
+DEFINE EVENT  Relance               'relance automatique';
+
+-- Trois règles implémentées en Python : fonctions enregistrées par
+-- l'application (ici le serveur du playground, ScriptRegistry.add_function).
+-- Les noms des paramètres sont ceux de la fonction : contrôlés au chargement.
+DEFINE RULE   IbanValide (TEXT iban)       'clé IBAN correcte'   AS @iban_valide;
+DEFINE RULE   EmailValide (TEXT adresse)   'adresse bien formée' AS @email_valide;
+DEFINE RULE   DelaiDepasse (TEXT depuis, INTEGER jours)
+    'jours ouvrés écoulés' AS @jours_ouvres_depuis;
+-- Et une en expression : les deux langages se mélangent librement.
+DEFINE RULE   DepotSuffisant (DECIMAL minimum) 'dépôt initial suffisant'
+    AS @depot_suffisant;
+
+DEFINE ACTION Notifier (TEXT motif, TEXT dossier) 'information du client';
+
+DEFINE CONST  depot_min 100 'dépôt initial exigé';
+
+INITIALIZE WORKFLOW
+    ON EVENT DemandeOuverture RECURSIVE SWITCH Controle
+
+DEFINE STATE Controle 'contrôle de la demande'
+    ON EVENT DemandeOuverture
+        WHEN NOT IbanValide(iban = @IncomingEvent.Iban)
+            EXECUTE Notifier(motif = 'IBAN invalide', dossier = @Workflow.ExternalId)
+            SWITCH Rejetee
+        WHEN NOT EmailValide(adresse = @IncomingEvent.Email)
+            SWITCH AttenteCoordonnees
+        WHEN DepotSuffisant(minimum = depot_min)
+            SWITCH Ouvert
+        SWITCH AttenteDepot
+;
+
+DEFINE STATE AttenteCoordonnees 'adresse électronique à corriger'
+    ON EVENT CoordonneesCorrigees
+        WHEN EmailValide(adresse = @IncomingEvent.Email)
+            SWITCH Ouvert
+;
+
+DEFINE STATE AttenteDepot 'en attente du dépôt initial'
+    ON EVENT DepotRecu
+        SWITCH Ouvert
+    -- @state.CreationDate : entrée dans AttenteDepot ; la fonction Python
+    -- compte les jours ouvrés jusqu'à maintenant.
+    ON EVENT Relance
+        WHEN DelaiDepasse(depuis = @state.CreationDate, jours = '10')
+            EXECUTE Notifier(motif = 'demande expirée', dossier = @Workflow.ExternalId)
+            SWITCH Rejetee
+;
+
+DEFINE STATE Ouvert 'compte ouvert' ;
+DEFINE STATE Rejetee 'demande rejetée' ;
+`,
+    rules: [],
+    scripts: [
+      {name: "depot_suffisant", source: "-- un dépôt absent n'est jamais suffisant (NULL >= x → FALSE)\n@IncomingEvent.Montant >= minimum\n"},
+    ],
+    schemas: [
+      {name: "schema_DemandeOuverture",
+       yaml: "title: DemandeOuverture\n" +
+             "type: object\n" +
+             "properties:\n" +
+             "  Iban: {type: string}\n" +
+             "  Email: {type: string}\n" +
+             "  Montant: {type: number, minimum: 0}\n"},
+    ],
+    events: [
+      {Name: "DemandeOuverture", Uuid: "c1111111-1111-4111-8111-111111111111",
+       ExternalId: "C-1", Iban: "FR76 3000 6000 0112 3456 7890 188",
+       Email: "ana@exemple.fr", Montant: 500},
+      {Name: "DemandeOuverture", Uuid: "c2222222-2222-4222-8222-222222222222",
+       ExternalId: "C-2", Iban: "FR76 3000 6000 0112 3456 7890 189",
+       Email: "jean@exemple", Montant: 500},
+      {Name: "CoordonneesCorrigees", Uuid: "c3333333-3333-4333-8333-333333333333",
+       ExternalId: "C-2", Email: "jean@exemple.fr"},
+      {Name: "DemandeOuverture", Uuid: "c4444444-4444-4444-8444-444444444444",
+       ExternalId: "C-3", Iban: "FR7630006000011234567890189",
+       Email: "lea@exemple.fr", Montant: 20},
+      {Name: "Relance", Uuid: "c5555555-5555-4555-8555-555555555555",
+       ExternalId: "C-3"},
+      {Name: "DepotRecu", Uuid: "c6666666-6666-4666-8666-666666666666",
+       ExternalId: "C-3"},
+    ],
+  },
+
   minimal: {
     script: `NAME Demo VERSION 1
 

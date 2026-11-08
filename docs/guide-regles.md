@@ -99,6 +99,81 @@ Le **contrôle de syntaxe** a lieu dès l'enregistrement : un script mal
 Aucun fichier `.py` n'est exécuté par le registre : charger du code Python
 reste une décision de l'application, qui enregistre ensuite ses fonctions.
 
+### Écrire une règle en Python
+
+Quand la logique dépasse ce qu'une expression sait dire (clé de contrôle,
+expression régulière, calendrier, appel à un service interne), la règle
+référence une fonction Python que l'application enregistre :
+
+```python
+import re
+from urban_workflow import WorkflowClock
+
+def iban_valide(ctx, iban):
+    """Clé IBAN correcte (ISO 13616, modulo 97)."""
+    if not isinstance(iban, str):
+        return False                       # absent ou mal typé : False
+    compact = iban.replace(" ", "").upper()
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", compact):
+        return False
+    chiffres = "".join(str(int(c, 36)) for c in compact[4:] + compact[:4])
+    return int(chiffres) % 97 == 1
+
+def email_valide(ctx, adresse):
+    return isinstance(adresse, str) and re.match(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$",
+                                                 adresse.strip()) is not None
+
+def jours_ouvres_depuis(ctx, depuis, jours):
+    """Au moins `jours` jours ouvrés entre `depuis` et maintenant."""
+    ...                                    # WorkflowClock.now(), jamais datetime.now()
+
+scripts = (
+    ScriptRegistry()
+    .add_directory("scripts/")             # les .expr
+    .add_function("iban_valide", iban_valide)
+    .add_function("email_valide", email_valide)
+    .add_function("jours_ouvres_depuis", jours_ouvres_depuis)
+)
+```
+
+```sql
+DEFINE RULE IbanValide (TEXT iban)      'clé IBAN correcte'   AS @iban_valide;
+DEFINE RULE EmailValide (TEXT adresse)  'adresse bien formée' AS @email_valide;
+DEFINE RULE DelaiDepasse (TEXT depuis, INTEGER jours) 'jours ouvrés écoulés'
+    AS @jours_ouvres_depuis;
+
+DEFINE STATE Controle 'contrôle'
+    ON EVENT DemandeOuverture
+        WHEN NOT IbanValide(iban = @IncomingEvent.Iban) SWITCH Rejetee
+        WHEN NOT EmailValide(adresse = @IncomingEvent.Email) SWITCH AttenteCoordonnees
+        SWITCH Ouvert
+;
+DEFINE STATE AttenteDepot 'dépôt attendu'
+    ON EVENT Relance
+        WHEN DelaiDepasse(depuis = @state.CreationDate, jours = '10') SWITCH Rejetee
+;
+```
+
+Le contrat d'une fonction de règle :
+
+- **Signature** : `(ctx, **params)`, avec exactement les noms de paramètres
+  de la déclaration. C'est contrôlé au chargement : `DEFINE RULE IbanValide
+  (TEXT compte)` est refusé, la fonction attend `iban`.
+- **Arguments résolus** : la fonction reçoit des valeurs, pas des chemins.
+  `@IncomingEvent.Iban` arrive en texte (ou `None` s'il est absent),
+  `jours = '10'` déclaré `INTEGER` arrive en `10`. Un chemin `@…` n'est pas
+  converti : `@state.CreationDate` arrive en `datetime`. `ctx` (le
+  `RunContext`) reste disponible pour le reste : `ctx.incoming_event`,
+  `ctx.workflow`.
+- **Jamais d'exception** : une donnée absente ou mal formée donne `False`,
+  comme dans le langage `expression`. Une exception levée par la fonction
+  interromprait le traitement de l'événement.
+- **Aucun effet de bord** (voir §6), et l'heure lue par `WorkflowClock.now()`,
+  la même horloge que `NOW()`.
+
+Les deux langages se mélangent librement dans un même workflow : seul le
+registre sait comment chaque script est écrit.
+
 ### Ajouter un langage
 
 Un langage est une sous-classe de `ScriptLanguage` :
@@ -372,3 +447,11 @@ config = parse_config(workflow_text, schemas=schemas, scripts=scripts)
   barrée.
 - Les exemples « Règles et scripts » et « États et switch viable » sont
   complets et se rejouent tels quels.
+- **Python** : le playground n'exécute jamais de Python envoyé par le
+  navigateur (il n'a pas d'authentification). Comme une application, il
+  enregistre lui-même trois fonctions (`@iban_valide`, `@email_valide`,
+  `@jours_ouvres_depuis`, dans `urban_workflow_playground/python_scripts.py`),
+  que la vue Scripts montre en lecture seule avec leurs paramètres. Leurs
+  noms sont réservés, et un script envoyé avec un autre langage
+  qu'`expression` est refusé avec une erreur. L'exemple « Scripts Python »
+  les mélange avec un script `expression`.

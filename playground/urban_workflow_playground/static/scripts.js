@@ -64,9 +64,14 @@
       if (d.script) { entry(d.script).users.push({kind: "action", decl: d}); }
     });
     bridge.getScripts().forEach(function (s) { entry(s.name); });
+    var python = {};
+    (symbols.python_scripts || []).forEach(function (p) { python[p.name] = p; });
+    // Fonctions Python fournies par le serveur : listées si un workflow les
+    // référence (le catalogue complet est dans « Fonctions Python » plus bas).
     return order.map(function (name) {
       var e = byName[name];
-      e.written = !!findScript(name);
+      e.python = python[name] || null;
+      e.written = !!e.python || !!findScript(name);
       e.errors = lastErrors.filter(function (err) { return err.script === name; });
       return e;
     });
@@ -121,7 +126,7 @@
       var item = document.createElement("button");
       item.type = "button";
       item.className = "ev-item" + (e.name === selected ? " active" : "");
-      var badges = "";
+      var badges = e.python ? "<span class='ev-badge'>python</span>" : "";
       if (!e.written) { badges += "<span class='ev-badge warn'>à écrire</span>"; }
       if (e.errors.length) { badges += "<span class='ev-badge ko'>erreur</span>"; }
       if (!e.users.length) { badges += "<span class='ev-badge muted'>inutilisé</span>"; }
@@ -159,6 +164,67 @@
     }
   }
 
+  /** Catalogue des fonctions Python du serveur non encore référencées :
+   * on peut les ouvrir pour lire leur source et leur signature. */
+  function renderPythonCatalogue(list) {
+    var used = {};
+    list.forEach(function (e) { used[e.name] = true; });
+    var others = (bridge.getSymbols().python_scripts || []).filter(function (p) {
+      return !used[p.name];
+    });
+    if (!others.length) { return; }
+    var title = document.createElement("p");
+    title.className = "hint-text sc-free-title";
+    title.textContent = "Fonctions Python fournies par le serveur :";
+    listEl.appendChild(title);
+    others.forEach(function (p) {
+      var item = document.createElement("button");
+      item.type = "button";
+      item.className = "ev-item" + (p.name === selected ? " active" : "");
+      item.innerHTML = "<span class='ev-name'>@" + esc(p.name) + "</span>" +
+        "<span class='ev-badges'><span class='ev-badge'>python</span>" +
+        "<span class='ev-badge muted'>inutilisé</span></span>";
+      item.onclick = function () { selected = p.name; render(); };
+      listEl.appendChild(item);
+    });
+  }
+
+  function pythonEntry(name) {
+    var p = (bridge.getSymbols().python_scripts || []).filter(function (x) {
+      return x.name === name;
+    })[0];
+    return p ? {name: name, users: [], python: p, written: true, errors: []} : null;
+  }
+
+  function renderPythonDetail(e) {
+    dropEditor();
+    var p = e.python;
+    detailEl.innerHTML =
+      "<div class='ev-head'><h3>@" + esc(e.name) + "</h3>" +
+      "<span class='ev-badge'>python</span></div>" +
+      "<div data-ref='users'>" + usersHtml(e) + "</div>" +
+      "<p class='notice'>Fonction Python enregistrée par le serveur " +
+      "(<code>ScriptRegistry.add_function</code>) : lecture seule. Paramètres " +
+      "attendus : <code>" + esc(p.params.join(", ") || "aucun") + "</code> — la " +
+      "déclaration qui la référence doit porter exactement ces noms.</p>" +
+      "<div class='sc-editor' data-ref='editor'></div>" +
+      "<div class='diagnostics' data-ref='diags'></div>" +
+      "<p class='hint-text'>À référencer depuis le workflow : <code>DEFINE RULE R (" +
+      esc(p.params.map(function (n) { return "TEXT " + n; }).join(", ")) +
+      ") 'libellé' AS @" + esc(e.name) + ";</code></p>";
+    var view = CodeMirror(detailEl.querySelector("[data-ref='editor']"), {
+      value: p.source, mode: "text/plain", lineNumbers: true, readOnly: true,
+    });
+    var diags = detailEl.querySelector("[data-ref='diags']");
+    e.errors.forEach(function (err) {
+      var div = document.createElement("div");
+      div.className = "diag";
+      div.textContent = err.message;
+      diags.appendChild(div);
+    });
+    setTimeout(function () { view.refresh(); }, 0);
+  }
+
   // ------------------------------------------------------------------
   // Détail
   // ------------------------------------------------------------------
@@ -170,11 +236,14 @@
   function render() {
     if (!visible) { return; }
     var list = entries();
-    if (!selected || !list.some(function (e) { return e.name === selected; })) {
+    if (!selected || (!list.some(function (e) { return e.name === selected; }) && !pythonEntry(selected))) {
       selected = list.length ? list[0].name : null;
     }
     renderList(list);
-    var e = list.filter(function (x) { return x.name === selected; })[0];
+    renderPythonCatalogue(list);
+    var e = list.filter(function (x) { return x.name === selected; })[0] ||
+      (selected ? pythonEntry(selected) : null);
+    if (e && e.python) { renderPythonDetail(e); return; }
     if (!e) {
       dropEditor();
       detailEl.innerHTML = "<p class='hint-text'>Une règle référence sa méthode par " +

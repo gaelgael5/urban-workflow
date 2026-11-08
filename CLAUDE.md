@@ -276,6 +276,13 @@ le corps en ligne `AS <expression>` a été SUPPRIMÉ.
   scripts après DEFINE RULE/ACTION ; « écrire en script » ajoute
   `AS @nom` ; exemples avec `scripts`.
 - Docs : `docs/guide-regles.md` (+ `docs/en/rules-guide.md`).
+- **Exemples Python (2026-11-08, choix utilisateur : pas de nouveau
+  langage)** : `playground/.../python_scripts.py` = fonctions enregistrées
+  par le SERVEUR (`add_function`) — `iban_valide`, `email_valide`,
+  `jours_ouvres_depuis` — publiées dans `symbols.python_scripts` (source,
+  params) et montrées en lecture seule dans la vue Scripts. Le navigateur
+  n'envoie que de l'`expression` (autre langage = erreur, avant : 500) ;
+  noms Python réservés. Exemple « Scripts Python » (`OuvertureCompte`).
 
 ## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 

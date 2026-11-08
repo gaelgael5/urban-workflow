@@ -701,3 +701,100 @@ class TestLayout:
         LayoutDirectory(tmp_path).save("Wf", {"states": {}})
         mode = stat.S_IMODE(os.stat(tmp_path / "Wf.layout.json").st_mode)
         assert mode & 0o044 == 0o044
+
+
+PY_SCRIPT = """
+NAME Compte VERSION 1
+DEFINE EVENT  Demande 'demande';
+DEFINE RULE   IbanValide (TEXT iban) 'clé IBAN correcte' AS @iban_valide;
+DEFINE RULE   EmailValide (TEXT adresse) 'adresse' AS @email_valide;
+DEFINE RULE   DelaiDepasse (TEXT depuis, INTEGER jours) 'délai' AS @jours_ouvres_depuis;
+DEFINE RULE   DepotSuffisant (DECIMAL minimum) 'dépôt' AS @depot_suffisant;
+INITIALIZE WORKFLOW
+    ON EVENT Demande RECURSIVE SWITCH Controle
+DEFINE STATE Controle 'contrôle'
+    ON EVENT Demande
+        WHEN NOT IbanValide(iban = @IncomingEvent.Iban) SWITCH Rejetee
+        WHEN NOT EmailValide(adresse = @IncomingEvent.Email) SWITCH AttenteEmail
+        WHEN DelaiDepasse(depuis = @IncomingEvent.CreationDate, jours = '1') SWITCH Rejetee
+        WHEN DepotSuffisant(minimum = '100') SWITCH Ouvert
+        SWITCH AttenteDepot
+;
+DEFINE STATE AttenteEmail 'email' ;
+DEFINE STATE AttenteDepot 'dépôt' ;
+DEFINE STATE Ouvert 'ouvert' ;
+DEFINE STATE Rejetee 'rejetée' ;
+"""
+PY_SCRIPTS = [{"name": "depot_suffisant", "source": "@IncomingEvent.Montant >= minimum"}]
+GOOD_IBAN = "FR76 3000 6000 0112 3456 7890 189"
+
+
+class TestPythonScripts:
+    """Fonctions Python fournies par le playground (add_function côté
+    serveur) : référençables par AS @nom, jamais écrites par le navigateur."""
+
+    def test_catalogue_is_published_in_symbols(self):
+        data = client.post("/api/analyze", json={"script": SCRIPT}).json()
+        catalogue = {p["name"]: p for p in data["symbols"]["python_scripts"]}
+        assert set(catalogue) == {"iban_valide", "email_valide", "jours_ouvres_depuis"}
+        assert catalogue["jours_ouvres_depuis"]["params"] == ["depuis", "jours"]
+        assert "def iban_valide(ctx, iban)" in catalogue["iban_valide"]["source"]
+
+    def test_workflow_mixing_python_and_expression_is_valid(self):
+        data = client.post(
+            "/api/analyze", json={"script": PY_SCRIPT, "scripts": PY_SCRIPTS}
+        ).json()
+        assert data["ok"] is True, data["errors"]
+
+    @pytest.mark.parametrize(("event", "state"), [
+        ({"Iban": "FR76 3000 6000 0112 3456 7890 188", "Email": "a@b.fr", "Montant": 500},
+         "Rejetee"),
+        ({"Iban": GOOD_IBAN, "Email": "a@b", "Montant": 500}, "AttenteEmail"),
+        ({"Iban": GOOD_IBAN, "Email": "a@b.fr", "Montant": 500}, "Ouvert"),
+        ({"Iban": GOOD_IBAN, "Email": "a@b.fr", "Montant": 20}, "AttenteDepot"),
+        ({"Email": "a@b.fr", "Montant": 500}, "Rejetee"),  # IBAN absent : False
+    ])
+    def test_simulation_evaluates_the_python_functions(self, event, state):
+        events = [{"Name": "Demande", "Uuid": "d1111111-1111-4111-8111-111111111111",
+                   "ExternalId": "X-1", **event}]
+        data = client.post("/api/simulate", json={
+            "script": PY_SCRIPT, "scripts": PY_SCRIPTS, "events": events,
+        }).json()
+        assert data["ok"] is True, data.get("errors")
+        assert data["workflows"][0]["state"] == state
+
+    def test_signature_mismatch_is_reported(self):
+        wrong = PY_SCRIPT.replace("IbanValide (TEXT iban)", "IbanValide (TEXT compte)") \
+                         .replace("iban = @IncomingEvent.Iban", "compte = @IncomingEvent.Iban")
+        data = client.post("/api/analyze", json={"script": wrong, "scripts": PY_SCRIPTS}).json()
+        assert data["ok"] is False
+        assert any("compte" in e["message"] or "iban" in e["message"] for e in data["errors"])
+
+    def test_browser_cannot_send_python(self):
+        scripts = PY_SCRIPTS + [{"name": "evil", "language": "python",
+                                 "source": "__import__('os').system('id')"}]
+        response = client.post("/api/analyze", json={"script": PY_SCRIPT, "scripts": scripts})
+        assert response.status_code == 200   # avant : TypeError → 500
+        (error,) = [e for e in response.json()["errors"] if e.get("script") == "evil"]
+        assert "expression" in error["message"]
+
+    def test_python_names_are_reserved(self):
+        scripts = PY_SCRIPTS + [{"name": "iban_valide", "source": "TRUE"}]
+        data = client.post("/api/analyze", json={"script": PY_SCRIPT, "scripts": scripts}).json()
+        (error,) = [e for e in data["errors"] if e.get("script") == "iban_valide"]
+        assert "réservé" in error["message"]
+
+    def test_functions_never_raise(self):
+        from urban_workflow_playground.python_scripts import (
+            email_valide,
+            iban_valide,
+            jours_ouvres_depuis,
+        )
+
+        for bad in (None, 42, "", "XX", "FR76!!"):
+            assert iban_valide(None, bad) is False
+            assert email_valide(None, bad) is False
+            assert jours_ouvres_depuis(None, bad, 3) is False
+        assert iban_valide(None, GOOD_IBAN) is True
+        assert jours_ouvres_depuis(None, "2000-01-03T00:00:00Z", 5) is True
+        assert jours_ouvres_depuis(None, "2000-01-03T00:00:00Z", "5") is False
