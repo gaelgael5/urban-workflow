@@ -310,8 +310,12 @@
     var offs = [
       ws.on("change", function (c) {
         if (c.what !== "script" || c.origin === self) { return; }
+        var wasEmpty = !cm.getValue();
         loading = true;
         try { cm.setValue(ws.getScript()); } finally { loading = false; }
+        // Premier contenu d'un éditeur vide : rien à annuler (Ctrl+Z ne
+        // doit pas ramener au texte vide d'avant le chargement).
+        if (wasEmpty) { cm.clearHistory(); }
       }),
       ws.on("analyze", function () { cm.performLint(); renderDiagnostics(); }),
       ws.on("reveal", function (r) {
