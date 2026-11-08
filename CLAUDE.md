@@ -417,7 +417,9 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   resynchroniser, pas à faire diverger).
 - Ressources : `ia_instructions/tests_and_ressources.md` (`test1` =
   `host-test-37`, port 8777).
-- Poste de dev : pas de clé SSH GitHub → pousser en HTTPS
+- Poste de dev (mis à jour le 2026-11-08) : `origin` en HTTPS et git
+  identifié par `gh` (`gh auth setup-git`, propre à github.com) →
+  `git push origin …` fonctionne. Historique : pas de clé SSH GitHub → pousser en HTTPS
   (`git push https://github.com/gaelgael5/urban-workflow.git …`). Le
   helper global (`devpod agent git-credentials`) a renvoyé des 500 ; le
   script du portail marche : `git -c credential.helper=
