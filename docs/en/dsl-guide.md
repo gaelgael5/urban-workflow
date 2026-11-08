@@ -157,6 +157,20 @@ today).
 Rules and actions share the same namespace: declaring `RULE X` then
 `ACTION X` is an error.
 
+### Artifacts
+
+```sql
+DEFINE ARTIFACT RequeteFacture 'body of the billing request'
+    AS @schema_RequeteFacture USING @requete_facture;
+```
+
+urban-workflow extension: an artifact is a **named** JSON document,
+produced by a script (`USING @…`, usually `jslt`) and validated by an
+optional schema (`AS @…`). It hands well-formed data to an action:
+`EXECUTE AppelerFacturation(corps = @artifact.RequeteFacture)`. No
+parameters: the script reads the context. Details:
+[artifacts-guide.md](artifacts-guide.md).
+
 ### Constants
 
 ```sql
@@ -189,6 +203,8 @@ A path navigates the execution context, segment by segment:
   `STORE` wrote there, plus the creating event's data);
 - `@IncomingEvent.…` — the **incoming event** (see below);
 - `@state.…` — the **current state instance** (see below);
+- `@artifact.Name[.part]` — a **JSON artifact** produced on demand, only in
+  the arguments of an action ([artifacts-guide.md](artifacts-guide.md));
 - `@Event.…` — legacy path to the event being written to the history,
   still resolved but no longer suggested: source/target states are not
   event properties (one event may be processed by several workflows in
@@ -496,6 +512,7 @@ DEFINE EVENT  Name 'label' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Name (TYPE arg, …) 'label';      -- TYPE: TEXT|INTEGER|DECIMAL
 DEFINE RULE   Name (TYPE arg, …) 'label' AS @script;      -- method in the ScriptRegistry
 DEFINE ACTION Name (TYPE arg, …) 'label';
+DEFINE ARTIFACT Name 'label' [AS @schema] USING @script;   -- JSON read by @artifact.Name
 DEFINE CONST  name value 'label';              -- value: 'txt' | 42 | n DAY
 
 INITIALIZE WORKFLOW

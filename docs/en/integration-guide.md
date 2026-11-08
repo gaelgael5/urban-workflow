@@ -115,6 +115,12 @@ signature is checked against the declaration. Another language is added
 with `register_language` (a `ScriptLanguage` subclass: `name`,
 `extensions`, `check`, `compile`). Details: [rules-guide.md](rules-guide.md).
 
+`.jslt` files (`jslt` language, urban-json) produce **JSON artifacts**
+(`DEFINE ARTIFACT … USING @script`), data handed to actions through
+`@artifact.Name`. JSON that does not match the artifact's schema raises an
+`ArtifactError` and aborts the processing:
+[artifacts-guide.md](artifacts-guide.md).
+
 ## 3. Loading scripts
 
 ### A single script

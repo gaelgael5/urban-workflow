@@ -65,8 +65,12 @@ _POSITIONED = re.compile(r"^(?:([^:\n]*):)?(\d+):(\d+):\s*(.*)$", re.DOTALL)
 # « … (in rule 'R' called|declared at playground:12:8) » : endroit du
 # workflow où le script est utilisé (appel, ou référence AS @ contrôlée).
 _CALLED_AT = re.compile(
-    r"\(in rule '([^']*)' (?:called|declared) at (?:[^:\n]*:)?(\d+):(\d+)\)\s*$"
+    r"\(in (?:rule|artifact) '([^']*)' (?:called|declared) at "
+    r"(?:[^:\n]*:)?(\d+):(\d+)\)\s*$"
 )
+# Langages qu'on accepte du navigateur : des langages de données, sans
+# exécution de code arbitraire (jslt = transformation JSON urban-json).
+_BROWSER_LANGUAGES = ("expression", "jslt")
 
 app = FastAPI(title="urban-workflow playground")
 
@@ -117,6 +121,19 @@ class SimulateRequest(BaseModel):
     schemas: list[SchemaSetting] = Field(default_factory=list)
     scripts: list[ScriptSetting] = Field(default_factory=list)
     events: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ArtifactPreviewRequest(BaseModel):
+    """Aperçu d'un artefact : le JSON que produirait son script pour un
+    événement d'exemple, dans l'état indiqué."""
+
+    script: str
+    rules: list[RuleSetting] = Field(default_factory=list)
+    schemas: list[SchemaSetting] = Field(default_factory=list)
+    scripts: list[ScriptSetting] = Field(default_factory=list)
+    artifact: str
+    event: dict[str, Any] = Field(default_factory=dict)
+    state: str = ""
 
 
 class DiagramRequest(BaseModel):
@@ -198,12 +215,12 @@ def _build_script_registry(
                 f"@{setting.name} est une fonction Python fournie par le playground : "
                 "nom réservé, choisir un autre nom"), "script": setting.name})
             continue
-        if setting.language != "expression":
+        if setting.language not in _BROWSER_LANGUAGES:
             # Avant : add_script(language="python") levait un TypeError non
             # rattrapé (erreur 500). Le Python s'enregistre côté serveur.
             errors.append({**_error_entry(
                 f"langage {setting.language!r} non modifiable dans le playground : "
-                "seuls les scripts « expression » s'écrivent ici (les fonctions "
+                "seuls les scripts « expression » et « jslt » s'écrivent ici (les fonctions "
                 "Python sont enregistrées par l'application)"), "script": setting.name})
             registry.add(Script(setting.name, "invalide", origin=setting.name))
             continue
@@ -318,6 +335,11 @@ _RE_RULE_SCRIPT = re.compile(
 _RE_ACTION_SCRIPT = re.compile(
     r"\bDEFINE\s+ACTION\s+(\w+)\s*\([^)]*\)\s*(?:'(?:[^']|'')*')?\s*AS\s+@([\w.]+)"
 )
+# DEFINE ARTIFACT nom 'libellé'? (AS @schema)? USING @script (repli).
+_RE_ARTIFACT = re.compile(
+    r"\bDEFINE\s+ARTIFACT\s+(\w+)\s*(?:'((?:[^']|'')*)')?\s*"
+    r"(?:AS\s+@([\w.]+)\s*)?(?:USING\s+@([\w.]+))?"
+)
 _RE_CONST = re.compile(r"\bDEFINE\s+CONST\s+(\w+)", re.IGNORECASE)
 _RE_STATE = re.compile(r"\bDEFINE\s+STATE\s+(\w+)", re.IGNORECASE)
 _RE_PARAM = re.compile(r"(TEXT|INTEGER|DECIMAL)\s+(\w+)", re.IGNORECASE)
@@ -350,6 +372,11 @@ def _symbols_from_text(script: str) -> dict[str, Any]:
                 "script": action_scripts.get(name, ""),
             }
             for name, params in _RE_ACTION.findall(script)
+        ],
+        "artifacts": [
+            {"name": name, "label": label.replace("''", "'"), "schema_ref": schema,
+             "script": using}
+            for name, label, schema, using in _RE_ARTIFACT.findall(script)
         ],
         "constants": sorted(set(_RE_CONST.findall(script))),
         "states": sorted(set(_RE_STATE.findall(script))),
@@ -404,6 +431,11 @@ def _symbols_from_visitor(
         ],
         "rules": declared("rule"),
         "actions": declared("action"),
+        "artifacts": [
+            {"name": a.name, "label": a.label, "schema_ref": a.schema_ref,
+             "script": a.script_ref}
+            for a in config.declared_artifacts.values()
+        ],
         "constants": [
             {"name": c.key, "value": c.value, "comment": c.comment}
             for c in visitor.constants.values()
@@ -652,6 +684,7 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
         {"name": s.name, "language": s.language} for s in request.scripts if s.name
     ]
     symbols["python_scripts"] = describe_python_scripts()
+    symbols["jslt_functions"] = _jslt_functions()
     symbols.setdefault("event_details", [])
 
     # Propriétés connues pour la complétion de UNIQUE (…) : socle commun +
@@ -674,6 +707,15 @@ def analyze(request: AnalyzeRequest) -> dict[str, Any]:
     )
     symbols["base_state_paths"] = _flatten_schema_paths(BASE_STATE_SCHEMA["properties"])
     symbols.setdefault("state_details", [])
+    # Parties d'artefact proposées après « @artifact.Nom. » (schéma résolu).
+    symbols["artifact_properties"] = {
+        a["name"]: _flatten_schema_paths(
+            schema_registry.get(a["schema_ref"]).get("properties") or {}
+        )
+        if a.get("schema_ref") and schema_registry is not None
+        and a["schema_ref"] in schema_registry else []
+        for a in symbols.get("artifacts", [])
+    }
 
     clashes = _schema_clash_problems(symbols, schema_registry)
     errors.extend(_error_entry(problem) for problem in clashes)
@@ -719,6 +761,81 @@ def generate(request: GenerateRequest) -> dict[str, Any]:
         "errors": analysis["errors"],
         "summary": analysis["summary"],
     }
+
+
+_JSLT_FUNCTIONS: list[dict[str, Any]] | None = None
+
+
+def _jslt_functions() -> list[dict[str, Any]]:
+    """Fonctions intégrées d'urban-json, pour la complétion des scripts
+    jslt (lue une fois : le catalogue ne change pas en cours de route)."""
+    global _JSLT_FUNCTIONS
+    if _JSLT_FUNCTIONS is None:
+        from urban_json import default_registry
+
+        catalogue = []
+        for name in sorted(default_registry.names()):
+            info = default_registry.describe(name)
+            catalogue.append({
+                "name": name,
+                "params": [p.name for p in info.parameters],
+                "returns": info.returns or "",
+                "doc": info.description or "",
+            })
+        _JSLT_FUNCTIONS = catalogue
+    return _JSLT_FUNCTIONS
+
+
+@app.post("/api/artifact-preview")
+def artifact_preview(request: ArtifactPreviewRequest) -> dict[str, Any]:
+    """Produit un artefact sur un événement d'exemple (vue Scripts).
+
+    Même script, même document et même validation que pendant le
+    traitement ; le workflow est simulé (ExternalId de l'événement, état
+    demandé fraîchement créé) pour que ``$.Workflow``/``$.state`` aient un
+    contenu réaliste."""
+    from urban_workflow.artifacts import produce_artifact
+    from urban_workflow.clock import WorkflowClock
+    from urban_workflow.engine.serializer import parse_incoming_event
+    from urban_workflow.models import RunContext, StateInstance
+
+    schema_registry, schema_problems = _build_schema_registry(request.schemas)
+    if schema_problems:
+        return {"ok": False, "error": " ; ".join(schema_problems)}
+    script_registry, script_errors = _build_script_registry(request.scripts)
+    if any(e.get("script") for e in script_errors):
+        first = script_errors[0]
+        return {"ok": False, "error": f"script @{first['script']} : {first['message']}"}
+    parser = WorkflowScriptParser.parse_string(request.script, filename="playground")
+    try:
+        parser.check()
+        visitor = WorkflowConfigVisitor(
+            rules=_build_registry(request.rules, request.script), filename="playground",
+            schemas=schema_registry, scripts=script_registry,
+        )
+        config = parser.visit(visitor)
+        if request.artifact not in config.declared_artifacts:
+            return {"ok": False, "error": f"artefact {request.artifact!r} non déclaré"}
+        incoming = parse_incoming_event(request.event)
+        workflow = Workflow(
+            workflow_name=config.name, version=config.version,
+            external_id=incoming.external_id or "",
+        )
+        ctx = RunContext(workflow=workflow, incoming_event=incoming)
+        if request.state:
+            ctx.pending_states.append(StateInstance(
+                name=request.state, creation_date=WorkflowClock.now(),
+                event_id=incoming.uuid,
+            ))
+        constants = {k: c.value for k, c in visitor.constants.items()}
+        value = produce_artifact(
+            config, request.artifact, script_registry, ctx,
+            state_name=request.state, constants=constants,
+        )
+    except WorkflowError as exc:
+        return {"ok": False, "error": str(exc),
+                "errors": [str(e) for e in getattr(exc, "errors", None) or []]}
+    return {"ok": True, "value": json_safe(value)}
 
 
 @app.post("/api/simulate")

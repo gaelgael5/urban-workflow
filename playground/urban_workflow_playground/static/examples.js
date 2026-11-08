@@ -381,6 +381,111 @@ DEFINE STATE Rejetee 'demande rejetée' ;
     ],
   },
 
+  artefacts: {
+    script: `NAME Commandes VERSION 1
+DESCRIPTION 'facturation des commandes — artefacts JSON produits par jslt'
+
+DEFINE EVENT  CommandeValidee 'le client valide sa commande'
+    AS @schema_CommandeValidee;
+DEFINE EVENT  Livree 'la commande est livrée';
+
+-- Les actions reçoivent des données bien formées : des artefacts JSON,
+-- produits par un script jslt (vue Scripts) et validés par un schéma.
+DEFINE ACTION AppelerFacturation (TEXT corps, TEXT client) 'POST /factures';
+DEFINE ACTION Notifier (TEXT message) 'message au client';
+
+DEFINE ARTIFACT RequeteFacture 'corps de la requête de facturation'
+    AS @schema_RequeteFacture USING @requete_facture;
+DEFINE ARTIFACT AvisLivraison 'message de livraison (sans schéma)'
+    USING @avis_livraison;
+
+DEFINE CONST  devise 'EUR' 'devise de facturation';
+
+INITIALIZE WORKFLOW
+    ON EVENT CommandeValidee SWITCH Facturee
+
+DEFINE STATE Facturee 'facture demandée'
+    -- @artifact.X : le JSON complet ; @artifact.X.partie : une partie.
+    ON ENTER STATE
+        EXECUTE AppelerFacturation(corps = @artifact.RequeteFacture,
+                                   client = @artifact.RequeteFacture.client.nom)
+    ON EVENT Livree
+        SWITCH Livree
+;
+
+DEFINE STATE Livree 'commande livrée'
+    ON ENTER STATE
+        EXECUTE Notifier(message = @artifact.AvisLivraison)
+;
+`,
+    rules: [],
+    scripts: [
+      {name: "requete_facture", language: "jslt", source:
+        '{\n' +
+        '    "reference": $.Workflow.ExternalId,\n' +
+        '    "client": {\n' +
+        '        "nom": $.IncomingEvent.Client.Nom,\n' +
+        '        "email": $.IncomingEvent.Client.Email\n' +
+        '    },\n' +
+        '    "lignes": $.IncomingEvent.Lignes,\n' +
+        '    "montant": $.IncomingEvent.Montant,\n' +
+        '    "devise": $.constants.devise,\n' +
+        '    "emise_le": $.now\n' +
+        '}\n'},
+      {name: "avis_livraison", language: "jslt", source:
+        '{\n' +
+        '    "commande": $.Workflow.ExternalId,\n' +
+        '    "etat": $.state.Name,\n' +
+        '    "depuis": $.state.CreationDate,\n' +
+        '    "texte": "Votre commande est livrée"\n' +
+        '}\n'},
+    ],
+    schemas: [
+      {name: "schema_CommandeValidee",
+       yaml: "title: CommandeValidee\n" +
+             "type: object\n" +
+             "properties:\n" +
+             "  Client:\n" +
+             "    type: object\n" +
+             "    properties:\n" +
+             "      Nom: {type: string}\n" +
+             "      Email: {type: string}\n" +
+             "  Lignes:\n" +
+             "    type: array\n" +
+             "    items:\n" +
+             "      type: object\n" +
+             "      properties:\n" +
+             "        Article: {type: string}\n" +
+             "        Quantite: {type: integer}\n" +
+             "  Montant: {type: number}\n"},
+      {name: "schema_RequeteFacture",
+       yaml: "title: RequeteFacture\n" +
+             "type: object\n" +
+             "required: [reference, client, lignes, montant, devise]\n" +
+             "properties:\n" +
+             "  reference: {type: string}\n" +
+             "  client:\n" +
+             "    type: object\n" +
+             "    required: [nom]\n" +
+             "    properties:\n" +
+             "      nom: {type: string}\n" +
+             "      email: {type: [string, 'null']}\n" +
+             "  lignes: {type: array, minItems: 1}\n" +
+             "  montant: {type: number, exclusiveMinimum: 0}\n" +
+             "  devise: {type: string, enum: [EUR]}\n" +
+             "  emise_le: {type: string}\n"},
+    ],
+    events: [
+      {Name: "CommandeValidee", Uuid: "e1111111-1111-4111-8111-111111111111",
+       ExternalId: "CMD-1", Client: {Nom: "ACME", Email: "achats@acme.fr"},
+       Lignes: [{Article: "Câble", Quantite: 3}], Montant: 42.5},
+      {Name: "Livree", Uuid: "e2222222-2222-4222-8222-222222222222",
+       ExternalId: "CMD-1"},
+      {Name: "CommandeValidee", Uuid: "e3333333-3333-4333-8333-333333333333",
+       ExternalId: "CMD-2", Client: {Nom: "Durand"}, Lignes: [], Montant: 0},
+    ],
+  },
+
   minimal: {
     script: `NAME Demo VERSION 1
 

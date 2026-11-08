@@ -65,12 +65,14 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 |---|---|
 | [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, fragments |
 | [docs/guide-regles.md](docs/guide-regles.md) | **Règles et scripts** : `DEFINE RULE … AS @script`, `ScriptRegistry` multi-langage, langage `expression` (opérateurs, fonctions, sémantique `NULL`), contrôles |
+| [docs/guide-artefacts.md](docs/guide-artefacts.md) | **Artefacts JSON** : `DEFINE ARTIFACT … AS @schema USING @script`, scripts `jslt` (urban-json), `@artifact.Nom` dans les actions, validation par schéma |
 | [docs/guide-integration.md](docs/guide-integration.md) | **L'utiliser dans du code** : règles métier, assemblage du moteur, templates JSLT, chaîne de sorties, événements techniques |
 | [docs/guide-tests.md](docs/guide-tests.md) | **Le tester** : règles pures, configuration, templates, scénarios de bout en bout |
 | [docs/analyse-portage.md](docs/analyse-portage.md) | Analyse du projet source et choix structurants du portage |
 
 English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
 [docs/en/rules-guide.md](docs/en/rules-guide.md) ·
+[docs/en/artifacts-guide.md](docs/en/artifacts-guide.md) ·
 [docs/en/integration-guide.md](docs/en/integration-guide.md) ·
 [docs/en/testing-guide.md](docs/en/testing-guide.md)
 

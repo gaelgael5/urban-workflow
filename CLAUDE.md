@@ -284,6 +284,36 @@ le corps en ligne `AS <expression>` a été SUPPRIMÉ.
   n'envoie que de l'`expression` (autre langage = erreur, avant : 500) ;
   noms Python réservés. Exemple « Scripts Python » (`OuvertureCompte`).
 
+## Hors plan — Artefacts JSON nommés (fait, 2026-11-08)
+
+Cadrage : le JSON n'est qu'un MOYEN de fournir une donnée bien formée à
+autre chose (ex. corps d'un appel HTTP curl, à venir). Choix utilisateur :
+déclaration DSL, syntaxe `DEFINE ARTIFACT X 'l' AS @schema USING @script`
+(AS = schéma comme EVENT/STATE), consommation par chemin SANS paramètres
+`@artifact.X[.partie]`, destination = chaîne de sorties (dans les
+arguments de l'action), `TemplateRegistry` GARDÉ SÉPARÉ.
+- Grammaire : tokens `ARTIFACT`/`USING`, `artifact_declaration_statement`.
+- `urban_workflow/artifacts.py` : `JsltLanguage` (défaut du
+  `ScriptRegistry`, `.jslt`, erreurs de syntaxe → `DslSyntaxError`
+  positionnée dans le script ; `functions=` registre urban-json),
+  `script_document` (`IncomingEvent`/`state`/`Workflow`/`constants`/
+  `params`/`now`, mêmes objets que les chemins @), `make_producer`
+  (validation `validate_value`, `ArtifactError` qui INTERROMPT le
+  traitement — inverse des règles), `ArtifactPath`, `produce_artifact`.
+  `ScriptBinding.document` = fabrique du document liée au site d'appel.
+- Visiteur : `DeclaredArtifactConfig` / `WorkflowConfig.declared_artifacts`,
+  script contrôlé à la déclaration (« (in artifact X declared at …) »),
+  `@artifact` seulement dans les arguments d'EXECUTE
+  (`_in_action_arguments`), partie contrôlée contre le schéma.
+  Surface : `SurfaceArtifact`.
+- Playground : langages navigateur = expression + jslt ; symbols
+  `artifacts`, `artifact_properties`, `jslt_functions` ;
+  `POST /api/artifact-preview` ; vue Scripts : mode `jslt`, complétion
+  `$.`/fonctions, aperçu « Produire le JSON » ; exemple « Artefacts JSON ».
+- Dialecte urban-json 0.2.1 : chemins `$.x`, pas de commentaires `//`,
+  `size`/`count`/`tostring` absents ; fonction inconnue détectée à
+  l'exécution seulement. Docs : `docs/guide-artefacts.md` (+ en).
+
 ## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
 
 - **Troisième extension de grammaire** (commentée dans les .g4) : tokens

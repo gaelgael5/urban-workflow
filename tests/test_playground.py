@@ -798,3 +798,108 @@ class TestPythonScripts:
         assert iban_valide(None, GOOD_IBAN) is True
         assert jours_ouvres_depuis(None, "2000-01-03T00:00:00Z", 5) is True
         assert jours_ouvres_depuis(None, "2000-01-03T00:00:00Z", "5") is False
+
+
+ART_SCRIPT = """
+NAME Commandes VERSION 1
+DEFINE EVENT  CommandeValidee 'validée';
+DEFINE ACTION AppelerFacturation (TEXT corps, TEXT client) 'POST /factures';
+DEFINE ARTIFACT RequeteFacture 'corps' AS @schema_requete USING @requete_facture;
+DEFINE CONST  devise 'EUR' 'devise';
+INITIALIZE WORKFLOW
+    ON EVENT CommandeValidee SWITCH Facturee
+DEFINE STATE Facturee 'facturée'
+    ON ENTER STATE
+        EXECUTE AppelerFacturation(corps = @artifact.RequeteFacture,
+                                   client = @artifact.RequeteFacture.client)
+;
+"""
+ART_JSLT = ('{ "reference": $.Workflow.ExternalId, "client": $.IncomingEvent.Client, '
+            '"montant": $.IncomingEvent.Montant, "devise": $.constants.devise, '
+            '"etat": $.state.Name }')
+ART_SCRIPTS = [{"name": "requete_facture", "language": "jslt", "source": ART_JSLT}]
+ART_SCHEMAS = [{"name": "schema_requete", "yaml": (
+    "type: object\nrequired: [client, montant]\nproperties:\n"
+    "  reference: {type: string}\n  client: {type: string}\n"
+    "  montant: {type: number, exclusiveMinimum: 0}\n"
+    "  devise: {type: string}\n  etat: {type: string}\n")}]
+
+
+class TestArtifactsInPlayground:
+    def _analyze(self, script=ART_SCRIPT, scripts=ART_SCRIPTS):
+        return client.post("/api/analyze", json={
+            "script": script, "scripts": scripts, "schemas": ART_SCHEMAS}).json()
+
+    def test_analyze_publishes_artifacts(self):
+        data = self._analyze()
+        assert data["ok"] is True, data["errors"]
+        (artifact,) = data["symbols"]["artifacts"]
+        assert artifact == {"name": "RequeteFacture", "label": "corps",
+                            "schema_ref": "schema_requete", "script": "requete_facture"}
+        paths = [p["path"] for p in data["symbols"]["artifact_properties"]["RequeteFacture"]]
+        assert "client" in paths and "montant" in paths
+        names = [f["name"] for f in data["symbols"]["jslt_functions"]]
+        assert "upper" in names
+
+    def test_text_fallback_knows_artifacts(self):
+        data = self._analyze(script=ART_SCRIPT.replace("SWITCH Facturee", "SWITCH"))
+        assert data["ok"] is False
+        assert data["symbols"]["artifacts"][0]["script"] == "requete_facture"
+
+    def test_jslt_syntax_error_is_positioned_in_the_script(self):
+        broken = [{**ART_SCRIPTS[0], "source": '{ "a": $.x + }'}]
+        data = self._analyze(scripts=broken)
+        (error,) = [e for e in data["errors"] if e.get("script")]
+        assert error["script"] == "requete_facture" and error["line"] == 1
+
+    def test_missing_script_is_flagged_on_using(self):
+        data = self._analyze(scripts=[])
+        (error,) = data["errors"]
+        assert error["line"] == 5 and "requete_facture" in error["message"]
+
+    def test_expression_artifact_error_is_shown_in_script_and_declaration(self):
+        scripts = [{"name": "requete_facture", "language": "expression",
+                    "source": "inconnu + 1"}]
+        data = self._analyze(scripts=scripts)
+        in_script = [e for e in data["errors"] if e.get("script")]
+        in_editor = [e for e in data["errors"] if not e.get("script")]
+        assert in_script and in_script[0]["script"] == "requete_facture"
+        assert in_editor and in_editor[0]["line"] == 5
+
+    def test_preview_produces_the_json(self):
+        data = client.post("/api/artifact-preview", json={
+            "script": ART_SCRIPT, "scripts": ART_SCRIPTS, "schemas": ART_SCHEMAS,
+            "artifact": "RequeteFacture", "state": "Facturee",
+            "event": {"Name": "CommandeValidee", "ExternalId": "CMD-9",
+                      "Client": "ACME", "Montant": 12},
+        }).json()
+        assert data == {"ok": True, "value": {
+            "reference": "CMD-9", "client": "ACME", "montant": 12,
+            "devise": "EUR", "etat": "Facturee"}}
+
+    def test_preview_reports_schema_violations(self):
+        data = client.post("/api/artifact-preview", json={
+            "script": ART_SCRIPT, "scripts": ART_SCRIPTS, "schemas": ART_SCHEMAS,
+            "artifact": "RequeteFacture",
+            "event": {"Name": "CommandeValidee", "Client": "ACME", "Montant": 0},
+        }).json()
+        assert data["ok"] is False and "schema_requete" in data["error"]
+        assert any("montant" in e for e in data["errors"])
+
+    def test_simulation_puts_the_artifact_in_the_message(self):
+        events = [
+            {"Name": "CommandeValidee", "Uuid": "e1111111-1111-4111-8111-111111111111",
+             "ExternalId": "CMD-1", "Client": "ACME", "Montant": 42},
+            {"Name": "CommandeValidee", "Uuid": "e2222222-2222-4222-8222-222222222222",
+             "ExternalId": "CMD-2", "Client": "Durand", "Montant": 0},
+        ]
+        data = client.post("/api/simulate", json={
+            "script": ART_SCRIPT, "scripts": ART_SCRIPTS, "schemas": ART_SCHEMAS,
+            "events": events}).json()
+        assert data["ok"] is True
+        first, second = data["steps"]
+        (action,) = first["impacted"][0]["actions"]
+        arguments = action["message"]["Body"]["Arguments"]
+        assert arguments["corps"]["reference"] == "CMD-1"
+        assert arguments["client"] == "ACME"
+        assert "ArtifactError" in second["error"] and "montant" in second["error"]

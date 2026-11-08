@@ -240,3 +240,43 @@ class TestSurface:
         assert "AS @schema_requete USING @requete_facture;" in text
         assert render_script(extract_surface(text)) == text
         parse_config(text, scripts=_scripts(), schemas=_schemas())
+
+
+class TestJsltFunctions:
+    """Exemples du guide des artefacts (docs/guide-artefacts.md §4 et §6)."""
+
+    def test_builtin_function_and_arithmetic(self):
+        from urban_workflow.models import IncomingEvent, RunContext
+
+        scripts = ScriptRegistry().add_script(
+            "s", '{ "client": upper($.IncomingEvent.Client.Nom), '
+                 '"total": $.IncomingEvent.Montant * 2 }', language="jslt")
+        text = WORKFLOW.replace("AS @schema_requete USING @requete_facture", "USING @s")
+        config = parse_config(text.replace(
+            ",\n                           client = @artifact.RequeteFacture.client", ""
+        ).replace("TEXT corps, TEXT client", "TEXT corps"), scripts=scripts)
+        ctx = RunContext(incoming_event=IncomingEvent(
+            name="Validee", extended_datas={"Client": {"Nom": "acme"}, "Montant": 5}))
+        assert produce_artifact(config, "RequeteFacture", scripts, ctx) == {
+            "client": "ACME", "total": 10}
+
+    def test_custom_functions(self):
+        from urban_json import default_registry
+
+        from urban_workflow.artifacts import JsltLanguage
+        from urban_workflow.dsl.expressions import ExpressionLanguage
+        from urban_workflow.models import IncomingEvent, RunContext
+        from urban_workflow.scripts import PythonLanguage
+
+        functions = default_registry.copy()
+        functions.register("iban_masque", lambda ctx, iban: "****" + iban[-4:])
+        scripts = ScriptRegistry(languages=[
+            ExpressionLanguage(), PythonLanguage(), JsltLanguage(functions=functions),
+        ]).add_script("s", '{ "iban": iban_masque($.IncomingEvent.Iban) }', language="jslt")
+        text = WORKFLOW.replace("AS @schema_requete USING @requete_facture", "USING @s")
+        config = parse_config(text.replace(
+            ",\n                           client = @artifact.RequeteFacture.client", ""
+        ).replace("TEXT corps, TEXT client", "TEXT corps"), scripts=scripts)
+        ctx = RunContext(incoming_event=IncomingEvent(
+            name="Validee", extended_datas={"Iban": "FR7630006000011234567890189"}))
+        assert produce_artifact(config, "RequeteFacture", scripts, ctx) == {"iban": "****0189"}

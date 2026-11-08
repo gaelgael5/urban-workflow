@@ -446,3 +446,12 @@ label.inline { display: flex; align-items: center; gap: 4px; font-size: 13px; }
   color: var(--muted, #7f8ea3); padding: 2px 4px 6px;
 }
 .sc-signature b { color: var(--accent, #5fb3f0); font-weight: 600; }
+/* Aperçu du JSON produit par un artefact (vue Scripts, scripts jslt). */
+.sc-preview { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.sc-preview-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.sc-preview textarea { width: 100%; box-sizing: border-box; font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
+.sc-preview-out { white-space: pre-wrap; font-size: 12px; margin: 6px 0 0; padding: 6px 8px;
+  border-radius: 6px; background: var(--bg); max-height: 40vh; overflow: auto; }
+.sc-preview-out.ok { color: var(--ok, #4cc38a); }
+.sc-preview-out.ko { color: #ef6b73; }

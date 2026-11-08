@@ -8,7 +8,7 @@
 
   var KEYWORDS = [
     "NAME", "VERSION", "CONCURENCY", "DESCRIPTION", "MATCHING", "AS", "UNIQUE",
-    "DEFINE", "EVENT", "RULE", "ACTION", "CONST",
+    "DEFINE", "EVENT", "RULE", "ACTION", "ARTIFACT", "USING", "CONST",
     "INITIALIZE", "WORKFLOW", "ON", "WHEN", "RECURSIVE", "SWITCH",
     "STATE", "ENTER", "EXIT", "AND", "OR", "NOT",
     "EXECUTE", "STORE", "EXPIRE", "AFTER", "WAITING", "BEFORE",
@@ -82,7 +82,7 @@
   // être traité par plusieurs workflows) — c'est l'état qui référence
   // l'événement (@state.EventId). Il reste résolu pour les scripts existants.
   var CONTEXT_PATHS = [
-    "@IncomingEvent.", "@state.",
+    "@IncomingEvent.", "@state.", "@artifact.",
     "@Workflow.ExternalId", "@Workflow.CurrentState", "@Workflow.Uuid",
     "@Workflow.WorkflowName", "@Workflow.Version",
   ];
@@ -233,6 +233,23 @@
     });
   }
 
+  /** « @artifact.Nom » puis, après le nom, les parties connues par le
+   * schéma de l'artefact. N'a de sens que dans les arguments d'EXECUTE
+   * (l'analyse le refuse ailleurs). */
+  function artifactCompletions() {
+    var items = [];
+    (symbols.artifacts || []).forEach(function (a) {
+      items.push({text: "@artifact." + a.name,
+                  displayText: "@artifact." + a.name + "  ·  artefact" +
+                    (a.label ? " — " + a.label : "")});
+      ((symbols.artifact_properties || {})[a.name] || []).forEach(function (p) {
+        items.push({text: "@artifact." + a.name + "." + p.path,
+                    displayText: "@artifact." + a.name + "." + p.path + "  ·  " + p.type});
+      });
+    });
+    return items;
+  }
+
   function completionsFor(context) {
     if (context === "path") {
       return CONTEXT_PATHS.map(function (p) { return {text: p, displayText: p}; });
@@ -270,9 +287,10 @@
     (symbols.python_scripts || []).forEach(function (p) {
       if (names.indexOf(p.name) < 0) { names.push(p.name); }
     });
-    (symbols.rules || []).concat(symbols.actions || []).forEach(function (d) {
-      if (d.script && names.indexOf(d.script) < 0) { names.push(d.script); }
-    });
+    (symbols.rules || []).concat(symbols.actions || [], symbols.artifacts || [])
+      .forEach(function (d) {
+        if (d.script && names.indexOf(d.script) < 0) { names.push(d.script); }
+      });
     return names;
   }
 
@@ -283,6 +301,9 @@
   function detectContext(before) {
     if (/@IncomingEvent\.[\w.\[\]']*$/i.test(before)) { return "eventpath"; }
     if (/@state\.[\w.\[\]']*$/i.test(before)) { return "statepath"; }
+    if (/@artifact\.[\w.]*$/i.test(before)) { return "artifactpath"; }
+    // USING @ d'un artefact → scripts (son AS @ reste un schéma, plus bas).
+    if (/\bDEFINE\s+ARTIFACT\b[^;]*\bUSING\s+@?[\w.]*$/i.test(before)) { return "script"; }
     // AS @ d'une règle ou d'une action → scripts ; d'un événement ou d'un
     // état → schémas.
     if (/\bDEFINE\s+(?:RULE|ACTION)\b[^;]*\bAS\s+@?[\w.]*$/i.test(before)) { return "script"; }
@@ -311,6 +332,18 @@
           return item.text.toLowerCase().indexOf(typedPath) === 0;
         }),
         from: CodeMirror.Pos(cursor.line, cursor.ch - pathMatch[0].length),
+        to: CodeMirror.Pos(cursor.line, cursor.ch),
+      };
+    }
+
+    if (context === "artifactpath") {
+      var artifactMatch = /@artifact\.[\w.]*$/i.exec(lineText);
+      var typedArtifact = artifactMatch[0].toLowerCase();
+      return {
+        list: artifactCompletions().filter(function (item) {
+          return item.text.toLowerCase().indexOf(typedArtifact) === 0;
+        }),
+        from: CodeMirror.Pos(cursor.line, cursor.ch - artifactMatch[0].length),
         to: CodeMirror.Pos(cursor.line, cursor.ch),
       };
     }
@@ -708,6 +741,13 @@
     getRules: function () { return ruleSettings; },
     getSchemas: function () { return schemaSettings; },
     getScripts: function () { return scriptSettings; },
+    // Événements de la simulation (aperçu des artefacts : événement d'exemple).
+    getSimulationEvents: function () {
+      try {
+        var value = JSON.parse(document.getElementById("events-input").value || "[]");
+        return Array.isArray(value) ? value : [];
+      } catch (e) { return []; }
+    },
     ruleFunctions: RULE_FUNCTIONS,
     revalidate: function () { revalidate(); },
     // Création/remplacement d'un script, puis ré-analyse.

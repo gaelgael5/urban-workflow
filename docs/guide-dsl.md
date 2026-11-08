@@ -189,6 +189,20 @@ vérifiée au chargement ; l'exécution des méthodes d'action reste à cadrer
 Règles et actions partagent le même espace de noms : déclarer `RULE X`
 puis `ACTION X` est une erreur.
 
+### Artefacts
+
+```sql
+DEFINE ARTIFACT RequeteFacture 'corps de la requête de facturation'
+    AS @schema_RequeteFacture USING @requete_facture;
+```
+
+Extension urban-workflow : un artefact est un document JSON **nommé**,
+produit par un script (`USING @…`, en général `jslt`) et validé par un
+schéma facultatif (`AS @…`). Il fournit une donnée bien formée à une
+action : `EXECUTE AppelerFacturation(corps = @artifact.RequeteFacture)`.
+Pas de paramètres : le script lit le contexte. Détails :
+[guide-artefacts.md](guide-artefacts.md).
+
 ### Constantes
 
 ```sql
@@ -221,6 +235,9 @@ Un chemin navigue dans le contexte d'exécution, segment par segment :
   (ce que `STORE` y a écrit, plus les données de l'événement créateur) ;
 - `@IncomingEvent.…` — l'**événement entrant** (voir ci-dessous) ;
 - `@state.…` — l'**instance de l'état courant** (voir ci-dessous) ;
+- `@artifact.Nom[.partie]` — un **artefact JSON** produit à la demande,
+  seulement dans les arguments d'une action
+  ([guide-artefacts.md](guide-artefacts.md)) ;
 - `@Event.…` — ancien chemin vers l'événement en cours d'historisation,
   conservé pour les scripts existants mais plus proposé : les états de
   départ et d'arrivée ne sont pas des propriétés de l'événement (un même
@@ -618,6 +635,7 @@ DEFINE EVENT  Nom 'libellé' [AS @schema] [UNIQUE (Prop, …)];
 DEFINE RULE   Nom (TYPE arg, …) 'libellé';     -- TYPE : TEXT|INTEGER|DECIMAL
 DEFINE RULE   Nom (TYPE arg, …) 'libellé' AS @script;      -- méthode dans le ScriptRegistry
 DEFINE ACTION Nom (TYPE arg, …) 'libellé';
+DEFINE ARTIFACT Nom 'libellé' [AS @schema] USING @script;   -- JSON lu par @artifact.Nom
 DEFINE CONST  nom valeur 'libellé';            -- valeur : 'txt' | 42 | n DAY
 
 INITIALIZE WORKFLOW

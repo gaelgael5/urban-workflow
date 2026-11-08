@@ -1,6 +1,7 @@
 /* Vue « Scripts » : méthodes des règles référencées par
  * « DEFINE RULE … AS @nom » (décision du 2026-11-07 : pas de code dans le
- * document de workflow).
+ * document de workflow), et scripts jslt des artefacts
+ * « DEFINE ARTIFACT … USING @nom » (2026-11-08), avec aperçu du JSON produit.
  *
  * Liste = scripts référencés par le workflow (règles, actions) + scripts
  * écrits mais inutilisés ; détail = qui l'utilise (signatures) et un
@@ -43,6 +44,7 @@
   }
 
   function signature(d) {
+    if (d.kind === "artifact") { return "@artifact." + d.name; }
     return d.name + "(" + (d.params || []).map(function (p) {
       return p.type + " " + p.name;
     }).join(", ") + ")";
@@ -62,6 +64,12 @@
     });
     (symbols.actions || []).forEach(function (d) {
       if (d.script) { entry(d.script).users.push({kind: "action", decl: d}); }
+    });
+    (symbols.artifacts || []).forEach(function (d) {
+      if (d.script) {
+        entry(d.script).users.push({kind: "artifact",
+                                    decl: Object.assign({kind: "artifact"}, d)});
+      }
     });
     bridge.getScripts().forEach(function (s) { entry(s.name); });
     var python = {};
@@ -104,7 +112,17 @@
     return true;
   }
 
+  /** Langage d'un nouveau script : jslt pour un artefact (le JSON à
+   * produire), expression pour une règle. */
+  function languageFor(users) {
+    return users.some(function (u) { return u.kind === "artifact"; }) ? "jslt" : "expression";
+  }
+
   function newSource(users) {
+    if (languageFor(users) === "jslt") {
+      return '{\n    "reference": $.Workflow.ExternalId,\n' +
+        '    "evenement": $.IncomingEvent.Name\n}\n';
+    }
     var rule = users.filter(function (u) { return u.kind === "rule"; })[0];
     var head = rule ? "-- " + (rule.decl.comment || rule.decl.name) + "\n" : "";
     var params = rule ? (rule.decl.params || []).map(function (p) { return p.name; }) : [];
@@ -126,13 +144,15 @@
       var item = document.createElement("button");
       item.type = "button";
       item.className = "ev-item" + (e.name === selected ? " active" : "");
-      var badges = e.python ? "<span class='ev-badge'>python</span>" : "";
+      var written = findScript(e.name);
+      var badges = e.python ? "<span class='ev-badge'>python</span>"
+        : written && written.language === "jslt" ? "<span class='ev-badge'>jslt</span>" : "";
       if (!e.written) { badges += "<span class='ev-badge warn'>à écrire</span>"; }
       if (e.errors.length) { badges += "<span class='ev-badge ko'>erreur</span>"; }
       if (!e.users.length) { badges += "<span class='ev-badge muted'>inutilisé</span>"; }
       e.users.forEach(function (u) {
         badges += "<span class='ev-badge" + (u.kind === "action" ? " muted" : "") + "'>" +
-          esc(u.decl.name) + "</span>";
+          (u.kind === "artifact" ? "@artifact." : "") + esc(u.decl.name) + "</span>";
       });
       item.innerHTML = "<span class='ev-name'>@" + esc(e.name) + "</span>" +
         "<span class='ev-badges'>" + badges + "</span>";
@@ -261,7 +281,10 @@
     }
     return "<p class='notice'>Utilisé par : " + e.users.map(function (u) {
       return "<code>" + esc(signature(u.decl)) + "</code> (" +
-        (u.kind === "rule" ? "règle" : "action — exécution des méthodes d'action à venir") + ")";
+        (u.kind === "rule" ? "règle"
+          : u.kind === "artifact" ? "artefact" + (u.decl.schema_ref
+            ? ", validé par @" + esc(u.decl.schema_ref) : ", sans schéma")
+          : "action — exécution des méthodes d'action à venir") + ")";
     }).join(", ") + "</p>";
   }
 
@@ -275,29 +298,39 @@
       return;
     }
     dropEditor();
+    var language = script ? script.language || "expression" : languageFor(e.users);
+    var jslt = language === "jslt";
+    var artifacts = e.users.filter(function (u) { return u.kind === "artifact"; });
     detailEl.innerHTML =
       "<div class='ev-head'><h3>@" + esc(e.name) + "</h3>" +
-      "<span class='ev-badge'>expression</span></div>" +
+      "<span class='ev-badge'>" + esc(language) + "</span></div>" +
       "<div data-ref='users'>" + usersHtml(e) + "</div>" +
       (script
         ? "<div class='sc-editor' data-ref='editor'></div>" +
           "<div class='sc-signature' data-ref='signature' hidden></div>" +
           "<div class='diagnostics' data-ref='diags'></div>" +
-          "<p class='hint-text'>Une expression, sur autant de lignes que voulu " +
-          "(commentaires <code>--</code> et <code>/* */</code>). Paramètres des " +
-          "règles qui le référencent, constantes, <code>@IncomingEvent.…</code>, " +
-          "<code>@state.…</code>, fonctions — <kbd>Ctrl</kbd>+<kbd>Espace</kbd>.</p>" +
+          (jslt
+            ? "<p class='hint-text'>Transformation JSLT (urban-json) : le JSON produit. " +
+              "Document lu par <code>$.…</code> : <code>$.IncomingEvent</code>, " +
+              "<code>$.state</code>, <code>$.Workflow</code>, <code>$.constants</code>, " +
+              "<code>$.now</code> — <kbd>Ctrl</kbd>+<kbd>Espace</kbd>.</p>" +
+              (artifacts.length ? previewHtml(artifacts) : "")
+            : "<p class='hint-text'>Une expression, sur autant de lignes que voulu " +
+              "(commentaires <code>--</code> et <code>/* */</code>). Paramètres des " +
+              "règles qui le référencent, constantes, <code>@IncomingEvent.…</code>, " +
+              "<code>@state.…</code>, fonctions — <kbd>Ctrl</kbd>+<kbd>Espace</kbd>.</p>") +
           "<button type='button' data-ref='remove'>Supprimer le script</button>"
         : "<p class='notice ko'>Ce script est référencé mais pas encore écrit.</p>" +
           "<button type='button' class='primary' data-ref='create'>Créer le script</button>");
 
     if (!script) {
       detailEl.querySelector("[data-ref='create']").onclick = function () {
-        bridge.setScriptSource(e.name, newSource(e.users));
+        bridge.setScriptSource(e.name, newSource(e.users), languageFor(e.users));
         render();
       };
       return;
     }
+    if (jslt && artifacts.length) { bindPreview(artifacts); }
     detailEl.querySelector("[data-ref='remove']").onclick = function () {
       bridge.removeScript(e.name);
       dropEditor();
@@ -305,11 +338,11 @@
     };
     cm = CodeMirror(detailEl.querySelector("[data-ref='editor']"), {
       value: script.source || "",
-      mode: "workflow-dsl",
+      mode: jslt ? "jslt" : "workflow-dsl",
       lineNumbers: true,
       indentUnit: 4,
       extraKeys: {"Ctrl-Space": "autocomplete"},
-      hintOptions: {hint: scriptHint, completeSingle: false},
+      hintOptions: {hint: jslt ? jsltHint : scriptHint, completeSingle: false},
     });
     cmName = e.name;
     cm.on("change", function () {
@@ -324,9 +357,15 @@
       var token = instance.getTokenAt(instance.getCursor());
       if (token.type === "string" || token.type === "comment") { return; }
       // « ( » et « , » : début d'un argument, on repropose ce qui peut y aller.
+      if (jslt) {
+        if (/[\w$.]/.test(change.text[0])) {
+          instance.showHint({hint: jsltHint, completeSingle: false});
+        }
+        return;
+      }
       if (/[\w@.\[(,]/.test(change.text[0])) { openHint(instance); }
     });
-    cm.on("cursorActivity", function (instance) { showSignature(instance); });
+    if (!jslt) { cm.on("cursorActivity", function (instance) { showSignature(instance); }); }
     showErrors(e.errors);
     if (pendingCursor) {
       cm.setCursor(pendingCursor);
@@ -541,6 +580,153 @@
   }
 
   // ------------------------------------------------------------------
+  // Scripts jslt (artefacts)
+  // ------------------------------------------------------------------
+
+  CodeMirror.defineSimpleMode("jslt", {
+    start: [
+      {regex: /"(?:[^"\\]|\\.)*"/, token: "string"},
+      {regex: /\$(?:\.[A-Za-z_][\w]*|\[\d+\])*/, token: "variable-2"},
+      {regex: /\b(?:true|false|null|let|def|if|else|for|in)\b/, token: "keyword"},
+      {regex: /[A-Za-z_]\w*(?=\s*\()/, token: "builtin"},
+      {regex: /-?\d+(?:\.\d+)?/, token: "number"},
+      {regex: /==|!=|<=|>=|&&|\|\||[<>+*\/%!-]/, token: "operator"},
+      {regex: /[{}\[\]():,.]/, token: "punctuation"},
+    ],
+  });
+
+  /** Chemins $.… : mêmes objets que les chemins @ du DSL, sous leurs noms
+   * dans le document d'entrée (artifacts.script_document). */
+  function jsltPathItems() {
+    var symbols = bridge.getSymbols();
+    var items = [], seen = {};
+    function add(text, label) {
+      if (seen[text]) { return; }
+      seen[text] = true;
+      items.push({text: text, displayText: text + (label ? "  ·  " + label : ""),
+                  reopen: /\.$/.test(text)});
+    }
+    add("$.IncomingEvent.", "événement entrant");
+    pathItems("$.IncomingEvent.", symbols.event_properties, symbols.base_paths)
+      .forEach(function (i) { add(i.text, i.displayText.split("  ·  ").slice(1).join("  ·  ")); });
+    add("$.state.", "état du bloc qui utilise l'artefact");
+    pathItems("$.state.", symbols.state_properties, symbols.base_state_paths)
+      .forEach(function (i) { add(i.text, i.displayText.split("  ·  ").slice(1).join("  ·  ")); });
+    ["Uuid", "ExternalId", "CurrentState", "WorkflowName", "Version"].forEach(function (k) {
+      add("$.Workflow." + k, "workflow");
+    });
+    (symbols.constants || []).forEach(function (c) {
+      add("$.constants." + (c.name || c), constantLabel(c));
+    });
+    add("$.now", "horloge du moteur (ISO)");
+    return items;
+  }
+
+  function jsltHint(instance) {
+    var cursor = instance.getCursor();
+    var token = instance.getTokenAt(cursor);
+    if (token.type === "string") { return null; }
+    var lineText = instance.getLine(cursor.line).slice(0, cursor.ch);
+    var match = /[$\w.\[\]]*$/.exec(lineText);
+    var typed = (match ? match[0] : "").toLowerCase();
+    var list = typed.charAt(0) === "$" ? jsltPathItems() : [];
+    if (typed.charAt(0) !== "$") {
+      list = [{text: "$.", displayText: "$.  ·  document d'entrée", reopen: true}];
+      (bridge.getSymbols().jslt_functions || []).forEach(function (f) {
+        list.push({
+          text: f.name + "(",
+          displayText: f.name + "(" + f.params.join(", ") + ")" +
+            (f.returns ? " → " + f.returns : "") + "  ·  " + f.doc,
+        });
+      });
+      ["true", "false", "null"].forEach(function (k) { list.push({text: k, displayText: k}); });
+    }
+    return reopenAfterPick(instance, {
+      list: list.filter(function (i) {
+        return !typed || i.text.toLowerCase().indexOf(typed) === 0;
+      }),
+      from: CodeMirror.Pos(cursor.line, cursor.ch - typed.length),
+      to: cursor,
+    });
+  }
+
+  /** État où l'artefact est utilisé (premier DEFINE STATE qui contient
+   * @artifact.Nom) : c'est lui que $.state désignera. */
+  function stateUsing(artifactName) {
+    var text = bridge.getScript();
+    var at = text.search(new RegExp("@artifact\\." + reEscape(artifactName) + "\\b", "i"));
+    if (at < 0) { return ""; }
+    var before = text.slice(0, at), re = /\bDEFINE\s+STATE\s+(\w+)/gi, m, last = "";
+    while ((m = re.exec(before)) !== null) { last = m[1]; }
+    return last;
+  }
+
+  function previewHtml(artifacts) {
+    var states = bridge.getSymbols().states || [];
+    var events = bridge.getSimulationEvents();
+    var sample = events.length ? events[0] : {Name: "Evenement", ExternalId: "X-1"};
+    return "<div class='sc-preview'>" +
+      "<div class='sc-preview-head'><b>Aperçu</b> " +
+      "<select data-ref='pv-artifact'>" + artifacts.map(function (u) {
+        return "<option>" + esc(u.decl.name) + "</option>"; }).join("") + "</select>" +
+      " état <select data-ref='pv-state'><option value=''>(aucun)</option>" +
+      states.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("") +
+      "</select> <button type='button' class='primary' data-ref='pv-run'>Produire le JSON</button></div>" +
+      "<textarea data-ref='pv-event' rows='7' spellcheck='false'>" +
+      esc(JSON.stringify(sample, null, 2)) + "</textarea>" +
+      "<pre class='sc-preview-out' data-ref='pv-out'>Événement d'exemple ci-dessus " +
+      "(1er événement de la simulation) — « Produire le JSON » applique le script " +
+      "et le schéma de l'artefact.</pre></div>";
+  }
+
+  function bindPreview(artifacts) {
+    var artifactSel = detailEl.querySelector("[data-ref='pv-artifact']");
+    var stateSel = detailEl.querySelector("[data-ref='pv-state']");
+    var out = detailEl.querySelector("[data-ref='pv-out']");
+    function syncState() { stateSel.value = stateUsing(artifactSel.value); }
+    artifactSel.onchange = syncState;
+    syncState();
+    detailEl.querySelector("[data-ref='pv-run']").onclick = function () {
+      var event;
+      try {
+        event = JSON.parse(detailEl.querySelector("[data-ref='pv-event']").value || "{}");
+      } catch (err) {
+        out.className = "sc-preview-out ko";
+        out.textContent = "JSON de l'événement invalide : " + err.message;
+        return;
+      }
+      // Le texte en cours d'édition n'est peut-être pas encore enregistré
+      // (délai de sauvegarde) : on l'envoie tel quel.
+      var scripts = bridge.getScripts().map(function (s) {
+        return s.name === cmName && cm ? Object.assign({}, s, {source: cm.getValue()}) : s;
+      });
+      out.className = "sc-preview-out";
+      out.textContent = "production…";
+      fetch("/api/artifact-preview", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          script: bridge.getScript(), rules: bridge.getRules(),
+          schemas: bridge.getSchemas(), scripts: scripts,
+          artifact: artifactSel.value, event: event, state: stateSel.value,
+        }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          out.className = "sc-preview-out " + (data.ok ? "ok" : "ko");
+          out.textContent = data.ok
+            ? JSON.stringify(data.value, null, 2)
+            : data.error + (data.errors && data.errors.length
+              ? "\n- " + data.errors.join("\n- ") : "");
+        })
+        .catch(function () {
+          out.className = "sc-preview-out ko";
+          out.textContent = "serveur injoignable";
+        });
+    };
+  }
+
+  // ------------------------------------------------------------------
   // Branchements
   // ------------------------------------------------------------------
 
@@ -569,6 +755,10 @@
 
   // Poignée de tests UI (non documentée, API non garantie).
   window.PlaygroundScripts = {
+    runPreview: function () {
+      var b = detailEl.querySelector("[data-ref='pv-run']");
+      if (b) { b.click(); }
+    },
     select: function (name) { selected = name; dropEditor(); render(); },
     editor: function () { return cm; },
   };

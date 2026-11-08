@@ -116,6 +116,12 @@ supplémentaire s'ajoute avec `register_language` (sous-classe de
 `ScriptLanguage` : `name`, `extensions`, `check`, `compile`). Détails :
 [guide-regles.md](guide-regles.md).
 
+Les fichiers `.jslt` (langage `jslt`, urban-json) produisent les
+**artefacts JSON** (`DEFINE ARTIFACT … USING @script`), données remises aux
+actions par `@artifact.Nom`. Un JSON qui ne respecte pas le schéma de
+l'artefact lève une `ArtifactError` et interrompt le traitement :
+[guide-artefacts.md](guide-artefacts.md).
+
 ## 3. Charger les scripts
 
 ### Un script seul
