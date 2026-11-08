@@ -58,6 +58,21 @@ class UnknownScriptError(WorkflowError):
     enregistré (ou un langage de script inconnu)."""
 
 
+class ArtifactError(WorkflowError):
+    """Un artefact (``DEFINE ARTIFACT``) n'a pas pu être produit : erreur du
+    script de production, ou JSON produit non conforme à son schéma.
+
+    Contrairement à une règle (qui vaut ``False`` plutôt que d'échouer), un
+    artefact est une donnée destinée à autre chose (corps d'un appel…) :
+    une donnée mal formée doit arrêter le traitement, pas partir en
+    silence. ``errors`` porte les violations de schéma, le cas échéant.
+    """
+
+    def __init__(self, message: str, errors=None) -> None:
+        super().__init__(message)
+        self.errors = list(errors or [])
+
+
 class EventSchemaError(WorkflowError):
     """Le payload d'un événement ne respecte pas le schéma déclaré.
 

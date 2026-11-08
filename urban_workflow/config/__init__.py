@@ -1,6 +1,7 @@
 """Modèle de configuration des workflows (cible du visiteur DSL)."""
 
 from .rules import (
+    DeclaredArtifactConfig,
     DeclaredEventConfig,
     ResultActionConfig,
     ResultRuleConfig,
@@ -17,6 +18,7 @@ from .states import (
 from .workflow import WorkflowConfig, WorkflowsConfig
 
 __all__ = [
+    "DeclaredArtifactConfig",
     "DeclaredEventConfig",
     "IncomingEventConfig",
     "InitializationConfig",

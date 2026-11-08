@@ -25,7 +25,9 @@ from typing import Any
 from antlr4.tree.Tree import ErrorNode
 
 from .. import constants
+from ..artifacts import ArtifactPath, make_producer, script_document
 from ..config import (
+    DeclaredArtifactConfig,
     DeclaredEventConfig,
     IncomingEventConfig,
     InitializationOnEventConfig,
@@ -162,6 +164,11 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         #: Nœud ``AS @script`` de chaque déclaration : position citée par
         #: les erreurs du contrôle des scripts à la déclaration.
         self._script_ref_nodes: dict[str, Any] = {}
+        #: Nœud ``DEFINE ARTIFACT`` de chaque artefact (erreurs de script).
+        self._artifact_nodes: dict[str, Any] = {}
+        #: Vrai pendant la visite des arguments d'une action EXECUTE : seul
+        #: endroit où ``@artifact.X`` a un sens (donnée fournie à l'action).
+        self._in_action_arguments = False
 
     # ------------------------------------------------------------------
     # API publique
@@ -314,6 +321,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             ctx.event_declaration_statement,
             ctx.rule_declaration_statement,
             ctx.action_declaration_statement,
+            ctx.artifact_declaration_statement,
             ctx.constant_declaration,
         ):
             sub = getter()
@@ -339,6 +347,16 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                     f"event {declaration.name!r} is already declared",
                 )
             self._workflow.declared_events[declaration.name] = declaration
+
+        elif isinstance(declaration, DeclaredArtifactConfig):
+            if declaration.name in self._workflow.declared_artifacts:
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    ctx,
+                    f"artifact {declaration.name!r} is already declared",
+                )
+            self._workflow.declared_artifacts[declaration.name] = declaration
+            self._artifact_nodes[declaration.name] = ctx
 
         elif isinstance(declaration, DeclaredFunction):
             pass  # déjà enregistrée par la visite de la déclaration
@@ -400,6 +418,59 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                 )
             keys.append(key)
         return keys
+
+    def visitArtifact_declaration_statement(
+        self, ctx: WorkflowParser.Artifact_declaration_statementContext
+    ) -> DeclaredArtifactConfig:
+        """``DEFINE ARTIFACT X 'l' AS @schema USING @script`` — même
+        politique que les autres références : sans registre, la référence
+        est gardée sans résolution ; avec registre, inconnue = erreur
+        positionnée sur la référence."""
+        declared = DeclaredArtifactConfig(
+            name=self.visitKey(ctx.key()),
+            label=self._optional_comment(ctx),
+            script_ref=self.visitCompositekey(ctx.scriptRef).lstrip("@"),
+        )
+        if ctx.schemaRef is not None:
+            declared.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    declared.schema = self._schemas.get(declared.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx.schemaRef, str(exc))
+        if self._scripts is not None and declared.script_ref not in self._scripts:
+            self._raise_positioned(
+                UnknownScriptError,
+                ctx.scriptRef,
+                f"artifact {declared.name!r}: no script registered under name "
+                f"{declared.script_ref!r}; known: {self._scripts.names()}",
+            )
+        return declared
+
+    def _compile_artifact(self, declared: DeclaredArtifactConfig) -> Callable[[Any], Any]:
+        """Producteur ``(run_ctx) -> JSON`` de l'artefact, lié au bloc
+        courant (``@state`` du document = état du bloc qui l'utilise)."""
+        script = self._scripts.get(declared.script_ref)
+        state_name = self._current_state.name if self._current_state is not None else ""
+        constants = {k: c.value for k, c in self._constants.items()}
+
+        def error(exc_type: type[WorkflowError], ctx, message: str):
+            token = ctx.start if hasattr(ctx, "start") else ctx
+            raise exc_type(f"{script.where}:{token.line}:{token.column}: {message}")
+
+        binding = ScriptBinding(
+            owner=f"artifact {declared.name}",
+            constants=constants,
+            make_path=lambda raw, ctx: self._make_path(raw, ctx, error=error),
+            error=error,
+            document=lambda run_ctx, params: script_document(
+                run_ctx, params, state_name, constants
+            ),
+        )
+        compiled = self._scripts.compile(declared.script_ref, binding)
+        return make_producer(
+            declared.name, compiled, script.where, declared.schema, declared.schema_ref
+        )
 
     def visitAction_declaration_statement(
         self, ctx: WorkflowParser.Action_declaration_statementContext
@@ -473,6 +544,16 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                             f"{exc} (in rule {declaration.name!r} declared at "
                             f"{self._position(node)})"
                         ) from None
+            # Artefacts : leur script est contrôlé de même, utilisé ou non.
+            for declared in self._workflow.declared_artifacts.values():
+                try:
+                    self._compile_artifact(declared)
+                except WorkflowError as exc:
+                    node = self._artifact_nodes[declared.name]
+                    raise type(exc)(
+                        f"{exc} (in artifact {declared.name!r} declared at "
+                        f"{self._position(node)})"
+                    ) from None
         finally:
             self._checking_script = False
         #: Nœud ``AS @script`` de chaque déclaration : position citée par
@@ -782,9 +863,13 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                         f"unknown argument {key!r} in call to action {name!r}; "
                         f"expected: {sorted(declaration.parameters)}",
                     )
-                action.arguments[key] = self._make_argument_value(
-                    raw_value, declaration.parameters[key], argument_ctx
-                )
+                self._in_action_arguments = True
+                try:
+                    action.arguments[key] = self._make_argument_value(
+                        raw_value, declaration.parameters[key], argument_ctx
+                    )
+                finally:
+                    self._in_action_arguments = False
                 remaining.pop(key, None)
 
         if remaining:
@@ -886,6 +971,9 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             )
             return path
 
+        if kind == "artifact":
+            return self._make_artifact_path(segments, ctx, raise_error, in_script=error is not None)
+
         if "[" in raw:
             raise_error(
                 InvalidArgumentValueError,
@@ -894,6 +982,45 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                 f"@state paths, not on @{root}",
             )
         return ContextRef.parse(raw)
+
+    def _make_artifact_path(self, segments, ctx, raise_error, in_script: bool):
+        if in_script or self._checking_script or not self._in_action_arguments:
+            raise_error(
+                InvalidArgumentValueError,
+                ctx,
+                "@artifact.<Name> is only available in EXECUTE action arguments "
+                "(an artifact is data handed to an action)",
+            )
+        if not segments or not isinstance(segments[0], str):
+            raise_error(
+                InvalidArgumentValueError, ctx,
+                "@artifact needs an artifact name: @artifact.<Name>",
+            )
+        name = segments[0]
+        declared = self._workflow.declared_artifacts.get(name)
+        if declared is None:
+            raise_error(
+                InvalidArgumentValueError,
+                ctx,
+                f"unknown artifact {name!r} (DEFINE ARTIFACT); "
+                f"declared: {sorted(self._workflow.declared_artifacts)}",
+            )
+        if self._scripts is None:
+            raise_error(
+                InvalidMethodReferenceError,
+                ctx,
+                f"artifact {name!r} is produced by script @{declared.script_ref} "
+                "but no ScriptRegistry was provided",
+            )
+        path = ArtifactPath(segments, producer=self._compile_artifact(declared))
+        # Partie demandée (@artifact.X.champ) contrôlée contre le schéma de
+        # l'artefact, quand il est résolu.
+        if len(segments) > 1 and declared.schema is not None:
+            self._check_document_path(
+                path, {"properties": {name: declared.schema}}, {},
+                declared.schema_ref, f"artifact {name!r}", ctx, raise_error,
+            )
+        return path
 
     def _check_document_path(
         self,

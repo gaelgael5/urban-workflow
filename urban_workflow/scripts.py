@@ -15,14 +15,17 @@ schémas (:class:`~urban_workflow.schemas.SchemaRegistry`) :
     )
     config = parse_config(script, scripts=scripts)
 
-Chaque script a un **langage**, qui sait le compiler. Deux langages sont
+Chaque script a un **langage**, qui sait le compiler. Trois langages sont
 fournis :
 
 - ``expression`` — le langage d'expressions des règles (fichiers ``.expr``,
   voir :mod:`urban_workflow.dsl.expressions`) ;
 - ``python`` — un callable ``(ctx, **params)`` enregistré par
   :meth:`ScriptRegistry.add_function` (pas de fichier ``.py`` exécuté : le
-  chargement de code reste du ressort de l'application).
+  chargement de code reste du ressort de l'application) ;
+- ``jslt`` — une transformation urban-json (fichiers ``.jslt``) qui produit
+  un JSON depuis le document de contexte : script des artefacts
+  (``DEFINE ARTIFACT … USING @nom``, voir :mod:`urban_workflow.artifacts`).
 
 D'autres langages s'ajoutent par :meth:`ScriptRegistry.register_language`
 sans toucher au DSL : c'est l'intérêt de la référence.
@@ -74,6 +77,11 @@ class ScriptBinding:
     constants: dict[str, Any] = field(default_factory=dict)
     make_path: Callable[[str, Any], Any] | None = None
     error: Callable[[type, Any, str], Any] | None = None
+    #: Fabrique du document JSON d'entrée ``(run_ctx, params) -> document``
+    #: pour les langages de transformation (``jslt``) : événement entrant,
+    #: état du bloc appelant, workflow, constantes, paramètres. Liée au site
+    #: d'appel comme ``make_path``.
+    document: Callable[[Any, dict[str, Any]], Any] | None = None
 
 
 class ScriptLanguage(ABC):
@@ -123,9 +131,10 @@ class ScriptRegistry:
         if languages is None:
             # Import paresseux : le langage d'expressions vit dans le DSL,
             # qui importe lui-même ce module.
+            from .artifacts import JsltLanguage
             from .dsl.expressions import ExpressionLanguage
 
-            languages = [ExpressionLanguage(), PythonLanguage()]
+            languages = [ExpressionLanguage(), PythonLanguage(), JsltLanguage()]
         for language in languages:
             self.register_language(language)
 

@@ -7,6 +7,7 @@ sorties JSON par `urban-json <https://pypi.org/project/urban-json/>`_.
 
 from .clock import WorkflowClock
 from .config import (
+    DeclaredArtifactConfig,
     DeclaredEventConfig,
     IncomingEventConfig,
     InitializationConfig,
@@ -85,6 +86,7 @@ __all__ = [
     "WorkflowFactory",
     "WorkflowProcessor",
     "parse_incoming_event",
+    "DeclaredArtifactConfig",
     "DeclaredEventConfig",
     "DuplicatedArgumentNameError",
     "Event",

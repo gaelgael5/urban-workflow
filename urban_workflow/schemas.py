@@ -104,6 +104,13 @@ def validate_document(schema: Mapping[str, Any], document: Mapping[str, Any]) ->
 
     Lève :class:`EventSchemaError` listant toutes les violations.
     """
+    validate_value(schema, dict(document))
+
+
+def validate_value(schema: Mapping[str, Any], value: Any) -> None:
+    """Comme :func:`validate_document`, pour une valeur JSON quelconque
+    (un artefact peut être une liste ou un scalaire, pas seulement un
+    objet)."""
     try:
         import jsonschema
     except ImportError as exc:  # pragma: no cover
@@ -116,7 +123,7 @@ def validate_document(schema: Mapping[str, Any], document: Mapping[str, Any]) ->
     validator = validator_cls(schema, format_checker=validator_cls.FORMAT_CHECKER)
     errors = [
         f"{'/'.join(str(p) for p in error.absolute_path) or '<racine>'}: {error.message}"
-        for error in validator.iter_errors(dict(document))
+        for error in validator.iter_errors(value)
     ]
     if errors:
         raise EventSchemaError(

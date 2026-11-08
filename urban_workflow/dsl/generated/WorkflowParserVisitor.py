@@ -149,6 +149,11 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#artifact_declaration_statement.
+    def visitArtifact_declaration_statement(self, ctx:WorkflowParser.Artifact_declaration_statementContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#rule_declaration_statement.
     def visitRule_declaration_statement(self, ctx:WorkflowParser.Rule_declaration_statementContext):
         return self.visitChildren(ctx)

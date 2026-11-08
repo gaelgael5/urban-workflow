@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from .. import constants
 from ..exceptions import MissingConfigurationError, MissingStateError
 from ..models import IncomingEvent
-from .rules import DeclaredEventConfig
+from .rules import DeclaredArtifactConfig, DeclaredEventConfig
 from .states import InitializationOnEventConfig, StateConfig
 
 _TECHNICAL_EVENT_LABELS = {
@@ -32,6 +32,7 @@ class WorkflowConfig:
     filters: dict[str, str] = field(default_factory=dict)
     initializers: dict[str, InitializationOnEventConfig] = field(default_factory=dict)
     declared_events: dict[str, DeclaredEventConfig] = field(default_factory=dict)
+    declared_artifacts: dict[str, DeclaredArtifactConfig] = field(default_factory=dict)
     states: dict[str, StateConfig] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

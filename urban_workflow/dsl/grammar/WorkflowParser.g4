@@ -55,6 +55,7 @@ define_referenciel_statement :
         event_declaration_statement
       | rule_declaration_statement
       | action_declaration_statement
+      | artifact_declaration_statement
       | constant_declaration
     )    
     ;
@@ -186,6 +187,17 @@ action_declaration_statement :
     // l'action dans le ScriptRegistry (verifiee au chargement ; son
     // execution est a cadrer).
     ACTION key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS scriptRef=compositekey)?
+    ;
+
+artifact_declaration_statement :
+    // Extension urban-workflow (decision utilisateur du 2026-11-08) : un
+    // artefact est un document JSON NOMME, produit par un script (jslt) du
+    // ScriptRegistry (USING) et valide par un JSON Schema facultatif du
+    // SchemaRegistry (AS, comme EVENT et STATE). Sans parametres : le script
+    // lit le contexte ; consomme par le chemin @artifact.Nom dans les
+    // arguments d'action (le JSON n'est qu'un moyen de fournir une donnee
+    // bien formee a autre chose, ex. le corps d'un appel HTTP).
+    ARTIFACT key comment? (AS schemaRef=compositekey)? USING scriptRef=compositekey
     ;
 
 rule_declaration_statement :

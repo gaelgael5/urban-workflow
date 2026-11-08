@@ -77,6 +77,16 @@ class SurfaceFunction:
 
 
 @dataclass
+class SurfaceArtifact:
+    """``DEFINE ARTIFACT nom 'libellé' [AS @schema] USING @script;``"""
+
+    name: str
+    label: str = ""
+    schema_ref: str = ""
+    script: str = ""
+
+
+@dataclass
 class SurfaceConst:
     """``DEFINE CONST nom valeur 'libellé';`` — ``value`` = texte source brut."""
 
@@ -149,6 +159,7 @@ class SurfaceModel:
     events: list[SurfaceEvent] = field(default_factory=list)
     rules: list[SurfaceFunction] = field(default_factory=list)
     actions: list[SurfaceFunction] = field(default_factory=list)
+    artifacts: list[SurfaceArtifact] = field(default_factory=list)
     consts: list[SurfaceConst] = field(default_factory=list)
     initializers: list[SurfaceInitializer] = field(default_factory=list)
     states: list[SurfaceState] = field(default_factory=list)
@@ -195,6 +206,15 @@ class SurfaceModel:
             ],
             rules=functions(data.get("rules")),
             actions=functions(data.get("actions")),
+            artifacts=[
+                SurfaceArtifact(
+                    name=str(a.get("name", "")),
+                    label=str(a.get("label", "")),
+                    schema_ref=str(a.get("schema_ref", "") or "").lstrip("@"),
+                    script=str(a.get("script", "") or "").lstrip("@"),
+                )
+                for a in data.get("artifacts", []) or []
+            ],
             consts=[
                 SurfaceConst(
                     name=str(c.get("name", "")),
@@ -333,6 +353,7 @@ def extract_surface(source: str, filename: str = "") -> SurfaceModel:
         event = statement.event_declaration_statement()
         rule = statement.rule_declaration_statement()
         action = statement.action_declaration_statement()
+        artifact = statement.artifact_declaration_statement()
         const = statement.constant_declaration()
         if event is not None:
             declared = SurfaceEvent(
@@ -349,6 +370,16 @@ def extract_surface(source: str, filename: str = "") -> SurfaceModel:
             model.rules.append(_function(rule))
         elif action is not None:
             model.actions.append(_function(action))
+        elif artifact is not None:
+            model.artifacts.append(
+                SurfaceArtifact(
+                    name=artifact.key().getText(),
+                    label=_optional_label(artifact),
+                    schema_ref=(artifact.schemaRef.getText().lstrip("@")
+                                if artifact.schemaRef is not None else ""),
+                    script=artifact.scriptRef.getText().lstrip("@"),
+                )
+            )
         elif const is not None:
             model.consts.append(
                 SurfaceConst(
@@ -491,6 +522,14 @@ def render_script(model: SurfaceModel) -> str:
         declare("RULE  ", rule)
     for action in model.actions:
         declare("ACTION", action)
+    for artifact in model.artifacts:
+        head = f"DEFINE ARTIFACT {artifact.name}"
+        if artifact.label:
+            head += f" {_quote(artifact.label)}"
+        refs = (f"AS @{artifact.schema_ref} " if artifact.schema_ref else "") + \
+            f"USING @{artifact.script}"
+        lines.append(head)
+        lines.append(f"    {refs};")
     for const in model.consts:
         head = f"DEFINE CONST  {const.name} {const.value}"
         if const.label:

@@ -21,6 +21,9 @@ lexer grammar WorkflowLexer;
 ACTION :    'ACTION';
 AFTER :     'AFTER';
 AND :       'AND';
+// Extension urban-workflow : artefacts JSON nommes --
+// DEFINE ARTIFACT X 'libelle' AS @schema USING @script;
+ARTIFACT :  'ARTIFACT';
 // Extension urban-workflow (absente du source .NET) : reference de schema
 // dans les declarations d'evenements — DEFINE EVENT X '...' AS @schema;
 AS :        'AS';
@@ -80,6 +83,8 @@ TIME :      'TIME';
 TRUE :      'TRUE';
 // Extension urban-workflow : cle d'unicite des evenements (anti-doublon).
 UNIQUE :    'UNIQUE';
+// Extension urban-workflow : script de production d'un artefact.
+USING :     'USING';
 VERSION:    'VERSION';
 
 WAITING :   'WAITING';
