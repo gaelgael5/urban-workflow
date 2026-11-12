@@ -399,14 +399,23 @@ format):
 | Key | Role |
 |---|---|
 | `Name` | Event name (required for routing) |
-| `Uuid` | Event identity — **the replay-without-duplicates key** |
+| `Uuid` | Event identity — **the replay-without-duplicates key**. Absent or `null`, it is generated, and the event is then deduplicated on its functional signature |
 | `ExternalId` | Subject identifier: groups instances |
-| `CreationDate`, `EventDate` | ISO 8601 dates |
+| `CreationDate`, `EventDate` | ISO 8601 dates. `EventDate` is the **functional date**: it is part of the default deduplication key |
 | `DedupKey` | Optional idempotency key supplied by the emitter — two events carrying the same key are integrated only once (takes precedence over `UNIQUE`) |
 | `IntegrationDate` | **Set by the engine** (`WorkflowClock`) when `evaluate_event` receives the event: the date it entered the system. A value sent by the emitter is ignored. Kept in the history (`Event.integration_date`, SQL column `integration_date`) and exposed to templates (`event.integration_date`, `incoming.integration_date`) |
 | *everything else* | Business data (`extended_datas`), visible to rules, `MATCHING` filters and templates |
 
 An invalid payload raises `InvalidIncomingEventFormatError`.
+
+Deduplication is always on, even without a `DedupKey` or a `UNIQUE`
+clause: the payload's `Uuid` is then used as the key, and failing that
+the functional signature `Name` + `EventDate` (+ `ExternalId` when set).
+An event with neither `Uuid` **nor** `EventDate` is not deduplicated —
+the full cascade and the reasoning behind that last case are in
+[dsl-guide.md](dsl-guide.md#how-the-engine-picks-the-deduplication-key).
+An `IncomingEvent` built in code carries `uuid_from_payload=False`: its
+`Uuid` is only used as a key if the caller sets that flag to true.
 
 ### Event schemas (`[schemas]` extra)
 

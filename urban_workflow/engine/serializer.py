@@ -67,6 +67,13 @@ def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingE
             continue
         known = _KNOWN_FIELDS.get(key)
         if known is not None:
+            # Un Uuid absent ou null laisse celui tiré par le modèle, et
+            # l'événement reste « sans Uuid d'émetteur » : le moteur ne
+            # dédoublonnera donc pas dessus.
+            if key == "Uuid":
+                if value is None:
+                    continue
+                event.uuid_from_payload = True
             attribute, convert = known
             setattr(event, attribute, convert(value))
         else:

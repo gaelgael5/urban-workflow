@@ -124,9 +124,37 @@ extensions):
 - **`UNIQUE (Prop, …)`** — functional deduplication: the engine hashes the
   concatenation of these payload properties (SHA-256) and **ignores** any
   event whose fingerprint already exists in the workflow history (same
-  silent mechanism as the `Uuid` anti-replay). If the emitter supplies the
-  reserved **`DedupKey`** property in the payload (idempotency key), it
-  takes **precedence** over `UNIQUE`.
+  silent mechanism as the `Uuid` anti-replay).
+
+#### How the engine picks the deduplication key
+
+Deduplication is **always on**: with no explicit key, the engine falls
+back to the event's base properties. First matching rule wins, from the
+most explicit to the fallback:
+
+| # | Key used | When |
+|---|---|---|
+| 1 | `DedupKey` | the emitter supplies this reserved property (idempotency key) |
+| 2 | the `UNIQUE (…)` properties | configured on `DEFINE EVENT` |
+| 3 | `Uuid` | neither of the above, but the payload carries a non-null `Uuid` |
+| 4 | `Name` + `EventDate` (+ `ExternalId` when set) | neither of the above, and no `Uuid` in the payload |
+| — | *none* (nothing is deduplicated) | no `Uuid` **and** no `EventDate` |
+
+Case 4 is the event's **functional signature**: same type, same
+functional date, same case file = same event. `ExternalId` enters the
+fingerprint when set, so that two different case files do not
+deduplicate against each other.
+
+The last case is deliberate: `Name` (+ `ExternalId`) alone would reject
+*every* later event of the same type on the same case file. Too broad a
+deduplication silently drops events, whereas its absence at worst lets a
+duplicate through — so an event with neither `Uuid` nor `EventDate` needs
+a `UNIQUE` or a `DedupKey` to be deduplicated.
+
+A caller that builds an `IncomingEvent` itself instead of passing a
+payload sets `uuid_from_payload=True` for its `Uuid` to be used as the
+key (case 3): without that flag, the default generated `Uuid` would be
+indistinguishable from a meaningful one.
 
 ### Rules
 

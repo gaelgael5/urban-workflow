@@ -125,9 +125,38 @@ mais non déclaré est ignoré par ce workflow. Deux clauses optionnelles
 - **`UNIQUE (Prop, …)`** — anti-doublon fonctionnel : le moteur hache la
   concaténation de ces propriétés du payload (SHA-256) et **ignore** tout
   événement dont l'empreinte existe déjà dans l'historique du workflow
-  (même mécanique silencieuse que l'anti-rejeu par `Uuid`). Si l'émetteur
-  fournit la propriété réservée **`DedupKey`** dans le payload (clé
-  d'idempotence), elle est **prioritaire** sur `UNIQUE`.
+  (même mécanique silencieuse que l'anti-rejeu par `Uuid`).
+
+#### Comment le moteur choisit la clé de dédoublonnage
+
+Le dédoublonnage est **toujours actif** : à défaut de clé explicite, le
+moteur se replie sur le socle de l'événement. Première règle qui
+s'applique, de la plus explicite au repli :
+
+| # | Clé utilisée | Quand |
+|---|---|---|
+| 1 | `DedupKey` | l'émetteur fournit cette propriété réservée (clé d'idempotence) |
+| 2 | les propriétés `UNIQUE (…)` | paramétrage déclaré sur `DEFINE EVENT` |
+| 3 | `Uuid` | ni l'un ni l'autre, mais le payload porte un `Uuid` non nul |
+| 4 | `Name` + `EventDate` (+ `ExternalId` s'il est renseigné) | ni l'un ni l'autre, et pas d'`Uuid` dans le payload |
+| — | *aucune* (rien n'est dédoublonné) | pas d'`Uuid` **et** pas d'`EventDate` |
+
+Le cas 4 est la **signature fonctionnelle** de l'événement : même type,
+même date fonctionnelle, même dossier = même événement. L'`ExternalId`
+entre dans l'empreinte quand il est renseigné, pour que deux dossiers
+différents ne se dédoublonnent pas l'un contre l'autre.
+
+Le dernier cas est volontaire : `Name` (+ `ExternalId`) seuls
+rejetteraient *tout* événement ultérieur du même type sur le même
+dossier. Un dédoublonnage trop large perd des événements en silence,
+alors que son absence laisse au pire passer un doublon — un événement
+sans `Uuid` ni `EventDate` a donc besoin d'un `UNIQUE` ou d'un `DedupKey`
+pour être dédoublonné.
+
+Un appelant qui construit lui-même un `IncomingEvent` au lieu de passer
+un payload met `uuid_from_payload=True` pour que son `Uuid` serve de clé
+(cas 3) : sans ce drapeau, l'`Uuid` généré par défaut serait indiscernable
+d'un `Uuid` porteur de sens.
 
 ### Règles
 

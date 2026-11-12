@@ -382,3 +382,126 @@ class TestIntegrationDate:
             IncomingEvent(name="X", integration_date=instant)
         )
         assert document["IntegrationDate"] == instant.isoformat()
+
+
+# ----------------------------------------------------------------------
+# Moteur : repli anti-doublon automatique (ni DedupKey, ni UNIQUE)
+# ----------------------------------------------------------------------
+
+NO_UNIQUE_SCRIPT = UNIQUE_SCRIPT.replace(" UNIQUE (ExternalId, Montant)", "")
+
+
+class TestAutomaticDedup:
+    """Faute de paramétrage : Uuid du payload, sinon signature fonctionnelle."""
+
+    def _events(self, storage, external_id="DA-1"):
+        from urban_workflow import Workflow
+
+        workflows = storage.get_by(Workflow, external_id, "external_id")
+        return [e for w in workflows for e in w.events]
+
+    def test_payload_uuid_is_used_as_dedup_key(self):
+        from uuid import uuid4
+
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+        uuid = str(uuid4())
+
+        # Même Uuid, montants différents : rejeu du même événement.
+        engine.evaluate_event({"Name": "DemandeSoumise", "Uuid": uuid,
+                               "ExternalId": "DA-1", "Montant": 120})
+        engine.evaluate_event({"Name": "DemandeSoumise", "Uuid": uuid,
+                               "ExternalId": "DA-1", "Montant": 999})
+        events = self._events(storage)
+        assert len(events) == 1
+        assert len(events[0].dedup_hash) == 64
+
+        engine.evaluate_event({"Name": "DemandeSoumise", "Uuid": str(uuid4()),
+                               "ExternalId": "DA-1", "Montant": 120})
+        assert len(self._events(storage)) == 2
+
+    def test_functional_signature_without_payload_uuid(self):
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+        payload = {"Name": "DemandeSoumise", "ExternalId": "DA-1",
+                   "EventDate": "2026-11-12T09:00:00+00:00"}
+
+        engine.evaluate_event(dict(payload))
+        engine.evaluate_event(dict(payload, Montant=999))  # doublon
+        assert len(self._events(storage)) == 1
+
+        # Date fonctionnelle différente : événement distinct.
+        engine.evaluate_event(dict(payload, EventDate="2026-11-12T10:00:00+00:00"))
+        assert len(self._events(storage)) == 2
+
+    def test_external_id_separates_functional_signatures(self):
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+        payload = {"Name": "DemandeSoumise",
+                   "EventDate": "2026-11-12T09:00:00+00:00"}
+
+        engine.evaluate_event(dict(payload, ExternalId="DA-1"))
+        engine.evaluate_event(dict(payload, ExternalId="DA-2"))
+
+        hashes = {self._events(storage, "DA-1")[0].dedup_hash,
+                  self._events(storage, "DA-2")[0].dedup_hash}
+        assert len(hashes) == 2
+
+    def test_no_uuid_and_no_event_date_means_no_dedup(self):
+        """Name (+ ExternalId) seuls rejetteraient tout événement suivant."""
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+        payload = {"Name": "DemandeSoumise", "ExternalId": "DA-1"}
+
+        engine.evaluate_event(dict(payload))
+        engine.evaluate_event(dict(payload))
+        events = self._events(storage)
+        assert len(events) == 2
+        assert [e.dedup_hash for e in events] == ["", ""]
+
+    def test_null_uuid_falls_back_to_functional_signature(self):
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+        payload = {"Name": "DemandeSoumise", "Uuid": None, "ExternalId": "DA-1",
+                   "EventDate": "2026-11-12T09:00:00+00:00"}
+
+        engine.evaluate_event(dict(payload))
+        engine.evaluate_event(dict(payload))
+        assert len(self._events(storage)) == 1
+
+    def test_declared_unique_wins_over_automatic_fallback(self):
+        engine, storage = make_engine(UNIQUE_SCRIPT)
+        payload = {"Name": "DemandeSoumise", "ExternalId": "DA-1",
+                   "EventDate": "2026-11-12T09:00:00+00:00"}
+
+        # Même signature fonctionnelle, montants différents : UNIQUE décide,
+        # ce sont deux événements.
+        engine.evaluate_event(dict(payload, Montant=120))
+        engine.evaluate_event(dict(payload, Montant=121))
+        assert len(self._events(storage)) == 2
+
+    def test_dedup_key_wins_over_automatic_fallback(self):
+        from uuid import uuid4
+
+        engine, storage = make_engine(NO_UNIQUE_SCRIPT)
+
+        # Uuid différents (le repli dirait « distincts ») mais même DedupKey.
+        for _ in range(2):
+            engine.evaluate_event({"Name": "DemandeSoumise", "Uuid": str(uuid4()),
+                                   "ExternalId": "DA-1", "DedupKey": "cmd-1"})
+        assert len(self._events(storage)) == 1
+
+    def test_keys_of_an_event_built_in_code(self):
+        from urban_workflow.engine.processor import _automatic_dedup_keys
+        from urban_workflow.models import IncomingEvent
+
+        event = IncomingEvent(name="X")
+        assert _automatic_dedup_keys(event) == ()
+
+        event.uuid_from_payload = True  # Uuid porteur de sens posé par l'appelant
+        assert _automatic_dedup_keys(event) == ("Uuid",)
+
+    def test_parsed_uuid_marks_its_provenance(self):
+        from uuid import uuid4
+
+        from urban_workflow import parse_incoming_event
+
+        assert parse_incoming_event({"Name": "X"}).uuid_from_payload is False
+        assert parse_incoming_event({"Name": "X", "Uuid": None}).uuid_from_payload is False
+        parsed = parse_incoming_event({"Name": "X", "Uuid": str(uuid4())})
+        assert parsed.uuid_from_payload is True

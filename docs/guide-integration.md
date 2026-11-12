@@ -405,14 +405,23 @@ Propriétés reconnues (CamelCase, héritées du format source) :
 | Clé | Rôle |
 |---|---|
 | `Name` | Nom de l'événement (obligatoire pour router) |
-| `Uuid` | Identité de l'événement — **la clé du rejeu sans doublon** |
+| `Uuid` | Identité de l'événement — **la clé du rejeu sans doublon**. Absent ou `null`, il est généré, et l'événement est alors dédoublonné sur sa signature fonctionnelle |
 | `ExternalId` | Identifiant du sujet : regroupe les instances |
-| `CreationDate`, `EventDate` | Dates ISO 8601 |
+| `CreationDate`, `EventDate` | Dates ISO 8601. `EventDate` est la **date fonctionnelle** : elle entre dans la clé de dédoublonnage par défaut |
 | `DedupKey` | Clé d'idempotence optionnelle fournie par l'émetteur — deux événements portant la même clé ne sont intégrés qu'une fois (prioritaire sur `UNIQUE`) |
 | `IntegrationDate` | **Posée par le moteur** (horloge `WorkflowClock`) à l'entrée de `evaluate_event` : date d'insertion dans le système. Une valeur envoyée par l'émetteur est ignorée. Conservée dans l'historique (`Event.integration_date`, colonne SQL `integration_date`) et exposée aux templates (`event.integration_date`, `incoming.integration_date`) |
 | *tout le reste* | Données métier (`extended_datas`), visibles des règles, des `MATCHING` et des templates |
 
 Un payload invalide lève `InvalidIncomingEventFormatError`.
+
+Le dédoublonnage est toujours actif, même sans `DedupKey` ni `UNIQUE` :
+l'`Uuid` du payload sert alors de clé, et à défaut d'`Uuid` la signature
+fonctionnelle `Name` + `EventDate` (+ `ExternalId` s'il est renseigné).
+Un événement sans `Uuid` **ni** `EventDate` n'est pas dédoublonné — la
+cascade complète et le pourquoi de ce dernier cas sont dans
+[guide-dsl.md](guide-dsl.md#comment-le-moteur-choisit-la-clé-de-dédoublonnage).
+Un `IncomingEvent` construit en code porte `uuid_from_payload=False` : son
+`Uuid` ne sert de clé que si l'appelant met ce drapeau à vrai.
 
 ### Schémas d'événements (extra `[schemas]`)
 

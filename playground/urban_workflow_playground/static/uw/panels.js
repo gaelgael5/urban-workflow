@@ -342,7 +342,9 @@
       "sous celui-ci — cliquer pour y aller.</li>" +
       "<li><code>DEFINE EVENT X '…' AS @schema UNIQUE (Prop, …);</code> : le schéma valide " +
       "le payload ; UNIQUE et la propriété <code>DedupKey</code> de l'émetteur (prioritaire) " +
-      "bloquent les doublons en simulation.</li>" +
+      "bloquent les doublons en simulation. Sans l'un ni l'autre, le moteur dédoublonne " +
+      "sur l'<code>Uuid</code> du payload, ou à défaut sur <code>Name</code> + " +
+      "<code>EventDate</code> (+ <code>ExternalId</code>).</li>" +
       "<li><code>regle(p = @IncomingEvent.Montant)</code> : chemin dans l'événement entrant " +
       "(socle + payload, <code>@IncomingEvent.Lignes[0].Qte</code>). Un chemin absent du " +
       "schéma est signalé.</li>" +

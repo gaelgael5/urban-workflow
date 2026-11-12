@@ -134,6 +134,15 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   B) propriété réservée `DedupKey` du socle (champ typé
   `IncomingEvent.dedup_key`, mappée dans `_KNOWN_FIELDS`, dans
   `BASE_EVENT_SCHEMA`) — **prioritaire sur UNIQUE**.
+  **Repli automatique (décision du 2026-11-12)** : faute de `DedupKey`
+  ET de `UNIQUE`, le moteur dédoublonne quand même — `Uuid` s'il vient
+  du payload (drapeau `IncomingEvent.uuid_from_payload`, posé par le
+  sérialiseur ; `Uuid: null` = absent), sinon signature fonctionnelle
+  `Name` + `EventDate` (+ `ExternalId` si renseigné)
+  (`processor._automatic_dedup_keys`). Ni `Uuid` ni `EventDate` =
+  **aucun** dédoublonnage : `Name` (+ `ExternalId`) seuls rejetteraient
+  tout événement suivant du même type (perdre des événements en silence
+  est pire que laisser passer un doublon).
   Moteur : `processor._event_gate(config, event)` → valide (socle +
   schéma métier, `EventSchemaError`) et retourne l'empreinte SHA-256 ;
   `_already_integrated` = rejeu Uuid OU même `Event.dedup_hash` dans

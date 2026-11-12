@@ -44,6 +44,13 @@ class IncomingEvent:
     #: Clé d'idempotence fournie par l'émetteur (propriété ``DedupKey``
     #: du payload) — prioritaire sur les clés ``UNIQUE`` du DSL.
     dedup_key: str = ""
+    #: Vrai si ``uuid`` vient du payload, faux s'il a été généré par
+    #: :func:`new_uuid`. Sans ce drapeau les deux cas seraient
+    #: indiscernables (``uuid`` est toujours renseigné), et le repli
+    #: anti-doublon automatique du moteur dédoublonnerait sur un Uuid
+    #: tiré au hasard — donc jamais. Un appelant qui construit lui-même
+    #: l'événement avec un Uuid porteur de sens le met à vrai.
+    uuid_from_payload: bool = False
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
 

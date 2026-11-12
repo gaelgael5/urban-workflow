@@ -43,6 +43,32 @@ _DEAD_END = object()
 _UNSET = object()
 
 
+def _automatic_dedup_keys(event: IncomingEvent) -> tuple[str, ...]:
+    """Propriétés du socle sur lesquelles dédoublonner faute de paramétrage.
+
+    L'Uuid de l'émetteur s'il en a fourni un ; sinon la signature
+    fonctionnelle de l'événement : son type et sa date fonctionnelle,
+    plus l'identifiant externe quand il est renseigné (deux événements de
+    même type et de même ``EventDate`` sur deux dossiers différents ne
+    sont pas des doublons).
+
+    Rien (``()``) quand l'événement n'a ni Uuid d'émetteur ni
+    ``EventDate`` : ``Name`` (+ ``ExternalId``) seuls rejetteraient tout
+    événement ultérieur du même type sur le même dossier. Un
+    dédoublonnage trop large perd des événements en silence, alors que
+    son absence laisse au pire passer un doublon — le repli s'arrête donc
+    là, et c'est au paramétrage (``UNIQUE``) ou à l'émetteur
+    (``DedupKey``) de trancher ce cas.
+    """
+    if event.uuid_from_payload:
+        return ("Uuid",)
+    if event.event_date is None:
+        return ()
+    if event.external_id:
+        return ("Name", "EventDate", "ExternalId")
+    return ("Name", "EventDate")
+
+
 class WorkflowProcessor:
     """Évalue un événement entrant sur les workflows existants et à créer."""
 
@@ -156,8 +182,14 @@ class WorkflowProcessor:
         """Valide l'événement contre son schéma déclaré et retourne son
         empreinte anti-doublon (``""`` si aucun mécanisme ne s'applique).
 
-        Priorité de l'empreinte : ``DedupKey`` fourni par l'émetteur,
-        sinon hash des propriétés ``UNIQUE`` déclarées dans le DSL.
+        Priorité de l'empreinte, du plus explicite au repli :
+
+        1. ``DedupKey`` fourni par l'émetteur (clé d'idempotence) ;
+        2. propriétés ``UNIQUE (…)`` déclarées dans le DSL (paramétrage) ;
+        3. à défaut de paramétrage, ``Uuid`` s'il vient du payload ;
+        4. sinon la signature fonctionnelle de l'événement : ``Name`` +
+           ``EventDate`` (+ ``ExternalId`` s'il est renseigné).
+
         La validation (socle commun + schéma métier) lève
         :class:`~urban_workflow.exceptions.EventSchemaError`.
         """
@@ -176,10 +208,12 @@ class WorkflowProcessor:
                 (constants.DEDUP_KEY_PROPERTY,),
                 {constants.DEDUP_KEY_PROPERTY: event.dedup_key},
             )
-        if declared.dedup_keys:
+
+        keys = declared.dedup_keys or _automatic_dedup_keys(event)
+        if keys:
             if document is None:
                 document = event_to_document(event)
-            return compute_dedup_hash(declared.dedup_keys, document)
+            return compute_dedup_hash(keys, document)
         return ""
 
     @staticmethod
