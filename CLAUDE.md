@@ -84,6 +84,25 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   sur pypi.org) ; les `README.md` français restent dans le dépôt, liés
   entre eux. Garde : `tests/test_packaging.py`. Le Dockerfile copie aussi
   `README.en.md` (sinon la construction du socle échoue).
+- **0.3.0** (2026-11-12) : les deux paquets passent en 0.3.0 — rang
+  MINEUR car le repli anti-doublon change le comportement par défaut du
+  moteur (décision utilisateur). Version posée dans les 2 `pyproject`,
+  les 2 `__version__`, `urban-workflow>=0.3.0` côté playground, et les
+  liens `blob/vX.Y.Z` des 2 `README.en.md`. **Piège rencontré** : une
+  relance des workflows de release sans changer la version est verte mais
+  ne publie RIEN (`skip-existing: true` → « Skipping … already exist »),
+  et les liens des pages PyPI pointaient vers un tag où la doc annoncée
+  n'existait pas → garde ajoutée
+  (`test_pypi_readme_links_point_at_the_declared_version`).
+- **Licence en expression SPDX (fait)** : `license = "MIT"` +
+  `license-files = ["LICENSE"]` dans les deux pyproject,
+  `requires = ["setuptools>=77"]` (la table TOML était dépréciée, builds
+  cassés après 2027-02-18). `playground/LICENSE` ajouté — le playground
+  est une distribution séparée et `license-files` exige le fichier dans
+  SON répertoire. Métadonnées vérifiées : `Metadata-Version: 2.4`,
+  `License-Expression: MIT`, `License-File: LICENSE` des deux côtés,
+  installation OK avec le pip de python:3.10. Garde
+  `test_license_is_an_spdx_expression_with_its_file`.
 - L'idée de « paquets par pays » a été abandonnée par l'utilisateur
   (mauvaise conversation) — ne pas la relancer.
 
@@ -454,7 +473,12 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
   reprises du source **+ extension `AS` ci-dessus** ; `regenerate.sh`
   régénère le parseur (jar ANTLR 4.13.2 — même version que le runtime
-  `antlr4-python3-runtime` d'urban-json).
+  `antlr4-python3-runtime` d'urban-json). **Livrés dans la distribution
+  depuis la 0.3.0** (`[tool.setuptools.package-data]` →
+  `"urban_workflow.dsl" = ["grammar/*.g4", "grammar/regenerate.sh"]`,
+  garde `test_grammar_and_regenerator_are_shipped`, guide DSL §12) ; le
+  script bascule sur le miroir Google si Maven Central répond 429, et
+  `--fail` évite d'écrire la page d'erreur dans le jar.
 - `urban_workflow/dsl/generated/` : code généré commité, ne jamais l'éditer.
   Particularité cible Python : accesseurs `state_()` et `type_()`.
 - **Fragments vérifiés (2026-11-12)** : plusieurs `INCLUDE` dans un même

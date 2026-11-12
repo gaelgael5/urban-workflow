@@ -1,6 +1,6 @@
 # urban-workflow
 
-*English · [Français](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/README.md)*
+*English · [Français](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/README.md)*
 
 Workflow engine driven by a **domain-specific language** (DSL) — a Python
 port of [Black-Beard-Sdk/Workflow](https://github.com/Black-Beard-Sdk/Workflow)
@@ -65,19 +65,19 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 
 | Guide | Contents |
 |---|---|
-| [docs/en/dsl-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/dsl-guide.md) | **Writing a workflow**: complete language reference — instance creation, `SWITCH` transitions, `WHEN` conditions, actions, expiration, event schemas, **deduplication keys** (`UNIQUE`, `DedupKey`, automatic fallback), fragments |
-| [docs/en/rules-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/rules-guide.md) | **Rules and scripts**: `DEFINE RULE … AS @script`, multi-language `ScriptRegistry`, the `expression` language (operators, functions, `NULL` semantics), checks |
-| [docs/en/artifacts-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/artifacts-guide.md) | **JSON artifacts**: `DEFINE ARTIFACT … AS @schema USING @script`, `jslt` scripts (urban-json), `@artifact.Name` in actions, schema validation |
-| [docs/en/integration-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/integration-guide.md) | **Using it in code**: business rules, engine assembly, JSLT templates, output chain, technical events |
-| [docs/en/testing-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/testing-guide.md) | **Testing it**: pure rules, configuration, templates, end-to-end scenarios |
-| [docs/analyse-portage.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/analyse-portage.md) (French) | Analysis of the source project and the key design choices of the port |
+| [docs/en/dsl-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/en/dsl-guide.md) | **Writing a workflow**: complete language reference — instance creation, `SWITCH` transitions, `WHEN` conditions, actions, expiration, event schemas, **deduplication keys** (`UNIQUE`, `DedupKey`, automatic fallback), fragments |
+| [docs/en/rules-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/en/rules-guide.md) | **Rules and scripts**: `DEFINE RULE … AS @script`, multi-language `ScriptRegistry`, the `expression` language (operators, functions, `NULL` semantics), checks |
+| [docs/en/artifacts-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/en/artifacts-guide.md) | **JSON artifacts**: `DEFINE ARTIFACT … AS @schema USING @script`, `jslt` scripts (urban-json), `@artifact.Name` in actions, schema validation |
+| [docs/en/integration-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/en/integration-guide.md) | **Using it in code**: business rules, engine assembly, JSLT templates, output chain, technical events |
+| [docs/en/testing-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/en/testing-guide.md) | **Testing it**: pure rules, configuration, templates, end-to-end scenarios |
+| [docs/analyse-portage.md](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/docs/analyse-portage.md) (French) | Analysis of the source project and the key design choices of the port |
 
 ## Playground
 
 **Standalone web components** (editor with intellisense, diagram,
 schemas, scripts, simulation on the real engine…) that an application
 mounts as needed, and a page that assembles them — a separate
-distribution, [`urban-workflow-playground`](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/playground/README.en.md):
+distribution, [`urban-workflow-playground`](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/playground/README.en.md):
 
 ```bash
 pip install urban-workflow-playground
@@ -105,4 +105,4 @@ reproduced — each one is covered by a dedicated test.
 
 ## License
 
-See [LICENSE](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/LICENSE).
+See [LICENSE](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/LICENSE).

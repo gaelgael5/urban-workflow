@@ -1,13 +1,16 @@
 [build-system]
-requires = ["setuptools>=68"]
+# setuptools >= 77 : licence en expression SPDX (`license = "MIT"`),
+# la forme en table TOML étant dépréciée (builds cassés après 2027-02-18).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "urban-workflow"
-version = "0.2.1"
+version = "0.3.0"
 description = "Workflow engine driven by a business DSL — Python port of Black-Beard-Sdk/Workflow, with JSON outputs normalized by urban-json (JSLT)."
 readme = "README.en.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = [
@@ -51,6 +54,12 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["urban_workflow*"]
+
+[tool.setuptools.package-data]
+# Les grammaires ANTLR et leur script de régénération sont livrés avec le
+# paquet : sans eux, impossible de reconstruire le parseur depuis la
+# distribution (le code généré, lui, est du .py embarqué comme module).
+"urban_workflow.dsl" = ["grammar/*.g4", "grammar/regenerate.sh"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

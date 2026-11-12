@@ -777,3 +777,28 @@ lorsqu'ils sont écrits en majuscules (les mots-clés sont sensibles à la
 casse : `Etat` ou `state` restent libres) : `ACTION`, `AFTER`, `AND`, `ARTIFACT`, `AS`, `BEFORE`, `CONCURENCY`, `CONST`, `DAY`, `DECIMAL`, `DEFINE`, `DESCRIPTION`, `ENTER`, `EVENT`, `EXECUTE`, `EXIT`, `EXPIRE`, `FALSE`, `FRAGMENT`, `HOUR`, `IN`, `INCLUDE`, `INITIALIZE`, `INTEGER`, `IS`, `MATCHING`, `MINUTE`, `NAME`, `NOT`, `NULL`, `ON`, `OR`, `PARAMETER`, `RECURSIVE`, `RULE`, `STATE`, `STORE`, `SWITCH`, `TEXT`, `TIME`, `TRUE`, `UNIQUE`, `USING`, `VERSION`, `WAITING`, `WHEN`, `WITH`, `WORKFLOW`.
 `PARAMETER`, `TIME` et `WITH` sont réservés par la grammaire sans être
 utilisés aujourd'hui.
+
+## 12. La grammaire, livrée avec le paquet
+
+Le langage est décrit par deux grammaires ANTLR, **livrées dans la
+distribution** (wheel et sdist) à côté du parseur généré :
+
+```
+urban_workflow/dsl/grammar/WorkflowLexer.g4    -- les mots et les symboles
+urban_workflow/dsl/grammar/WorkflowParser.g4   -- les règles de structure
+urban_workflow/dsl/grammar/regenerate.sh       -- régénère le parseur Python
+```
+
+Le parseur de `urban_workflow/dsl/generated/` est **du code généré commité**
+— il ne se modifie jamais à la main. Pour toucher au langage : éditer les
+`.g4`, puis
+
+```bash
+urban_workflow/dsl/grammar/regenerate.sh       # java >= 11 requis
+```
+
+Le script télécharge le jar ANTLR **4.13.2** s'il est absent (la même
+version que le runtime `antlr4-python3-runtime` apporté par urban-json :
+toute montée de version se fait des deux côtés à la fois). Il essaie
+Maven Central puis un miroir — Maven Central limite parfois le débit
+(429) — et `ANTLR_JAR=/chemin/vers.jar` court-circuite le téléchargement.

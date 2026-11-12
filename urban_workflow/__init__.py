@@ -65,7 +65,7 @@ from .outputs import (
 from .registry import FunctionRegistry
 from .values import ContextRef, make_value, resolve_value
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "ActionTranslator",

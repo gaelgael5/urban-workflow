@@ -766,3 +766,28 @@ WHEN Regle(a = 1) AND (NOT Autre(b = 'x') OR Tierce(c = @IncomingEvent.K))
 in upper case (keywords are case-sensitive: `Etat` or `state` remain
 free): `ACTION`, `AFTER`, `AND`, `ARTIFACT`, `AS`, `BEFORE`, `CONCURENCY`, `CONST`, `DAY`, `DECIMAL`, `DEFINE`, `DESCRIPTION`, `ENTER`, `EVENT`, `EXECUTE`, `EXIT`, `EXPIRE`, `FALSE`, `FRAGMENT`, `HOUR`, `IN`, `INCLUDE`, `INITIALIZE`, `INTEGER`, `IS`, `MATCHING`, `MINUTE`, `NAME`, `NOT`, `NULL`, `ON`, `OR`, `PARAMETER`, `RECURSIVE`, `RULE`, `STATE`, `STORE`, `SWITCH`, `TEXT`, `TIME`, `TRUE`, `UNIQUE`, `USING`, `VERSION`, `WAITING`, `WHEN`, `WITH`, `WORKFLOW`. `PARAMETER`, `TIME` and `WITH` are reserved by the
 grammar without being used today.
+
+## 12. The grammar, shipped with the package
+
+The language is described by two ANTLR grammars, **shipped inside the
+distribution** (wheel and sdist) next to the generated parser:
+
+```
+urban_workflow/dsl/grammar/WorkflowLexer.g4    -- words and symbols
+urban_workflow/dsl/grammar/WorkflowParser.g4   -- structural rules
+urban_workflow/dsl/grammar/regenerate.sh       -- regenerates the Python parser
+```
+
+The parser under `urban_workflow/dsl/generated/` is **committed generated
+code** — never edit it by hand. To change the language: edit the `.g4`
+files, then
+
+```bash
+urban_workflow/dsl/grammar/regenerate.sh       # requires java >= 11
+```
+
+The script downloads the ANTLR **4.13.2** jar if missing (the same
+version as the `antlr4-python3-runtime` brought in by urban-json: any
+upgrade happens on both sides at once). It tries Maven Central then a
+mirror — Maven Central sometimes rate-limits (429) — and
+`ANTLR_JAR=/path/to.jar` skips the download entirely.
