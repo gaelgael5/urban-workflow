@@ -117,6 +117,7 @@ class WorkflowFactory:
             name=incoming_event.name,
             event_date=incoming_event.event_date,
             creation_date=WorkflowClock.now(),
+            integration_date=incoming_event.integration_date,
             change=ChangeEnum.NEW,
             extended_datas=copy.deepcopy(incoming_event.extended_datas),
         )

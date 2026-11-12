@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from .. import constants
+from ..clock import WorkflowClock
 from ..config import (
     InitializationConfig,
     ResultRuleConfig,
@@ -28,11 +29,44 @@ from ..config import (
     WorkflowConfig,
     WorkflowsConfig,
 )
-from ..models import IncomingEvent, RuleSpan, RunContext, Workflow
+from ..models import IncomingEvent, RuleSpan, RunContext, StateInstance, Workflow
 from ..outputs.base import OutputAction
+from ..schemas import BASE_EVENT_SCHEMA, compute_dedup_hash, validate_document
 from .append_events import AppendResultActionEvent, AppendStandardEvent
 from .factory import WorkflowFactory
+from .serializer import event_to_document
 from .translator import ActionTranslator, DefaultActionTranslator
+
+# Sentinelles internes : « l'état cible gère l'événement mais aucune branche
+# ne passe » (switch non viable) et « pas de route présélectionnée ».
+_DEAD_END = object()
+_UNSET = object()
+
+
+def _automatic_dedup_keys(event: IncomingEvent) -> tuple[str, ...]:
+    """Propriétés du socle sur lesquelles dédoublonner faute de paramétrage.
+
+    L'Uuid de l'émetteur s'il en a fourni un ; sinon la signature
+    fonctionnelle de l'événement : son type et sa date fonctionnelle,
+    plus l'identifiant externe quand il est renseigné (deux événements de
+    même type et de même ``EventDate`` sur deux dossiers différents ne
+    sont pas des doublons).
+
+    Rien (``()``) quand l'événement n'a ni Uuid d'émetteur ni
+    ``EventDate`` : ``Name`` (+ ``ExternalId``) seuls rejetteraient tout
+    événement ultérieur du même type sur le même dossier. Un
+    dédoublonnage trop large perd des événements en silence, alors que
+    son absence laisse au pire passer un doublon — le repli s'arrête donc
+    là, et c'est au paramétrage (``UNIQUE``) ou à l'émetteur
+    (``DedupKey``) de trancher ce cas.
+    """
+    if event.uuid_from_payload:
+        return ("Uuid",)
+    if event.event_date is None:
+        return ()
+    if event.external_id:
+        return ("Name", "EventDate", "ExternalId")
+    return ("Name", "EventDate")
 
 
 class WorkflowProcessor:
@@ -69,6 +103,12 @@ class WorkflowProcessor:
             raise ValueError("event is required")
         if self.output_actions is None:
             raise ValueError("output_actions is required")
+
+        # Date d'intégration posée AVANT la validation : le document validé
+        # contre le socle la porte déjà. « is None » plutôt qu'écrasement : un
+        # même IncomingEvent réévalué (récursif) garde sa date d'origine.
+        if event.integration_date is None:
+            event.integration_date = WorkflowClock.now()
 
         workflows = self._load_existing_workflows(event)
         contexts = list(self._get_existing_contexts(event, workflows))
@@ -125,11 +165,67 @@ class WorkflowProcessor:
             if config is None:
                 continue
 
+            dedup_hash = self._event_gate(config, event)
+            if dedup_hash and any(
+                e.dedup_hash == dedup_hash for e in workflow.events
+            ):
+                continue  # doublon fonctionnel : ignoré, comme un rejeu
+
             ctx = self.factory.create_context(workflow, event)
+            ctx.event.dedup_hash = dedup_hash
             ctx.event.to_state = ctx.event.from_state = workflow.current_state
             self._evaluate_event_in_current_workflow(config, ctx)
 
             yield ctx
+
+    def _event_gate(self, config: WorkflowConfig, event: IncomingEvent) -> str:
+        """Valide l'événement contre son schéma déclaré et retourne son
+        empreinte anti-doublon (``""`` si aucun mécanisme ne s'applique).
+
+        Priorité de l'empreinte, du plus explicite au repli :
+
+        1. ``DedupKey`` fourni par l'émetteur (clé d'idempotence) ;
+        2. propriétés ``UNIQUE (…)`` déclarées dans le DSL (paramétrage) ;
+        3. à défaut de paramétrage, ``Uuid`` s'il vient du payload ;
+        4. sinon la signature fonctionnelle de l'événement : ``Name`` +
+           ``EventDate`` (+ ``ExternalId`` s'il est renseigné).
+
+        La validation (socle commun + schéma métier) lève
+        :class:`~urban_workflow.exceptions.EventSchemaError`.
+        """
+        declared = config.declared_events.get(event.name)
+        if declared is None:
+            return ""
+
+        document = None
+        if declared.schema is not None:
+            document = event_to_document(event)
+            validate_document(BASE_EVENT_SCHEMA, document)
+            validate_document(declared.schema, document)
+
+        if event.dedup_key:
+            return compute_dedup_hash(
+                (constants.DEDUP_KEY_PROPERTY,),
+                {constants.DEDUP_KEY_PROPERTY: event.dedup_key},
+            )
+
+        keys = declared.dedup_keys or _automatic_dedup_keys(event)
+        if keys:
+            if document is None:
+                document = event_to_document(event)
+            return compute_dedup_hash(keys, document)
+        return ""
+
+    @staticmethod
+    def _already_integrated(
+        workflow: Workflow, event: IncomingEvent, dedup_hash: str
+    ) -> bool:
+        """Rejeu technique (même Uuid) ou doublon fonctionnel (même hash)."""
+        if workflow.get_event(event.uuid) is not None:
+            return True
+        return bool(dedup_hash) and any(
+            e.dedup_hash == dedup_hash for e in workflow.events
+        )
 
     def _check_and_resolve_config(
         self, workflow: Workflow, event: IncomingEvent
@@ -162,25 +258,33 @@ class WorkflowProcessor:
 
         for config in self._config.matching(event):
 
-            # Rejeu : un événement déjà intégré par un workflow de cette
+            if config.initializers.get(event.name) is None:
+                continue
+
+            dedup_hash = self._event_gate(config, event)
+
+            # Rejeu (même Uuid) ou doublon fonctionnel (même empreinte) :
+            # un événement déjà intégré par un workflow de cette
             # configuration ne doit pas en recréer un.
             if any(
                 w.workflow_name == config.name
-                and w.get_event(event.uuid) is not None
+                and self._already_integrated(w, event, dedup_hash)
                 for w in workflows
             ):
                 continue
 
-            ctx = self._evaluate_if_workflow_must_be_created(event, config)
-            if ctx is None:
+            created = self._evaluate_if_workflow_must_be_created(event, config)
+            if created is None:
                 continue
+            ctx, route = created
+            ctx.event.dedup_hash = dedup_hash
 
             siblings = existing_by_name.get(ctx.workflow.workflow_name, [])
             last = max(siblings, key=lambda c: c.workflow.concurrency, default=None)
 
             if last is None:
                 results.append(
-                    self._execute_transition_after_creation(config, ctx)
+                    self._execute_transition_after_creation(config, ctx, route)
                 )
 
             # Garde CONCURENCY stricte (le source utilisait <=, autorisant
@@ -188,14 +292,23 @@ class WorkflowProcessor:
             elif last.workflow.concurrency < config.concurrency:
                 ctx.workflow.concurrency = last.workflow.concurrency + 1
                 results.append(
-                    self._execute_transition_after_creation(config, ctx)
+                    self._execute_transition_after_creation(config, ctx, route)
                 )
 
         return results
 
     def _evaluate_if_workflow_must_be_created(
         self, event: IncomingEvent, config: WorkflowConfig
-    ) -> RunContext | None:
+    ) -> tuple[RunContext, TransitionConfig | None] | None:
+        """Contexte du workflow à créer et route présélectionnée, ou None.
+
+        Un switch d'initialisation n'est retenu que s'il est VIABLE (voir
+        ``_find_route``), avec ou sans RECURSIVE. Sinon tout se passe comme
+        si ce switch n'avait pas été rencontré : branche suivante, et au bout
+        aucune création — le source laissait le workflow bloqué dans l'état
+        cible, sans le dire. La route trouvée n'est exécutée qu'avec
+        RECURSIVE.
+        """
 
         initializer = config.initializers.get(event.name)
         if initializer is None:
@@ -211,25 +324,86 @@ class WorkflowProcessor:
         ctx = self.factory.create_context(workflow, event)
 
         for switch in initializer.switchs:
-            if self._evaluate(switch, ctx):
-                ctx.event.to_state = ctx.event.from_state = switch.target_state_name
-                ctx.workflow.recursive = initializer.recursive
-                break
+            if not self._evaluate(switch, ctx):
+                continue
 
-        if not ctx.event.from_state:
+            target = switch.target_state_name
+            instance = self._enter_state(ctx, target)
+            ctx.event.to_state = ctx.event.from_state = target
+
+            route = self._find_route(config, target, ctx)
+            if route is _DEAD_END:
+                ctx.pending_states.remove(instance)
+                ctx.event.to_state = ctx.event.from_state = ""
+                self._log_dead_end(ctx, target)
+                continue
+
+            ctx.workflow.recursive = initializer.recursive
+            return ctx, route
+
+        return None
+
+    def _find_route(
+        self, config: WorkflowConfig, state_name: str, ctx: RunContext
+    ) -> TransitionConfig | None | object:
+        """Contrôle de viabilité d'un switch vers ``state_name``.
+
+        Décision de cadrage : un switch n'est valide que si, une fois dans
+        l'état cible, l'événement courant y trouve une route — qu'il y soit
+        ensuite réévalué (RECURSIVE) ou non.
+
+        ``None`` = l'état ne gère pas cet événement (viable, rien à faire) ;
+        une branche = la première qui passe ; ``_DEAD_END`` = il le gère
+        mais aucune branche ne passe.
+
+        Regard à UN niveau : la cible de la branche trouvée n'est pas
+        contrôlée à son tour (une boucle sur le même état ferait sinon
+        tourner le contrôle sans fin). Sans RECURSIVE, les gardes de la
+        cible sont donc évaluées pour le seul contrôle : les règles doivent
+        rester des prédicats sans effet de bord.
+        """
+        handler = config.states[state_name].events.get(ctx.incoming_event.name)
+        if handler is None:
             return None
+        for transition in handler.transitions:
+            if self._evaluate(transition, ctx):
+                return transition
+        return _DEAD_END
 
-        return ctx
+    @staticmethod
+    def _log_dead_end(ctx: RunContext, target: str) -> None:
+        ctx.functional_log.append(
+            f"SWITCH {target} ignored: no route for "
+            f"{ctx.incoming_event.name} in {target}"
+        )
+
+    @staticmethod
+    def _enter_state(ctx: RunContext, state_name: str) -> StateInstance:
+        # Une instance à CHAQUE passage par un SWITCH, même vers l'état
+        # courant (décision de cadrage) ; versée dans workflow.states à
+        # l'ajout de l'événement à l'historique.
+        instance = StateInstance(
+            name=state_name,
+            creation_date=WorkflowClock.now(),
+            event_id=ctx.incoming_event.uuid,
+        )
+        ctx.pending_states.append(instance)
+        return instance
 
     def _execute_transition_after_creation(
-        self, config: WorkflowConfig, ctx: RunContext
+        self,
+        config: WorkflowConfig,
+        ctx: RunContext,
+        route: TransitionConfig | None = None,
     ) -> RunContext:
 
         state = config.states[ctx.event.to_state]
         self._collect_rule_actions(state.incoming_rules, ctx)
 
         if ctx.workflow.recursive:
-            self._evaluate_event_in_current_workflow(config, ctx)
+            # Route déjà trouvée par le contrôle de viabilité : on ne
+            # réévalue pas ses gardes (règles appelées une seule fois).
+            self._evaluate_event_in_current_workflow(config, ctx, preselected=route)
 
         return ctx
 
@@ -238,7 +412,10 @@ class WorkflowProcessor:
     # ------------------------------------------------------------------
 
     def _evaluate_event_in_current_workflow(
-        self, config: WorkflowConfig, ctx: RunContext
+        self,
+        config: WorkflowConfig,
+        ctx: RunContext,
+        preselected: TransitionConfig | None | object = _UNSET,
     ) -> None:
 
         state = config.states[ctx.event.from_state]
@@ -250,15 +427,39 @@ class WorkflowProcessor:
         # Actions attachées à l'arrivée de l'événement lui-même.
         self._collect_rule_actions(incoming_event_config.rules, ctx)
 
-        for transition in incoming_event_config.transitions:
-            if self._evaluate(transition, ctx):
+        if preselected is None:
+            return
+        candidates = (
+            incoming_event_config.transitions if preselected is _UNSET else [preselected]
+        )
+
+        for transition in candidates:
+            if preselected is not _UNSET or self._evaluate(transition, ctx):
+
+                target = transition.target_state
+                instance = self._enter_state(ctx, target.name)
+                # La route présélectionnée (après création RECURSIVE) n'est
+                # pas recontrôlée : regard à un niveau, cf. _find_route.
+                viable = preselected is not _UNSET or (
+                    self._find_route(config, target.name, ctx) is not _DEAD_END
+                )
+                # L'instance n'existait que pour le contrôle (les gardes de la
+                # cible voient déjà @state) ; retirée pour que les règles de
+                # sortie lisent encore l'instance de l'état quitté.
+                ctx.pending_states.remove(instance)
+                if not viable:
+                    # Comme si ce switch n'avait pas été rencontré : aucune
+                    # action, on reste dans l'état courant, branche suivante.
+                    self._log_dead_end(ctx, target.name)
+                    continue
 
                 # Actions de la transition, puis sortie d'état.
                 self._collect_rule_actions(transition.rule_actions, ctx)
                 self._collect_rule_actions(state.outcoming_rules, ctx)
 
-                state = transition.target_state
+                state = target
                 ctx.event.to_state = state.name
+                ctx.pending_states.append(instance)
 
                 # Entrée dans le nouvel état.
                 self._collect_rule_actions(state.incoming_rules, ctx)

@@ -1,0 +1,16 @@
+# Le contexte de build est la racine du dépôt : n'y envoyer que les sources.
+.git
+.github
+.claude
+.mcp.json
+docs
+tests
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+**/build
+**/dist
+.env
+deploy-logs
+playground/schema-editor

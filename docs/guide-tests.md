@@ -256,4 +256,6 @@ plus fin (horloge qui avance pas à pas).
 - **Suite de référence** : les tests du dépôt sont eux-mêmes des exemples
   complets — `tests/test_dsl.py` (golden du langage),
   `tests/test_engine.py` (moteur), `tests/test_engine_dsl.py` (bout en
-  bout DSL), `tests/test_templating.py` (templates).
+  bout DSL), `tests/test_templating.py` (templates),
+  `tests/test_storage_sql.py` (persistance SQL), `tests/test_docs_examples.py`
+  (exemples des guides, exécutés tels qu'écrits).

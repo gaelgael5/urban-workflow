@@ -87,6 +87,7 @@ def build_action_document(ctx: RunContext, action: ResultAction) -> dict[str, An
             "to_state": event.to_state,
             "creation_date": _iso(event.creation_date),
             "event_date": _iso(event.event_date),
+            "integration_date": _iso(event.integration_date),
         }
 
     if incoming is not None:
@@ -97,6 +98,7 @@ def build_action_document(ctx: RunContext, action: ResultAction) -> dict[str, An
             "external_id": incoming.external_id,
             "creation_date": _iso(incoming.creation_date),
             "event_date": _iso(incoming.event_date),
+            "integration_date": _iso(incoming.integration_date),
         }
 
     return document

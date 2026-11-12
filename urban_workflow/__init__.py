@@ -7,6 +7,7 @@ sorties JSON par `urban-json <https://pypi.org/project/urban-json/>`_.
 
 from .clock import WorkflowClock
 from .config import (
+    DeclaredArtifactConfig,
     DeclaredEventConfig,
     IncomingEventConfig,
     InitializationConfig,
@@ -47,6 +48,7 @@ from .models import (
     ResultAction,
     RuleSpan,
     RunContext,
+    StateInstance,
     Workflow,
 )
 from .outputs import (
@@ -63,7 +65,7 @@ from .outputs import (
 from .registry import FunctionRegistry
 from .values import ContextRef, make_value, resolve_value
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "ActionTranslator",
@@ -84,6 +86,7 @@ __all__ = [
     "WorkflowFactory",
     "WorkflowProcessor",
     "parse_incoming_event",
+    "DeclaredArtifactConfig",
     "DeclaredEventConfig",
     "DuplicatedArgumentNameError",
     "Event",
@@ -100,6 +103,7 @@ __all__ = [
     "MissingConfigurationError",
     "MissingStateError",
     "PushedAction",
+    "StateInstance",
     "ResolutionArgumentError",
     "ResultAction",
     "ResultActionConfig",

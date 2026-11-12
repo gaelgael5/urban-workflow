@@ -119,6 +119,16 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#contextPath.
+    def visitContextPath(self, ctx:WorkflowParser.ContextPathContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#jsonPathSegment.
+    def visitJsonPathSegment(self, ctx:WorkflowParser.JsonPathSegmentContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#rule_conditions.
     def visitRule_conditions(self, ctx:WorkflowParser.Rule_conditionsContext):
         return self.visitChildren(ctx)
@@ -129,13 +139,123 @@ class WorkflowParserVisitor(ParseTreeVisitor):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#unique_keys.
+    def visitUnique_keys(self, ctx:WorkflowParser.Unique_keysContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#action_declaration_statement.
     def visitAction_declaration_statement(self, ctx:WorkflowParser.Action_declaration_statementContext):
         return self.visitChildren(ctx)
 
 
+    # Visit a parse tree produced by WorkflowParser#artifact_declaration_statement.
+    def visitArtifact_declaration_statement(self, ctx:WorkflowParser.Artifact_declaration_statementContext):
+        return self.visitChildren(ctx)
+
+
     # Visit a parse tree produced by WorkflowParser#rule_declaration_statement.
     def visitRule_declaration_statement(self, ctx:WorkflowParser.Rule_declaration_statementContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#rule_script.
+    def visitRule_script(self, ctx:WorkflowParser.Rule_scriptContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#compareExpression.
+    def visitCompareExpression(self, ctx:WorkflowParser.CompareExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#orExpression.
+    def visitOrExpression(self, ctx:WorkflowParser.OrExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#andExpression.
+    def visitAndExpression(self, ctx:WorkflowParser.AndExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#inExpression.
+    def visitInExpression(self, ctx:WorkflowParser.InExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#addExpression.
+    def visitAddExpression(self, ctx:WorkflowParser.AddExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#nullExpression.
+    def visitNullExpression(self, ctx:WorkflowParser.NullExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#notExpression.
+    def visitNotExpression(self, ctx:WorkflowParser.NotExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#multiplyExpression.
+    def visitMultiplyExpression(self, ctx:WorkflowParser.MultiplyExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#negateExpression.
+    def visitNegateExpression(self, ctx:WorkflowParser.NegateExpressionContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#primary.
+    def visitPrimary(self, ctx:WorkflowParser.PrimaryContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#numericLiteral.
+    def visitNumericLiteral(self, ctx:WorkflowParser.NumericLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#integerLiteral.
+    def visitIntegerLiteral(self, ctx:WorkflowParser.IntegerLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#stringLiteral.
+    def visitStringLiteral(self, ctx:WorkflowParser.StringLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#booleanLiteral.
+    def visitBooleanLiteral(self, ctx:WorkflowParser.BooleanLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#nullLiteral.
+    def visitNullLiteral(self, ctx:WorkflowParser.NullLiteralContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#pathValue.
+    def visitPathValue(self, ctx:WorkflowParser.PathValueContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#functionCall.
+    def visitFunctionCall(self, ctx:WorkflowParser.FunctionCallContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#identifier.
+    def visitIdentifier(self, ctx:WorkflowParser.IdentifierContext):
+        return self.visitChildren(ctx)
+
+
+    # Visit a parse tree produced by WorkflowParser#parenthesized.
+    def visitParenthesized(self, ctx:WorkflowParser.ParenthesizedContext):
         return self.visitChildren(ctx)
 
 

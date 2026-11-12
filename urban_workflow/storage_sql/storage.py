@@ -21,8 +21,14 @@ from uuid import UUID
 from sqlalchemy import Engine, select
 from sqlalchemy.engine import Connection
 
-from ..models import ChangeEnum, Event, PushedAction, Workflow
-from .schema import create_schema, workflow_actions, workflow_events, workflows
+from ..models import ChangeEnum, Event, PushedAction, StateInstance, Workflow
+from .schema import (
+    create_schema,
+    workflow_actions,
+    workflow_events,
+    workflow_states,
+    workflows,
+)
 
 
 def _json_default(value: Any) -> Any:
@@ -147,6 +153,8 @@ class SqlWorkflowStorage:
                     "to_state": event.to_state,
                     "creation_date": _iso(event.creation_date),
                     "event_date": _iso(event.event_date),
+                    "integration_date": _iso(event.integration_date),
+                    "dedup_hash": event.dedup_hash,
                     "extended_datas": _dump(event.extended_datas),
                 },
             )
@@ -174,6 +182,21 @@ class SqlWorkflowStorage:
                         else None,
                     },
                 )
+
+        for position, state in enumerate(workflow.states):
+            self._upsert(
+                connection,
+                workflow_states,
+                {
+                    "uuid": str(state.uuid),
+                    "workflow_uuid": str(workflow.uuid),
+                    "position": position,
+                    "name": state.name,
+                    "creation_date": _iso(state.creation_date),
+                    "event_uuid": str(state.event_id) if state.event_id else None,
+                    "extended_datas": _dump(state.extended_datas),
+                },
+            )
 
     @staticmethod
     def _upsert(connection: Connection, table, row: dict[str, Any]) -> None:
@@ -220,6 +243,8 @@ class SqlWorkflowStorage:
                 to_state=event_row["to_state"],
                 creation_date=_parse_date(event_row["creation_date"]),
                 event_date=_parse_date(event_row["event_date"]),
+                integration_date=_parse_date(event_row["integration_date"]),
+                dedup_hash=event_row["dedup_hash"] or "",
                 change=ChangeEnum.NONE,
                 extended_datas=json.loads(event_row["extended_datas"] or "{}"),
             )
@@ -247,5 +272,21 @@ class SqlWorkflowStorage:
                 )
 
             workflow.events.append(event)
+
+        state_rows = connection.execute(
+            select(workflow_states)
+            .where(workflow_states.c.workflow_uuid == row["uuid"])
+            .order_by(workflow_states.c.position)
+        ).mappings()
+        for state_row in state_rows:
+            workflow.states.append(
+                StateInstance(
+                    uuid=UUID(state_row["uuid"]),
+                    name=state_row["name"],
+                    creation_date=_parse_date(state_row["creation_date"]),
+                    event_id=UUID(state_row["event_uuid"]) if state_row["event_uuid"] else None,
+                    extended_datas=json.loads(state_row["extended_datas"] or "{}"),
+                )
+            )
 
         return workflow

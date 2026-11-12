@@ -47,6 +47,7 @@ def make_context(**incoming_extended) -> RunContext:
         external_id="ext-1",
         creation_date=NOW,
         event_date=NOW,
+        integration_date=NOW,
         extended_datas=dict(incoming_extended),
     )
     workflow = factory.create_new_workflow("wrk1", 2, "ext-1", {"Country": "France"})
@@ -93,11 +94,13 @@ class TestBuildActionDocument:
         assert event["from_state"] == "State1"
         assert event["to_state"] == "State2"
         assert event["name"] == "Event1"
+        assert event["integration_date"] == NOW.isoformat()
 
         incoming = document["incoming"]
         assert incoming["Age"] == 25
         assert incoming["external_id"] == "ext-1"
         assert incoming["event_date"] == NOW.isoformat()
+        assert incoming["integration_date"] == NOW.isoformat()
 
     def test_json_safe_conversions(self):
         uuid = uuid4()

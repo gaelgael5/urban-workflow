@@ -1,5 +1,7 @@
 # urban-workflow
 
+*Français · [English](README.en.md)*
+
 Moteur de workflow piloté par un **langage dédié** (DSL) — portage Python de
 [Black-Beard-Sdk/Workflow](https://github.com/Black-Beard-Sdk/Workflow)
 (.NET), dont le système de normalisation des sorties JSON est remplacé par
@@ -63,21 +65,25 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 
 | Guide | Contenu |
 |---|---|
-| [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, fragments |
+| [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, schémas d'événements, **clés de dédoublonnage** (`UNIQUE`, `DedupKey`, repli automatique), fragments |
+| [docs/guide-regles.md](docs/guide-regles.md) | **Règles et scripts** : `DEFINE RULE … AS @script`, `ScriptRegistry` multi-langage, langage `expression` (opérateurs, fonctions, sémantique `NULL`), contrôles |
+| [docs/guide-artefacts.md](docs/guide-artefacts.md) | **Artefacts JSON** : `DEFINE ARTIFACT … AS @schema USING @script`, scripts `jslt` (urban-json), `@artifact.Nom` dans les actions, validation par schéma |
 | [docs/guide-integration.md](docs/guide-integration.md) | **L'utiliser dans du code** : règles métier, assemblage du moteur, templates JSLT, chaîne de sorties, événements techniques |
 | [docs/guide-tests.md](docs/guide-tests.md) | **Le tester** : règles pures, configuration, templates, scénarios de bout en bout |
 | [docs/analyse-portage.md](docs/analyse-portage.md) | Analyse du projet source et choix structurants du portage |
 
 English versions: [docs/en/dsl-guide.md](docs/en/dsl-guide.md) ·
+[docs/en/rules-guide.md](docs/en/rules-guide.md) ·
+[docs/en/artifacts-guide.md](docs/en/artifacts-guide.md) ·
 [docs/en/integration-guide.md](docs/en/integration-guide.md) ·
 [docs/en/testing-guide.md](docs/en/testing-guide.md)
 
 ## Playground
 
-Un site web local pour écrire les scripts avec **intellisense**,
-diagnostics positionnés, paramétrage des règles métier et simulation
-d'événements sur le vrai moteur — distribution séparée
-[`urban-workflow-playground`](playground/README.md) :
+Des **composants web indépendants** (éditeur avec intellisense,
+diagramme, schémas, scripts, simulation sur le vrai moteur…) qu'une
+application monte selon ses besoins, et une page qui les assemble —
+distribution séparée [`urban-workflow-playground`](playground/README.md) :
 
 ```bash
 pip install urban-workflow-playground

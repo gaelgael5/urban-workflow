@@ -40,7 +40,13 @@ _KNOWN_FIELDS = {
     "ExternalId": ("external_id", str),
     "CreationDate": ("creation_date", _parse_datetime),
     "EventDate": ("event_date", _parse_datetime),
+    "DedupKey": ("dedup_key", str),
 }
+
+# Propriétés du socle que l'émetteur ne fixe pas : posées par le moteur.
+# Lues dans un payload, elles sont ignorées (ni champ typé, ni donnée
+# étendue) — sinon un émetteur pourrait antidater son intégration.
+_SYSTEM_FIELDS = frozenset({"IntegrationDate"})
 
 
 def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingEvent:
@@ -57,8 +63,17 @@ def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingE
         raise ValueError("incoming event payload must be a JSON object")
 
     for key, value in payload.items():
+        if key in _SYSTEM_FIELDS:
+            continue
         known = _KNOWN_FIELDS.get(key)
         if known is not None:
+            # Un Uuid absent ou null laisse celui tiré par le modèle, et
+            # l'événement reste « sans Uuid d'émetteur » : le moteur ne
+            # dédoublonnera donc pas dessus.
+            if key == "Uuid":
+                if value is None:
+                    continue
+                event.uuid_from_payload = True
             attribute, convert = known
             setattr(event, attribute, convert(value))
         else:
@@ -70,3 +85,27 @@ def populate_incoming_event(event: IncomingEvent, payload: Payload) -> IncomingE
 def parse_incoming_event(payload: Payload) -> IncomingEvent:
     """Construit un :class:`IncomingEvent` depuis un payload JSON."""
     return populate_incoming_event(IncomingEvent(), payload)
+
+
+def event_to_document(event: IncomingEvent) -> dict[str, Any]:
+    """Reconstruit le document « format fil » d'un événement entrant.
+
+    Propriétés du socle en CamelCase + données étendues — c'est ce
+    document que les schémas d'événements valident et sur lequel le hash
+    anti-doublon est calculé, quelle que soit la clé retenue (``UNIQUE``
+    déclaré ou repli automatique sur ``Uuid`` / ``Name`` + ``EventDate``
+    + ``ExternalId``).
+    """
+    document: dict[str, Any] = dict(event.extended_datas)
+    document["Name"] = event.name
+    document["Uuid"] = str(event.uuid)
+    document["ExternalId"] = event.external_id
+    if event.creation_date is not None:
+        document["CreationDate"] = event.creation_date.isoformat()
+    if event.event_date is not None:
+        document["EventDate"] = event.event_date.isoformat()
+    if event.integration_date is not None:
+        document["IntegrationDate"] = event.integration_date.isoformat()
+    if event.dedup_key:
+        document["DedupKey"] = event.dedup_key
+    return document

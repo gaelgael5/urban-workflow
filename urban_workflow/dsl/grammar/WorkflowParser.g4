@@ -55,6 +55,7 @@ define_referenciel_statement :
         event_declaration_statement
       | rule_declaration_statement
       | action_declaration_statement
+      | artifact_declaration_statement
       | constant_declaration
     )    
     ;
@@ -72,7 +73,9 @@ value :
     ;
 
 state :
-    STATE key comment?
+    // (AS ...) : extension urban-workflow -- schema (YAML) des champs metier
+    // de l'etat, meme registre que les schemas d'evenements.
+    STATE key comment? (AS schemaRef=compositekey)?
     execute*
     on_event_statement*
     ;
@@ -135,7 +138,27 @@ argument :
 
 argumentValue :
       string 
+    | contextPath
     | compositekey
+    ;
+
+// Extension urban-workflow : chemin @Racine suivi de segments. Les racines
+// @IncomingEvent (evenement entrant : socle + donnees metier) et @state
+// (instance de l'etat courant) designent des documents JSON et acceptent
+// en plus les index de liste [n] et les cles ['prop'] ; les autres racines
+// (@Workflow, @Event) restent des references a proprietes simples.
+// Place AVANT compositekey : sur un chemin a points seuls, ambigu entre les
+// deux, ANTLR retient la premiere alternative -- tout chemin @ passe ici.
+// Sous-ensemble volontaire : pas de filtres ni de jokers (une regle recoit
+// UNE valeur).
+contextPath :
+    AROBASE key jsonPathSegment*
+    ;
+
+jsonPathSegment :
+      DOT key
+    | LEFT_BRACKET NUMBER RIGHT_BRACKET
+    | LEFT_BRACKET CHAR_STRING RIGHT_BRACKET
     ;
 
 rule_conditions :
@@ -147,15 +170,81 @@ rule_conditions :
     ;
 
 event_declaration_statement :
-    EVENT key comment?
+    // (AS ...) et (UNIQUE ...) : extensions urban-workflow.
+    // AS reference un JSON Schema (YAML) enregistre dans le SchemaRegistry
+    // a l'initialisation du moteur ; UNIQUE liste les proprietes du payload
+    // dont le hash sert d'anti-doublon (le champ DedupKey fourni par
+    // l'emetteur reste prioritaire quand il est present).
+    EVENT key comment? (AS schemaRef=compositekey)? (UNIQUE unique_keys)?
+    ;
+
+unique_keys :
+    LEFT_PAREN key (COMMA key)* RIGHT_PAREN
     ;
 
 action_declaration_statement :
-    ACTION key LEFT_PAREN parameters? RIGHT_PAREN comment?
+    // (AS ...) : extension urban-workflow -- reference de la methode de
+    // l'action dans le ScriptRegistry (verifiee au chargement ; son
+    // execution est a cadrer).
+    ACTION key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS scriptRef=compositekey)?
+    ;
+
+artifact_declaration_statement :
+    // Extension urban-workflow (decision utilisateur du 2026-11-08) : un
+    // artefact est un document JSON NOMME, produit par un script (jslt) du
+    // ScriptRegistry (USING) et valide par un JSON Schema facultatif du
+    // SchemaRegistry (AS, comme EVENT et STATE). Sans parametres : le script
+    // lit le contexte ; consomme par le chemin @artifact.Nom dans les
+    // arguments d'action (le JSON n'est qu'un moyen de fournir une donnee
+    // bien formee a autre chose, ex. le corps d'un appel HTTP).
+    ARTIFACT key comment? (AS schemaRef=compositekey)? USING scriptRef=compositekey
     ;
 
 rule_declaration_statement :
-    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment?
+    // (AS ...) : extension urban-workflow -- la regle est implementee par un
+    // script du ScriptRegistry, charge a l'initialisation du moteur comme les
+    // schemas : le document de workflow ne porte pas de code (decision
+    // utilisateur du 2026-11-07). Sans AS, la regle reste une fonction
+    // enregistree cote code (FunctionRegistry), comme dans le source.
+    RULE key LEFT_PAREN parameters? RIGHT_PAREN comment? (AS scriptRef=compositekey)?
+    ;
+
+// Extension urban-workflow : point d'entree d'un script du langage
+// d'expressions (fichier separe du workflow, une seule expression ; le ';'
+// final est tolere).
+rule_script :
+    expression SEMICOLON? EOF
+    ;
+
+// Extension urban-workflow : langage d'expressions des regles. Dans une
+// regle recursive a gauche, ANTLR donne la priorite aux alternatives les
+// plus HAUTES : moins unaire, puis * /, + -, comparaisons / IN / IS NULL,
+// NOT, AND, OR -- l'ordre usuel (NOT a = b se lit NOT (a = b)).
+expression :
+      MINUS expression                                                  #negateExpression
+    | expression op=(STAR | SLASH) expression                           #multiplyExpression
+    | expression op=(PLUS | MINUS) expression                           #addExpression
+    | expression op=(EQUAL | NOT_EQUAL | LESS | LESS_EQUAL | GREATER | GREATER_EQUAL) expression
+                                                                        #compareExpression
+    | expression NOT? IN LEFT_PAREN expression (COMMA expression)* RIGHT_PAREN
+                                                                        #inExpression
+    | expression IS NOT? NULL                                           #nullExpression
+    | NOT expression                                                    #notExpression
+    | expression AND expression                                         #andExpression
+    | expression OR expression                                          #orExpression
+    | primaryExpression                                                 #primary
+    ;
+
+primaryExpression :
+      numeric                                                           #numericLiteral
+    | number                                                            #integerLiteral
+    | string                                                            #stringLiteral
+    | (TRUE | FALSE)                                                    #booleanLiteral
+    | NULL                                                              #nullLiteral
+    | contextPath                                                       #pathValue
+    | key LEFT_PAREN (expression (COMMA expression)*)? RIGHT_PAREN      #functionCall
+    | key                                                               #identifier
+    | LEFT_PAREN expression RIGHT_PAREN                                 #parenthesized
     ;
 
 parameters : 

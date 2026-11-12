@@ -75,6 +75,15 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   installation + fumée testées dans un venv vierge
   (`--find-links dist`). `conftest.py` racine ajoute `playground/` au
   `sys.path` ; la CI installe `-e ./playground` dans la matrice.
+- **0.2.0** (2026-11-08) : les deux paquets passent en 0.2.0 (artefacts,
+  jslt, scripts, composants) ; le playground exige `urban-workflow>=0.2.0`.
+  Wheels vérifiées en venv vierge (contenu complet, exemple §9 du guide,
+  montage sous préfixe, paquet JS).
+- **0.2.1** : pages PyPI en ANGLAIS (`readme = "README.en.md"`, résumés
+  anglais, liens absolus vers le tag `v0.2.1` — un lien relatif est mort
+  sur pypi.org) ; les `README.md` français restent dans le dépôt, liés
+  entre eux. Garde : `tests/test_packaging.py`. Le Dockerfile copie aussi
+  `README.en.md` (sinon la construction du socle échoue).
 - L'idée de « paquets par pays » a été abandonnée par l'utilisateur
   (mauvaise conversation) — ne pas la relancer.
 
@@ -98,14 +107,366 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   « sans sqlalchemy » couvre aussi ce skip ; lint CI étendu à
   `playground` et `conftest.py`.
 
+## Hors plan — Schémas d'événements (terminé)
+
+- **Première extension assumée de la grammaire** (commentée dans les .g4) :
+  `DEFINE EVENT nom 'libellé' AS @nom_schema;` — token `AS` ajouté au lexer,
+  `(AS schemaRef=compositekey)?` dans `event_declaration_statement`.
+  Parseur régénéré. `AS` devient un mot réservé.
+- Les schémas sont **séparés du DSL** (exigence utilisateur) : JSON Schema
+  écrits en YAML, chargés à l'initialisation du moteur dans
+  `urban_workflow/schemas.py` → `SchemaRegistry` (`add_file`/`add_yaml`/
+  `add_directory`/`add_schema`), socle commun `BASE_EVENT_SCHEMA`
+  (Name requis, Uuid/dates avec formats) toujours validé en plus du schéma
+  métier (`include_base`). Extra optionnel `[schemas]` = PyYAML + jsonschema
+  (imports paresseux ; le cœur reste léger).
+- Visiteur : param `schemas=None` — sans registre, la référence `AS` est
+  **stockée sans résolution** (mode permissif, le playground continue de
+  marcher) ; avec registre, référence inconnue = `UnknownSchemaError`
+  positionnée, et `DeclaredEventConfig.schema`/`dedup_keys` sont résolus.
+  `parse_config(..., schemas=...)` ; `event_to_document` dans
+  `engine/serializer.py` (format fil CamelCase pour validation + hash).
+- **Anti-doublon : décision utilisateur = A+B, implémenté.** `x-dedup`
+  retiré (schémas = JSON Schema pur). A) extension DSL
+  `UNIQUE (Prop, …)` sur DEFINE EVENT (token `UNIQUE` + règle
+  `unique_keys`, doublon de propriété = erreur positionnée) →
+  `DeclaredEventConfig.dedup_keys`, pur DSL (marche sans registre).
+  B) propriété réservée `DedupKey` du socle (champ typé
+  `IncomingEvent.dedup_key`, mappée dans `_KNOWN_FIELDS`, dans
+  `BASE_EVENT_SCHEMA`) — **prioritaire sur UNIQUE**.
+  **Repli automatique (décision du 2026-11-12)** : faute de `DedupKey`
+  ET de `UNIQUE`, le moteur dédoublonne quand même — `Uuid` s'il vient
+  du payload (drapeau `IncomingEvent.uuid_from_payload`, posé par le
+  sérialiseur ; `Uuid: null` = absent), sinon signature fonctionnelle
+  `Name` + `EventDate` (+ `ExternalId` si renseigné)
+  (`processor._automatic_dedup_keys`). Ni `Uuid` ni `EventDate` =
+  **aucun** dédoublonnage : `Name` (+ `ExternalId`) seuls rejetteraient
+  tout événement suivant du même type (perdre des événements en silence
+  est pire que laisser passer un doublon).
+  Moteur : `processor._event_gate(config, event)` → valide (socle +
+  schéma métier, `EventSchemaError`) et retourne l'empreinte SHA-256 ;
+  `_already_integrated` = rejeu Uuid OU même `Event.dedup_hash` dans
+  l'historique → ignoré silencieusement (existants ET création).
+  Colonne SQL `workflow_events.dedup_hash`. La validation ne s'applique
+  que si l'événement serait réellement traité par la config.
+  **Portée vérifiée : par `ExternalId`** (les existants sont chargés par
+  ExternalId) — même `DedupKey` sur deux dossiers = deux intégrations
+  (`test_dedup_is_scoped_to_the_external_id`). Documentation à jour dans
+  les 4 guides (cascade en tableau + portée + règles communes dans
+  guide-dsl §Événements et son miroir EN, renvois depuis les guides
+  d'intégration), README FR/EN, aide du playground et docstrings
+  (`schemas.py`, `config/rules.py`, `engine/serializer.py`, `models.py` —
+  les mentions `x-dedup` résiduelles ont été retirées).
+- **`IntegrationDate`** (socle, `readOnly`) : posée par `evaluate_event`
+  (`WorkflowClock`, avant validation, seulement si absente) ; ignorée si
+  l'émetteur l'envoie (`_SYSTEM_FIELDS` du serializer). Portée par
+  `IncomingEvent`/`Event.integration_date`, colonne SQL, contexte des
+  templates. `Event.creation_date` reste « now » à l'historisation (héritage
+  du source, non modifié).
+- **Playground à jour schémas/UNIQUE** : panneau « Schémas d'événements »
+  dans Paramétrage (nom + YAML, localStorage `uw-playground-schemas`),
+  `schemas: [{name, yaml}]` envoyé à `/api/analyze` et `/api/simulate`
+  (`_build_schema_registry` — YAML invalide/extra manquant = erreur
+  globale propre), visiteur branché avec `schemas=`, symboles enrichis
+  (`schemas`, `event_details`, `payload_properties` pour l'intellisense
+  `AS @…` et `UNIQUE (…)`), badges AS/UNIQUE dans Structure, exemple
+  « validation » avec schéma + doublon `DedupKey` démontrant l'anti-doublon.
+  Deps du sous-projet : PyYAML + jsonschema (toujours actifs côté
+  playground). `tests/test_playground.py::TestSchemasInPlayground`.
+- Jar ANTLR : Maven Central rate-limite parfois (429) — miroir qui marche :
+  `maven-central.storage-download.googleapis.com/maven2/...`.
+
+## Hors plan — Vue diagramme du playground (fait)
+
+- `urban_workflow/dsl/surface.py` : **modèle de surface** sérialisable
+  (états/transitions/déclarations, gardes et blocs EXECUTE/STORE en texte
+  source brut, `_snippet` désindente les continuations) + `render_script`
+  canonique. Point fixe testé `render(extract(render(m))) == render(m)` +
+  équivalence sémantique via `parse_config`. FRAGMENT/INCLUDE →
+  `SurfaceError`. **Le moteur exige un SWITCH sur chaque branche**
+  (build résout toutes les cibles) — branche sans SWITCH = boucle
+  pointillée dans le diagramme, erreur à l'analyse.
+- Playground : `POST /api/diagram` (script → modèle, erreurs
+  positionnées) et `POST /api/generate` (modèle → script canonique +
+  diagnostics de l'analyse réelle, réutilise `analyze()`).
+- Front `static/diagram.js` : bascule Éditeur/Diagramme au-dessus de
+  l'éditeur, X6 3.1.8 vendorisé (`static/vendor/x6.min.js`, version
+  **ASCII-safe** du prototype — l'original contient des U+00A0 bruts),
+  nœuds états (textWrap), arêtes transitions/initialiseurs/expirations,
+  ordinaux ①② = priorité des branches, inspecteur flottant (événement
+  avec datalist, WHEN, EXECUTE/STORE, SWITCH, ↑↓ priorité, RECURSIVE),
+  « Relier » = drag magnétique, « Réorganiser » = BFS en couches,
+  positions hors du DSL (voir « Mise en page du diagramme »), événements utilisés
+  non déclarés auto-déclarés à la génération (pont et poignées globales d'alors remplacés depuis par les composants,
+  voir « Composants graphiques indépendants »).
+- **Piège X6 contourné** : une sélection active (attrs modifiés par le
+  highlight) casse la recherche de cible du drag magnétique → entrer en
+  mode Relier désélectionne, les clics n'y sélectionnent pas, et la
+  création d'un lien sort du mode Relier en sélectionnant la nouvelle
+  branche. Tests Playwright : drags au rythme réel (pauses entre
+  mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
+  intercepte).
+
+## Hors plan — Mise en page du diagramme (fait, 2026-11-07)
+
+- Positions par nom d'état dans `<workflow>.layout.json`
+  (`{"version":1,"workflow":…,"states":{Etat:{x,y}}}`), jamais dans le DSL.
+  `urban_workflow_playground/layout.py` (`LayoutDirectory`,
+  `normalize_layout` : nom de workflow = identifiant sans `..`, x/y finis,
+  écriture atomique). Routes `GET/PUT /api/layout/{workflow}`, actives si
+  `PLAYGROUND_LAYOUT_DIR` (lu à chaque requête) ; image : `/data/layouts`
+  + volume nommé `layouts` dans le compose.
+- Composant `diagram` : store `{load → Promise, save}` remplaçable
+  (option `layoutStore`, `instance.setLayoutStore`, `reload`) ; défaut =
+  serveur si `enabled`, sinon localStorage. `placeMissing()` ne place que les états
+  sans position (avant : un seul manquant ré-étalait tout).
+- Vue Scripts : `RULE_FUNCTIONS` typées (`params`, `returns`, `doc`,
+  `signature`), complétion qui se rouvre après une fonction / `@…​.` /
+  `IN (` (`item.reopen` + événement `pick`), bandeau de signature
+  (`enclosingCall`).
+
+## Hors plan — États modélisés, `@state`, `@IncomingEvent` (fait)
+
+Cadrage du 2026-11-05 — **trois objets** : l'événement entrant
+(`@IncomingEvent`, point d'intégration), l'**état** (créé au SWITCH ; le
+calcul de ses champs métier est À CADRER), le workflow (hors cadrage).
+- **`$.` supprimé** → `@IncomingEvent.…` (le `@` est collé à la référence),
+  mêmes capacités. Grammaire : règle `contextPath` (`AROBASE key
+  jsonPathSegment*`) placée AVANT `compositekey` dans `argumentValue` (sur
+  un chemin à points, ambigu, ANTLR prend la première alternative) ; token
+  `DOLLAR` retiré. `[n]`/`['x']` refusés hors `@IncomingEvent`/`@state`.
+  Racines insensibles à la casse. `@Event.…` (historique) reste résolu mais
+  n'est plus proposé.
+- **FromState/ToState ne sont PAS des propriétés de l'événement** (un même
+  événement peut être traité par plusieurs workflows en parallèle) : hors
+  du modèle exposé ; l'instance d'état porte **`EventId`** (l'événement qui
+  l'a créée). `Event.from_state/to_state` internes (par workflow) restent.
+- États : `DEFINE STATE X 'l' AS @schema` ; `BASE_STATE_SCHEMA` = `Name`,
+  `Uuid`, `CreationDate`, `EventId` (readOnly). `StateInstance` créée à
+  **chaque SWITCH** (même vers l'état courant), d'abord dans
+  `ctx.pending_states` (les règles RECURSIVE voient déjà `@state.Uuid`),
+  versée dans `workflow.states` par `AppendStandardEvent` ; table SQL
+  `workflow_states`.
+- `@state` = `StatePath` liée au chargement au NOM de l'état du bloc
+  (`_current_state` du visiteur) → instance la plus récente de cet état ;
+  erreur positionnée dans INITIALIZE. Contrôle contre le schéma de l'état.
+- **Switch viable — TOUT switch, avec ou sans RECURSIVE** (décision
+  utilisateur) : `_find_route` ; état cible qui gère l'événement sans
+  branche passante → comme si le switch n'avait pas été rencontré (pas
+  d'instance ni d'action, état courant conservé ou pas de workflow, branche
+  suivante essayée). Route suivie seulement avec RECURSIVE (présélectionnée,
+  gardes évaluées une fois) ; regard à un niveau.
+- Playground : `models.js` = UN composant pour les vues Événements et États
+  (`OBJECT_KINDS`), éléments repérés par `data-ref` scopés à la vue (deux
+  vues dans la page) ; `state_details`/`state_properties`/`base_state_paths`
+  + repli regex `state_schema_refs` ; contrôle « pas de redéfinition du
+  socle » selon l'USAGE du schéma (événement ou état), après le parse.
+
+## Hors plan — Règles : méthodes référencées `AS @script` (fait)
+
+Cadrage du 2026-11-05 (langage complet dès la v1, coexistence Python) puis
+**décision du 2026-11-07 : pas de code dans le document de workflow** —
+le corps en ligne `AS <expression>` a été SUPPRIMÉ.
+- Grammaire : `RULE … comment? (AS scriptRef=compositekey)?` et idem sur
+  `ACTION` ; entrée `rule_script : expression SEMICOLON? EOF` pour les
+  fichiers de script. Règle `expression` récursive à gauche (priorité =
+  ordre des alternatives) ; tokens `IN IS NULL TRUE FALSE` + opérateurs.
+- `urban_workflow/scripts.py` : `ScriptRegistry` (`add_script`,
+  `add_function`, `add_file` — langage par extension —, `add_directory`,
+  `register_language`, `compile`), `ScriptLanguage` (`check` à
+  l'enregistrement, `compile(script, ScriptBinding)` à chaque site
+  d'appel), `PythonLanguage` (signature contrôlée via `FunctionRegistry`),
+  `UnknownScriptError`. `ExpressionLanguage` (`.expr`) dans
+  `dsl/expressions.py` (import paresseux depuis le registre : le DSL
+  importe `scripts`). `FUNCTIONS` (NOW, LENGTH, CONTAINS, *_BETWEEN) —
+  miroir `UrbanWorkflow.RULE_FUNCTIONS` dans `static/uw/core.js`. Sémantique « jamais
+  d'exception ».
+- Visiteur (`scripts=`) : `DeclaredFunction.script_ref` ; référence
+  inconnue = erreur positionnée sur `AS @…` ; script + fonction de code
+  homonyme = erreur ; `_check_rule_scripts` après TOUTES les déclarations
+  (« … (in rule X declared at …) ») puis recompilation à chaque appel
+  (« … (called at …) ») ; erreurs positionnées DANS le script
+  (`origine:ligne:col`, `make_path(..., error=)`). Sans registre :
+  références gardées, appel refusé. Actions : référence vérifiée,
+  exécution À CADRER.
+- Surface : `SurfaceFunction.script`, rendu `… 'libellé' AS @nom;`.
+- Playground : vue **Scripts** (`static/scripts.js`, `#sc-list`/
+  `#sc-detail`), scripts en localStorage `uw-playground-scripts` envoyés
+  en `scripts: [{name, language, source}]` à analyze/simulate/generate ;
+  `_build_script_registry` (toujours un registre ; script en erreur de
+  syntaxe remplacé par le langage `invalide` pour ne pas créer de faux
+  « script inconnu ») ; erreurs avec champ `script` + doublon dans
+  l'éditeur au site d'appel/déclaration (`_CALLED_AT`) ;
+  `symbols.rules[].script`, `symbols.scripts` ; complétion `AS @` →
+  scripts après DEFINE RULE/ACTION ; « écrire en script » ajoute
+  `AS @nom` ; exemples avec `scripts`.
+- Docs : `docs/guide-regles.md` (+ `docs/en/rules-guide.md`).
+- **Exemples Python (2026-11-08, choix utilisateur : pas de nouveau
+  langage)** : `playground/.../python_scripts.py` = fonctions enregistrées
+  par le SERVEUR (`add_function`) — `iban_valide`, `email_valide`,
+  `jours_ouvres_depuis` — publiées dans `symbols.python_scripts` (source,
+  params) et montrées en lecture seule dans la vue Scripts. Le navigateur
+  n'envoie que de l'`expression` (autre langage = erreur, avant : 500) ;
+  noms Python réservés. Exemple « Scripts Python » (`OuvertureCompte`).
+
+## Hors plan — Artefacts JSON nommés (fait, 2026-11-08)
+
+Cadrage : le JSON n'est qu'un MOYEN de fournir une donnée bien formée à
+autre chose (ex. corps d'un appel HTTP curl, à venir). Choix utilisateur :
+déclaration DSL, syntaxe `DEFINE ARTIFACT X 'l' AS @schema USING @script`
+(AS = schéma comme EVENT/STATE), consommation par chemin SANS paramètres
+`@artifact.X[.partie]`, destination = chaîne de sorties (dans les
+arguments de l'action), `TemplateRegistry` GARDÉ SÉPARÉ.
+- Grammaire : tokens `ARTIFACT`/`USING`, `artifact_declaration_statement`.
+- `urban_workflow/artifacts.py` : `JsltLanguage` (défaut du
+  `ScriptRegistry`, `.jslt`, erreurs de syntaxe → `DslSyntaxError`
+  positionnée dans le script ; `functions=` registre urban-json),
+  `script_document` (`IncomingEvent`/`state`/`Workflow`/`constants`/
+  `params`/`now`, mêmes objets que les chemins @), `make_producer`
+  (validation `validate_value`, `ArtifactError` qui INTERROMPT le
+  traitement — inverse des règles), `ArtifactPath`, `produce_artifact`.
+  `ScriptBinding.document` = fabrique du document liée au site d'appel.
+- Visiteur : `DeclaredArtifactConfig` / `WorkflowConfig.declared_artifacts`,
+  script contrôlé à la déclaration (« (in artifact X declared at …) »),
+  `@artifact` seulement dans les arguments d'EXECUTE
+  (`_in_action_arguments`), partie contrôlée contre le schéma.
+  Surface : `SurfaceArtifact`.
+- Playground : langages navigateur = expression + jslt ; symbols
+  `artifacts`, `artifact_properties`, `jslt_functions` ;
+  `POST /api/artifact-preview` ; vue Scripts : mode `jslt`, complétion
+  `$.`/fonctions, aperçu « Produire le JSON » ; exemple « Artefacts JSON ».
+- Dialecte urban-json 0.2.1 : chemins `$.x`, pas de commentaires `//`,
+  `size`/`count`/`tostring` absents ; fonction inconnue détectée à
+  l'exécution seulement. Docs : `docs/guide-artefacts.md` (+ en).
+
+## Hors plan — Composants graphiques indépendants (fait, 2026-11-08)
+
+Décision utilisateur : « des composants graphiques indépendants que
+l'utilisateur peut utiliser au gré de ses besoins » (pas une page figée).
+- `static/uw/` (ES5, sans build) : `core.js` = `UrbanWorkflow.createWorkspace`
+  (script, règles simulées, schémas, scripts, événements, dernière analyse ;
+  analyse auto différée ; persistance `storage: "local" | false | {load,save}`,
+  clés `uw-playground-*` inchangées ; événements `change`/`analyze`/
+  `analyze-error`/`reveal`), `define`/`mount`/`components`, langages
+  CodeMirror ; composants `editor`, `status`, `rules`, `schemas`,
+  `structure`, `simulation`, `help` (panels.js), `diagram`, `events`/
+  `states` (models.js, OBJECT_KINDS), `scripts`, `examples`, `tabs`.
+  Aucun id fixe (data-ref + uid), plusieurs instances possibles, aucun
+  composant ne connaît les autres : `ws.reveal(composant, détail)` + le
+  conteneur `tabs` qui active l'onglet. `insertText` passe par l'éditeur
+  monté (historique d'annulation), sinon remplacement du texte.
+- Page de référence = `static/page.js` (une composition) ; `window.Playground`
+  = poignée de tests. Anciens globaux (`PlaygroundBridge`,
+  `PlaygroundDiagram`, `PlaygroundScripts`) SUPPRIMÉS.
+- Serveur : `create_app(python_functions=, layout_dir=, title=)`, `app =
+  create_app()` ; fonctions métier gardées au niveau module avec param
+  `functions` ; URL relatives partout (montage sous préfixe testé) ;
+  `apiBase` déduit de l'URL de core.js / du paquet ; paquets
+  `static/urban-workflow.{js,css}` (`COMPONENT_SCRIPTS`, ordre de
+  chargement). `package-data` inclut `static/uw/*` (sinon absent de l'image).
+- CSS : `uw/urban-workflow.css` sous `.uw`, variables `--uw-*` ; `style.css`
+  = mise en page de la page seule. Doc : `playground/README.md` (guide
+  d'intégration complet). Tests : `TestEmbedding`.
+
+## Hors plan — Documentation du moteur (audit du 2026-11-08)
+
+Audit doc ↔ code : corrigé — branche sans SWITCH (refusée), mots réservés
+(sensibles à la casse ; PARAMETER/TIME/WITH), tableaux d'erreurs
+(chargement / traitement, `urban_workflow.exceptions`), chaîne de sorties
+personnalisée (contrat Transaction), paramètres oubliés, champs métier de
+`@state` toujours vides. `guide-integration.md` §9 = exemple complet
+(schémas + script de règle + artefact jslt + template) et §10 récap des
+imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
+(`TestGuideIntegration`) — modifier le guide = modifier le test.
+
+## Hors plan — Arguments `$.chemin` (remplacé par `@IncomingEvent.`)
+
+- **Troisième extension de grammaire** (commentée dans les .g4) : tokens
+  `DOLLAR`/`LEFT_BRACKET`/`RIGHT_BRACKET`, règle `jsonPath` dans
+  `argumentValue` → `$.Prop`, `$.Liste[0].X`, `$['nom']`, `$` seul.
+  Parseur régénéré dans un conteneur `eclipse-temurin:21-jre` sur test1
+  (pas de Java sur le poste), jar via le miroir Maven.
+- `values.EventPath` (callable comme `ContextRef`) : résolu contre
+  `event_to_document(ctx.incoming_event)` (socle + payload) ; absent →
+  `None` ; pas de conversion de type. Vaut pour règles ET actions.
+- Visiteur : `_current_event` = événement du bloc `ON EVENT`/initialiseur
+  en cours ; `_check_event_path` refuse un chemin inconnu du schéma de cet
+  événement (si registre fourni), arrêt silencieux sur `$ref`,
+  combinaisons, `patternProperties`, `additionalProperties` schéma.
+- Playground : `event_properties` (chemins aplatis + type, par événement)
+  et `base_paths` dans `/api/analyze` ; le repli regex lit aussi les
+  `AS @…` (`schema_refs`) — sinon l'intellisense perd le schéma pendant la
+  frappe, quand le script ne compile pas. Complétion après `$` selon le
+  dernier `ON EVENT X` avant le curseur (socle seul après `DEFINE STATE`,
+  `ON ENTER/EXIT`, `EXPIRE AFTER`).
+
+## Hors plan — Vue Événements du playground (fait)
+
+- Troisième vue (Éditeur | Diagramme | **Événements**) : liste des
+  événements du script, détail = **socle en lecture seule** (instance
+  `readOnly`, servi par `GET /api/base-event-schema` — source unique
+  `BASE_EVENT_SCHEMA`) + **schéma métier** éditable, synchronisé avec son
+  YAML et le panneau Paramétrage (même stockage `schemaSettings`).
+  « Créer le schéma métier » insère `AS @schema_<Event>` ; « Déclarer »
+  ajoute un `DEFINE EVENT` (insertions CodeMirror annulables).
+- Composant **réutilisé de Miles** : `SchemaFieldsEditor` de
+  jsonjoy-builder (fork vendu, tgz identique à
+  `Miles/portail/frontend/vendor/`). Bundle navigateur **commité**
+  `static/vendor/schema-editor.{js,css}`, sources dans
+  `playground/schema-editor/` (`npm ci && npm run build`, esbuild IIFE,
+  `window.UWSchemaEditor`). Le fork ne verrouille pas un champ isolé →
+  deux instances. Exclu de l'image (`.dockerignore`).
+- CSS : les styles jsonjoy sont en `@layer` → toute règle globale non
+  rangée en couche les écrase ; les règles `button, select` du playground
+  sont en `:where(…):where(:not(.jsonjoy, .jsonjoy *))` (spécificité
+  nulle). Thème = variables `--jsonjoy-*` redéfinies sur `.jsonjoy`
+  (s'applique aussi aux dialogues en portail sur `<body>`).
+- Serveur : `event_details` liste tous les événements métier (+ `label`,
+  `declared`) ; un schéma métier qui redéfinit un champ du socle est
+  refusé à l'analyse.
+
+## Hors plan — Livraison sur machine de test (fait)
+
+- Standard « machines de test » : push sur **`dev`** (branche créée depuis
+  la branche de travail, à resynchroniser à chaque livraison), puis
+  `./dev-deploy.sh` dans le clone `~/urban-workflow` de la machine, puis
+  lecture des journaux réels. Aucune retouche manuelle de la cible.
+- `playground/Dockerfile` (contexte = racine ; socle `[schemas]` +
+  playground installés depuis les sources, non root, HEALTHCHECK sur
+  `GET /healthz`), `docker-compose.yml` (stack/port via `.env`),
+  `dev-deploy.sh` (9 étapes, pas de migration : pas de base),
+  `scripts/declarer-exposition.sh` (copie du script du portail — à
+  resynchroniser, pas à faire diverger).
+- Ressources : `ia_instructions/tests_and_ressources.md` (`test1` =
+  `host-test-37`, port 8777).
+- Poste de dev (mis à jour le 2026-11-08) : `origin` en HTTPS et git
+  identifié par `gh` (`gh auth setup-git`, propre à github.com) →
+  `git push origin …` fonctionne. Historique : pas de clé SSH GitHub → pousser en HTTPS
+  (`git push https://github.com/gaelgael5/urban-workflow.git …`). Le
+  helper global (`devpod agent git-credentials`) a renvoyé des 500 ; le
+  script du portail marche : `git -c credential.helper=
+  -c credential.helper=$HOME/.config/portal/git-credential-portal.sh push …`.
+  Pas de pip local : tests via un conteneur `python:3.12-slim` jetable sur
+  la machine de test.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
-  **inchangées** par rapport au source ; `regenerate.sh` régénère le parseur
-  (jar ANTLR 4.13.2 téléchargé depuis Maven Central — www.antlr.org peut être
-  bloqué ; même version que le runtime `antlr4-python3-runtime` d'urban-json).
+  reprises du source **+ extension `AS` ci-dessus** ; `regenerate.sh`
+  régénère le parseur (jar ANTLR 4.13.2 — même version que le runtime
+  `antlr4-python3-runtime` d'urban-json).
 - `urban_workflow/dsl/generated/` : code généré commité, ne jamais l'éditer.
   Particularité cible Python : accesseurs `state_()` et `type_()`.
+- **Fragments vérifiés (2026-11-12)** : plusieurs `INCLUDE` dans un même
+  script marchent (événements/règles/actions/artefacts/constantes de
+  fragments différents), visiteur neuf par script complet (pas de fuite
+  entre workflows). Limites constatées : pas de cascade (`INCLUDE` dans
+  un fragment = erreur de syntaxe), inclusion non idempotente (deux fois
+  le même fragment = `DuplicatedArgumentNameError` positionnée sur le
+  fragment), cible obligatoirement un fragment, au moins un `DEFINE …;`
+  exigé dans le script principal (`(define_referenciel_statement
+  SEMICOLON)+`), et `parse_config` sur une chaîne ne résout PAS les
+  `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
 - `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,
   `is_fragment`, `crc`, erreurs de syntaxe positionnées (`check()` →
   `DslSyntaxError`).

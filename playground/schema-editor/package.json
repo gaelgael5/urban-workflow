@@ -1,0 +1,19 @@
+{
+  "name": "urban-workflow-schema-editor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bundle navigateur de l'éditeur visuel de JSON Schema (SchemaFieldsEditor de jsonjoy-builder, même composant que le portail Miles) pour le playground urban-workflow.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "jsonjoy-builder": "file:vendor/jsonjoy-builder-1.0.4-89529b6.tgz",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "yaml": "2.8.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}

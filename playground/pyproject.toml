@@ -4,16 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "urban-workflow-playground"
-version = "0.1.0"
-description = "Playground web du DSL urban-workflow : éditeur avec intellisense, paramétrage des règles métier, diagnostics positionnés et simulation d'événements."
-readme = "README.md"
+version = "0.2.1"
+description = "Web components for the urban-workflow DSL (editor with intellisense, diagram, schemas, scripts, simulation) to embed in an application, and the playground that assembles them."
+readme = "README.en.md"
 license = { text = "MIT" }
 authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = [
-    "urban-workflow>=0.1.0",
+    "urban-workflow>=0.2.0",
     "fastapi>=0.110",
     "uvicorn>=0.27",
+    "PyYAML>=6.0",
+    "jsonschema>=4.18",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -34,4 +36,4 @@ urban-workflow-playground = "urban_workflow_playground.__main__:main"
 include = ["urban_workflow_playground*"]
 
 [tool.setuptools.package-data]
-urban_workflow_playground = ["static/*", "static/vendor/*"]
+urban_workflow_playground = ["static/*", "static/uw/*", "static/vendor/*"]

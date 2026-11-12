@@ -23,17 +23,22 @@ from ..registry import FunctionRegistry
 from .errors import DslErrorModel
 from .loader import load_directory, parse_directory
 from .parser import WorkflowScriptParser
+from .surface import SurfaceError, SurfaceModel, extract_surface, render_script
 from .visitor import ConstantModel, DeclaredFunction, WorkflowConfigVisitor
 
 __all__ = [
     "ConstantModel",
     "DeclaredFunction",
     "DslErrorModel",
+    "SurfaceError",
+    "SurfaceModel",
     "WorkflowConfigVisitor",
     "WorkflowScriptParser",
+    "extract_surface",
     "load_directory",
     "parse_config",
     "parse_directory",
+    "render_script",
 ]
 
 
@@ -41,6 +46,8 @@ def parse_config(
     source: str,
     rules: FunctionRegistry | None = None,
     filename: str = "",
+    schemas=None,
+    scripts=None,
 ) -> WorkflowConfig:
     """Analyse un script DSL complet et construit sa configuration.
 
@@ -50,5 +57,7 @@ def parse_config(
     argument inconnu ou manquant, état ``SWITCH`` absent…).
     """
     parser = WorkflowScriptParser.parse_string(source, filename=filename).check()
-    visitor = WorkflowConfigVisitor(rules=rules, filename=filename)
+    visitor = WorkflowConfigVisitor(
+        rules=rules, filename=filename, schemas=schemas, scripts=scripts
+    )
     return parser.visit(visitor)

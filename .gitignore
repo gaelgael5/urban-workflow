@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Déploiement sur machine de test (dev-deploy.sh)
+deploy-logs/
+
+# Bundle de l'éditeur de schémas : seules les sources et le résultat sont versionnés
+playground/schema-editor/node_modules/

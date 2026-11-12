@@ -25,7 +25,9 @@ from typing import Any
 from antlr4.tree.Tree import ErrorNode
 
 from .. import constants
+from ..artifacts import ArtifactPath, make_producer, script_document
 from ..config import (
+    DeclaredArtifactConfig,
     DeclaredEventConfig,
     IncomingEventConfig,
     InitializationOnEventConfig,
@@ -44,11 +46,23 @@ from ..exceptions import (
     InvalidMethodReferenceError,
     MissingArgumentNameError,
     MissingStateError,
+    UnknownSchemaError,
+    UnknownScriptError,
     WorkflowError,
 )
 from ..models import RuleSpan, RunContext
 from ..registry import FunctionRegistry
-from ..values import ContextRef, ContextValue, resolve_value
+from ..schemas import BASE_EVENT_SCHEMA, BASE_STATE_SCHEMA, SchemaRegistry
+from ..scripts import ScriptBinding, ScriptRegistry
+from ..values import (
+    ContextRef,
+    ContextValue,
+    DocumentPath,
+    EventPath,
+    StatePath,
+    parse_path_segments,
+    resolve_value,
+)
 from .errors import DslErrorModel
 from .generated.WorkflowParser import WorkflowParser
 from .generated.WorkflowParserVisitor import WorkflowParserVisitor
@@ -66,6 +80,9 @@ class DeclaredFunction:
     kind: str = "action"  # "rule" ou "action" (diagnostics)
     comment: str = ""
     parameters: dict[str, type] = field(default_factory=dict)
+    #: Référence ``AS @script`` vers la méthode dans le ScriptRegistry ;
+    #: vide = fonction enregistrée côté code (règle) ou action sans méthode.
+    script_ref: str = ""
 
 
 @dataclass
@@ -109,8 +126,18 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         self,
         rules: FunctionRegistry | None = None,
         filename: str = "",
+        schemas: SchemaRegistry | None = None,
+        scripts: ScriptRegistry | None = None,
     ) -> None:
         self._rules = rules if rules is not None else FunctionRegistry("rule")
+        #: Registre des schémas d'événements (chargé à l'initialisation du
+        #: moteur). ``None`` = les références ``AS @…`` sont stockées sans
+        #: résolution ni validation (mode permissif, ex. playground).
+        self._schemas = schemas
+        #: Registre des scripts (méthodes des règles/actions ``AS @…``).
+        #: ``None`` = références stockées sans résolution ; appeler une
+        #: règle à script est alors refusé (rien pour l'évaluer).
+        self._scripts = scripts
         self.filename = filename
         self.crc = 0
         self.errors: list[DslErrorModel] = []
@@ -122,6 +149,26 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         self._declarations: dict[str, DeclaredFunction] = {}
         #: Cibles de ``SWITCH`` à valider une fois tous les états connus.
         self._pending_switch_targets: list[tuple[str, Any]] = []
+        #: Événement du bloc ``ON EVENT`` en cours de visite (None hors d'un
+        #: tel bloc, ex. ON ENTER STATE) : permet de vérifier les chemins
+        #: ``$.…`` contre le schéma de CET événement.
+        self._current_event: str | None = None
+        #: État du bloc ``DEFINE STATE`` en cours de visite (None ailleurs,
+        #: notamment dans INITIALIZE WORKFLOW où aucun état n'existe encore) :
+        #: ``@state`` y désigne une instance de CET état.
+        self._current_state: StateConfig | None = None
+        #: Vrai pendant le contrôle d'un script de règle à sa déclaration :
+        #: le bloc d'appel (événement, état) n'est pas encore connu, les
+        #: chemins y sont seulement analysés (contrôlés à chaque appel).
+        self._checking_script = False
+        #: Nœud ``AS @script`` de chaque déclaration : position citée par
+        #: les erreurs du contrôle des scripts à la déclaration.
+        self._script_ref_nodes: dict[str, Any] = {}
+        #: Nœud ``DEFINE ARTIFACT`` de chaque artefact (erreurs de script).
+        self._artifact_nodes: dict[str, Any] = {}
+        #: Vrai pendant la visite des arguments d'une action EXECUTE : seul
+        #: endroit où ``@artifact.X`` a un sens (donnée fournie à l'action).
+        self._in_action_arguments = False
 
     # ------------------------------------------------------------------
     # API publique
@@ -233,6 +280,10 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                 self.visitDefine_referenciel_statement(statement), statement
             )
 
+        # Scripts de règles contrôlés une fois TOUTES les déclarations vues :
+        # une constante peut être déclarée après la règle qui l'utilise.
+        self._check_rule_scripts()
+
         for statement in ctx.define_state_statement():
             state = self.visitDefine_state_statement(statement)
             if state.name in workflow.states:
@@ -270,6 +321,7 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             ctx.event_declaration_statement,
             ctx.rule_declaration_statement,
             ctx.action_declaration_statement,
+            ctx.artifact_declaration_statement,
             ctx.constant_declaration,
         ):
             sub = getter()
@@ -295,6 +347,16 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                     f"event {declaration.name!r} is already declared",
                 )
             self._workflow.declared_events[declaration.name] = declaration
+
+        elif isinstance(declaration, DeclaredArtifactConfig):
+            if declaration.name in self._workflow.declared_artifacts:
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    ctx,
+                    f"artifact {declaration.name!r} is already declared",
+                )
+            self._workflow.declared_artifacts[declaration.name] = declaration
+            self._artifact_nodes[declaration.name] = ctx
 
         elif isinstance(declaration, DeclaredFunction):
             pass  # déjà enregistrée par la visite de la déclaration
@@ -323,9 +385,91 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
     def visitEvent_declaration_statement(
         self, ctx: WorkflowParser.Event_declaration_statementContext
     ) -> DeclaredEventConfig:
-        return DeclaredEventConfig(
+        declared = DeclaredEventConfig(
             name=self.visitKey(ctx.key()),
             label=self._optional_comment(ctx),
+        )
+
+        # Extension urban-workflow : DEFINE EVENT … AS @schema
+        if ctx.AS() is not None:
+            declared.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    declared.schema = self._schemas.get(declared.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx, str(exc))
+
+        # Extension urban-workflow : UNIQUE (Prop, …) — anti-doublon.
+        unique = ctx.unique_keys()
+        if unique is not None:
+            declared.dedup_keys = self.visitUnique_keys(unique)
+
+        return declared
+
+    def visitUnique_keys(self, ctx: WorkflowParser.Unique_keysContext) -> list[str]:
+        keys: list[str] = []
+        for key_ctx in ctx.key():
+            key = self.visitKey(key_ctx)
+            if key in keys:
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    key_ctx,
+                    f"duplicated UNIQUE property {key!r}",
+                )
+            keys.append(key)
+        return keys
+
+    def visitArtifact_declaration_statement(
+        self, ctx: WorkflowParser.Artifact_declaration_statementContext
+    ) -> DeclaredArtifactConfig:
+        """``DEFINE ARTIFACT X 'l' AS @schema USING @script`` — même
+        politique que les autres références : sans registre, la référence
+        est gardée sans résolution ; avec registre, inconnue = erreur
+        positionnée sur la référence."""
+        declared = DeclaredArtifactConfig(
+            name=self.visitKey(ctx.key()),
+            label=self._optional_comment(ctx),
+            script_ref=self.visitCompositekey(ctx.scriptRef).lstrip("@"),
+        )
+        if ctx.schemaRef is not None:
+            declared.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    declared.schema = self._schemas.get(declared.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx.schemaRef, str(exc))
+        if self._scripts is not None and declared.script_ref not in self._scripts:
+            self._raise_positioned(
+                UnknownScriptError,
+                ctx.scriptRef,
+                f"artifact {declared.name!r}: no script registered under name "
+                f"{declared.script_ref!r}; known: {self._scripts.names()}",
+            )
+        return declared
+
+    def _compile_artifact(self, declared: DeclaredArtifactConfig) -> Callable[[Any], Any]:
+        """Producteur ``(run_ctx) -> JSON`` de l'artefact, lié au bloc
+        courant (``@state`` du document = état du bloc qui l'utilise)."""
+        script = self._scripts.get(declared.script_ref)
+        state_name = self._current_state.name if self._current_state is not None else ""
+        constants = {k: c.value for k, c in self._constants.items()}
+
+        def error(exc_type: type[WorkflowError], ctx, message: str):
+            token = ctx.start if hasattr(ctx, "start") else ctx
+            raise exc_type(f"{script.where}:{token.line}:{token.column}: {message}")
+
+        binding = ScriptBinding(
+            owner=f"artifact {declared.name}",
+            constants=constants,
+            make_path=lambda raw, ctx: self._make_path(raw, ctx, error=error),
+            error=error,
+            document=lambda run_ctx, params: script_document(
+                run_ctx, params, state_name, constants
+            ),
+        )
+        compiled = self._scripts.compile(declared.script_ref, binding)
+        return make_producer(
+            declared.name, compiled, script.where, declared.schema, declared.schema_ref
         )
 
     def visitAction_declaration_statement(
@@ -359,8 +503,90 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         if parameters is not None:
             declaration.parameters.update(self.visitParameters(parameters))
 
+        if ctx.scriptRef is not None:
+            declaration.script_ref = self.visitCompositekey(ctx.scriptRef).lstrip("@")
+            self._script_ref_nodes[name] = ctx.scriptRef
+            if kind == "rule" and name in self._rules:
+                # Coexistence décidée : script OU fonction de code sous le
+                # nom de la règle, jamais les deux (laquelle ferait foi
+                # serait arbitraire).
+                self._raise_positioned(
+                    DuplicatedArgumentNameError,
+                    ctx,
+                    f"rule {name!r} references a script (AS @...) and is also "
+                    "registered in code; keep only one",
+                )
+            if self._scripts is not None and declaration.script_ref not in self._scripts:
+                self._raise_positioned(
+                    UnknownScriptError,
+                    ctx.scriptRef,
+                    f"{kind} {name!r}: no script registered under name "
+                    f"{declaration.script_ref!r}; known: {self._scripts.names()}",
+                )
+
         self._declarations[name] = declaration
         return declaration
+
+    def _check_rule_scripts(self) -> None:
+        """Contrôle chaque script de règle contre la signature qui le
+        référence (noms, fonctions), même si la règle n'est jamais appelée."""
+        if self._scripts is None:
+            return
+        self._checking_script = True
+        try:
+            for declaration in self._declarations.values():
+                if declaration.kind == "rule" and declaration.script_ref:
+                    try:
+                        self._compile_rule_script(declaration)
+                    except WorkflowError as exc:
+                        node = self._script_ref_nodes[declaration.name]
+                        raise type(exc)(
+                            f"{exc} (in rule {declaration.name!r} declared at "
+                            f"{self._position(node)})"
+                        ) from None
+            # Artefacts : leur script est contrôlé de même, utilisé ou non.
+            for declared in self._workflow.declared_artifacts.values():
+                try:
+                    self._compile_artifact(declared)
+                except WorkflowError as exc:
+                    node = self._artifact_nodes[declared.name]
+                    raise type(exc)(
+                        f"{exc} (in artifact {declared.name!r} declared at "
+                        f"{self._position(node)})"
+                    ) from None
+        finally:
+            self._checking_script = False
+        #: Nœud ``AS @script`` de chaque déclaration : position citée par
+        #: les erreurs du contrôle des scripts à la déclaration.
+        self._script_ref_nodes: dict[str, Any] = {}
+
+    def _compile_rule_script(self, declaration: DeclaredFunction) -> Callable[..., Any]:
+        """Script de règle → callable ``(ctx, **params)``, comme une règle
+        de code : l'appel (journal, conversion des arguments) reste commun.
+
+        Compilé à chaque site d'appel : ``make_path`` lie ``@state`` et le
+        contrôle des chemins au bloc appelant ; les erreurs sont
+        positionnées dans le SCRIPT (``script:ligne:colonne``).
+        """
+        script = self._scripts.get(declaration.script_ref)
+
+        def error(exc_type: type[WorkflowError], ctx, message: str):
+            token = ctx.start if hasattr(ctx, "start") else ctx
+            raise exc_type(f"{script.where}:{token.line}:{token.column}: {message}")
+
+        binding = ScriptBinding(
+            owner=declaration.name,
+            parameters=declaration.parameters,
+            constants={k: c.value for k, c in self._constants.items()},
+            make_path=lambda raw, ctx: self._make_path(raw, ctx, error=error),
+            error=error,
+        )
+        compiled = self._scripts.compile(declaration.script_ref, binding)
+
+        def script_rule(run_ctx: RunContext, **params: Any) -> Any:
+            return compiled(run_ctx, params)
+
+        return script_rule
 
     def visitParameters(self, ctx: WorkflowParser.ParametersContext) -> dict[str, type]:
         result: dict[str, type] = {}
@@ -397,6 +623,25 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             name=self.visitKey(ctx.key()),
             label=self._optional_comment(ctx),
         )
+
+        # Extension urban-workflow : DEFINE STATE … AS @schema
+        if ctx.AS() is not None:
+            state.schema_ref = self.visitCompositekey(ctx.schemaRef).lstrip("@")
+            if self._schemas is not None:
+                try:
+                    state.schema = self._schemas.get(state.schema_ref)
+                except UnknownSchemaError as exc:
+                    self._raise_positioned(UnknownSchemaError, ctx, str(exc))
+
+        self._current_state = state
+        try:
+            return self._visit_state_body(ctx, state)
+        finally:
+            self._current_state = None
+
+    def _visit_state_body(
+        self, ctx: WorkflowParser.StateContext, state: StateConfig
+    ) -> StateConfig:
 
         for execute in ctx.execute():
             on_enter, on_exit, rule = self.visitExecute(execute)
@@ -446,7 +691,11 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         when_rule_position: RuleSpan | None = None
         if ctx.WHEN() is not None:
             condition = ctx.rule_conditions()
-            when_rule, when_rule_code = self.visitRule_conditions(condition)
+            self._current_event = event_name
+            try:
+                when_rule, when_rule_code = self.visitRule_conditions(condition)
+            finally:
+                self._current_event = None
             when_rule_text = self._source_text(condition)
             when_rule_position = self._span(condition)
 
@@ -485,11 +734,15 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
             expire_rule_text = "@IncomingEvent.CurrentState == @Workflow.CurrentState"
             rule_pairs.extend(_expiration_rule_pairs(delay))
 
-        for switch_state in ctx.switch_state():
-            transition = self.visitSwitch_state(switch_state)
-            if expire_rule is not None:
-                _merge_when_rule(transition, expire_rule, expire_rule_text)
-            incoming_event.add_transition(transition)
+        self._current_event = incoming_event.name
+        try:
+            for switch_state in ctx.switch_state():
+                transition = self.visitSwitch_state(switch_state)
+                if expire_rule is not None:
+                    _merge_when_rule(transition, expire_rule, expire_rule_text)
+                incoming_event.add_transition(transition)
+        finally:
+            self._current_event = None
 
         return incoming_event, rule_pairs
 
@@ -610,9 +863,13 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
                         f"unknown argument {key!r} in call to action {name!r}; "
                         f"expected: {sorted(declaration.parameters)}",
                     )
-                action.arguments[key] = self._make_argument_value(
-                    raw_value, declaration.parameters[key], argument_ctx
-                )
+                self._in_action_arguments = True
+                try:
+                    action.arguments[key] = self._make_argument_value(
+                        raw_value, declaration.parameters[key], argument_ctx
+                    )
+                finally:
+                    self._in_action_arguments = False
                 remaining.pop(key, None)
 
         if remaining:
@@ -645,6 +902,9 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         composite = ctx.compositekey()
         if composite is not None:
             return self.visitCompositekey(composite)
+        context_path = ctx.contextPath()
+        if context_path is not None:
+            return context_path.getText()
         return ctx.string().getText()
 
     def _make_argument_value(
@@ -654,19 +914,161 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
 
         - ``'…'``  → littéral converti vers le type déclaré ;
         - ``@a.b`` → :class:`ContextRef` (résolution paresseuse) ;
+        - ``@IncomingEvent.a[0]`` → :class:`EventPath` (document de
+          l'événement entrant) ; ``@state.a`` → :class:`StatePath` (instance
+          de l'état du bloc courant) — valeurs JSON non converties ;
         - nom nu   → constante ``DEFINE CONST`` si elle existe, sinon littéral.
         """
         if raw.startswith("'") and raw.endswith("'"):
             return self._convert(_unquote(raw), declared_type, ctx)
 
         if raw.startswith("@"):
-            return ContextRef.parse(raw)
+            return self._make_path(raw, ctx)
 
         constant = self._constants.get(raw)
         if constant is not None:
             return self._convert(constant.value, declared_type, ctx)
 
         return self._convert(raw, declared_type, ctx)
+
+    def _make_path(self, raw: str, ctx, error=None) -> ContextValue:
+        """Chemin ``@Racine…`` → valeur paresseuse selon sa racine.
+
+        Racines insensibles à la casse, comme l'étaient les chemins ``@``
+        (``@incomingEvent`` = ``@IncomingEvent``).
+        """
+        root, segments = parse_path_segments(raw)
+        kind = root.lower()
+        # Un chemin lu dans un script est positionné dans le script.
+        raise_error = error or self._raise_positioned
+
+        if kind == "incomingevent":
+            path = EventPath(segments)
+            if self._current_event is not None and not self._checking_script:
+                declared = self._workflow.declared_events.get(self._current_event)
+                if declared is not None:
+                    self._check_document_path(
+                        path, BASE_EVENT_SCHEMA, declared.schema, declared.schema_ref,
+                        f"event {self._current_event!r}", ctx, raise_error,
+                    )
+            return path
+
+        if kind == "state":
+            if self._checking_script:
+                return StatePath(segments, "")
+            state = self._current_state
+            if state is None:
+                raise_error(
+                    InvalidArgumentValueError,
+                    ctx,
+                    "@state is only available inside a DEFINE STATE block "
+                    "(no state exists yet in INITIALIZE WORKFLOW)",
+                )
+            path = StatePath(segments, state.name)
+            self._check_document_path(
+                path, BASE_STATE_SCHEMA, state.schema, state.schema_ref,
+                f"state {state.name!r}", ctx, raise_error,
+            )
+            return path
+
+        if kind == "artifact":
+            return self._make_artifact_path(segments, ctx, raise_error, in_script=error is not None)
+
+        if "[" in raw:
+            raise_error(
+                InvalidArgumentValueError,
+                ctx,
+                f"index/key segments are only supported on @IncomingEvent and "
+                f"@state paths, not on @{root}",
+            )
+        return ContextRef.parse(raw)
+
+    def _make_artifact_path(self, segments, ctx, raise_error, in_script: bool):
+        if in_script or self._checking_script or not self._in_action_arguments:
+            raise_error(
+                InvalidArgumentValueError,
+                ctx,
+                "@artifact.<Name> is only available in EXECUTE action arguments "
+                "(an artifact is data handed to an action)",
+            )
+        if not segments or not isinstance(segments[0], str):
+            raise_error(
+                InvalidArgumentValueError, ctx,
+                "@artifact needs an artifact name: @artifact.<Name>",
+            )
+        name = segments[0]
+        declared = self._workflow.declared_artifacts.get(name)
+        if declared is None:
+            raise_error(
+                InvalidArgumentValueError,
+                ctx,
+                f"unknown artifact {name!r} (DEFINE ARTIFACT); "
+                f"declared: {sorted(self._workflow.declared_artifacts)}",
+            )
+        if self._scripts is None:
+            raise_error(
+                InvalidMethodReferenceError,
+                ctx,
+                f"artifact {name!r} is produced by script @{declared.script_ref} "
+                "but no ScriptRegistry was provided",
+            )
+        path = ArtifactPath(segments, producer=self._compile_artifact(declared))
+        # Partie demandée (@artifact.X.champ) contrôlée contre le schéma de
+        # l'artefact, quand il est résolu.
+        if len(segments) > 1 and declared.schema is not None:
+            self._check_document_path(
+                path, {"properties": {name: declared.schema}}, {},
+                declared.schema_ref, f"artifact {name!r}", ctx, raise_error,
+            )
+        return path
+
+    def _check_document_path(
+        self,
+        path: DocumentPath,
+        base: dict[str, Any],
+        schema: dict[str, Any] | None,
+        schema_ref: str,
+        owner: str,
+        ctx,
+        raise_error=None,
+    ) -> None:
+        """Refuse un chemin inconnu du schéma de l'objet désigné.
+
+        ``@IncomingEvent`` dans un bloc ``ON EVENT X`` → schéma de X ;
+        ``@state`` dans ``DEFINE STATE Y`` → schéma de Y. Ne vérifie que ce
+        qui est décidable : schéma résolu (registre fourni) ; le socle
+        (``base``) est alors toujours connu. La descente s'arrête — sans erreur — dès que le
+        schéma ne permet plus de trancher (``$ref``, combinaisons
+        ``allOf``/``anyOf``…, ``additionalProperties`` schéma,
+        ``patternProperties``) : mieux vaut laisser passer qu'inventer une
+        erreur. Une propriété absente d'un ``properties`` déclaré est en
+        revanche refusée : c'est la faute de frappe que ce contrôle vise.
+        """
+        if self._schemas is None or schema is None:
+            return
+
+        properties = dict(base["properties"])
+        properties.update(schema.get("properties") or {})
+        node: Any = {**schema, "properties": properties}
+
+        for depth, segment in enumerate(path.segments):
+            if not isinstance(node, dict) or _undecidable(node):
+                return
+            if isinstance(segment, int):
+                node = node.get("items")
+                continue
+            known = node.get("properties")
+            if not isinstance(known, dict):
+                return
+            if segment not in known:
+                shown = type(path)(path.segments[: depth + 1])
+                (raise_error or self._raise_positioned)(
+                    InvalidArgumentValueError,
+                    ctx,
+                    f"unknown property {str(shown)!r} in {owner} "
+                    f"(schema @{schema_ref}); known: {sorted(known)}",
+                )
+            node = known[segment]
 
     def _convert(self, value: Any, declared_type: type | None, ctx) -> Any:
         if declared_type is None or declared_type is object:
@@ -736,26 +1138,55 @@ class WorkflowConfigVisitor(WorkflowParserVisitor):
         return inner, f"({inner_code})"
 
     def _compile_rule_call(self, ctx, name: str) -> tuple[Rule, str]:
-        if name not in self._rules:
-            self._raise_positioned(
-                InvalidMethodReferenceError,
-                ctx,
-                f"rule {name!r} is not registered",
-            )
-        func = self._rules.get(name)
+        declaration = self._declarations.get(name)
+        script_ref = declaration.script_ref if declaration is not None else ""
 
         provided: list[tuple[str, str, Any]] = []
         arguments = ctx.arguments()
         if arguments is not None:
             provided = self.visitArguments(arguments)
 
-        # Validation contre la signature du callable enregistré.
-        try:
-            self._rules.validate_call(name, [key for key, _, _ in provided])
-        except WorkflowError as exc:
-            self._raise_positioned(type(exc), ctx, str(exc))
+        if script_ref:
+            if self._scripts is None:
+                self._raise_positioned(
+                    InvalidMethodReferenceError,
+                    ctx,
+                    f"rule {name!r} is implemented by script @{script_ref} but "
+                    "no ScriptRegistry was provided",
+                )
+            # Recompilé ICI : @state et le contrôle des chemins @IncomingEvent
+            # dépendent du bloc appelant ; l'erreur pointe le script et cite
+            # l'appel.
+            try:
+                func = self._compile_rule_script(declaration)
+            except WorkflowError as exc:
+                raise type(exc)(
+                    f"{exc} (in rule {name!r} called at {self._position(ctx)})"
+                ) from None
+            missing = [
+                p for p in declaration.parameters
+                if p not in {key for key, _, _ in provided}
+            ]
+            if missing:
+                self._raise_positioned(
+                    MissingArgumentNameError,
+                    ctx,
+                    f"missing argument(s) {missing} in call to rule {name!r}",
+                )
+        else:
+            if name not in self._rules:
+                self._raise_positioned(
+                    InvalidMethodReferenceError,
+                    ctx,
+                    f"rule {name!r} is not registered",
+                )
+            func = self._rules.get(name)
 
-        declaration = self._declarations.get(name)
+            # Validation contre la signature du callable enregistré.
+            try:
+                self._rules.validate_call(name, [key for key, _, _ in provided])
+            except WorkflowError as exc:
+                self._raise_positioned(type(exc), ctx, str(exc))
         resolvers: dict[str, ContextValue] = {}
         for key, raw_value, argument_ctx in provided:
             declared_type = (
@@ -940,3 +1371,10 @@ def _merge_when_rule(
 
         transition.when_rule = combined
         transition.when_rule_text = f"{guard_text} AND {transition.when_rule_text}"
+
+
+def _undecidable(schema: dict) -> bool:
+    """Le schéma ne permet pas de dire si une propriété y existe."""
+    if any(key in schema for key in ("$ref", "allOf", "anyOf", "oneOf", "patternProperties")):
+        return True
+    return isinstance(schema.get("additionalProperties"), dict)

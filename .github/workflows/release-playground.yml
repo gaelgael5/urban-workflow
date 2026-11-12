@@ -20,7 +20,7 @@ jobs:
     environment: pypi-playground
     permissions:
       id-token: write
-      contents: read
+      contents: write  # pose du tag de release en déclenchement manuel
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,3 +37,16 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: playground/dist/
+          skip-existing: true  # relance idempotente : version déjà publiée = no-op
+      - name: Pose du tag de release (déclenchement manuel)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          version=$(python -c "import tomllib;print(tomllib.load(open('playground/pyproject.toml','rb'))['project']['version'])")
+          tag="playground-v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "tag $tag déjà présent"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+          git push origin "$tag"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..models import RuleSpan
 from .rules import ResultActionConfig, ResultRuleConfig, Rule, append_rule_actions
@@ -55,6 +56,10 @@ class StateConfig:
 
     name: str = ""
     label: str = ""
+    #: Nom donné après ``AS @…`` (schéma des champs métier de l'état) ;
+    #: ``schema`` est résolu quand un registre est fourni au visiteur.
+    schema_ref: str = ""
+    schema: dict[str, Any] | None = None
     events: dict[str, IncomingEventConfig] = field(default_factory=dict)
     incoming_rules: list[ResultRuleConfig] = field(default_factory=list)
     outcoming_rules: list[ResultRuleConfig] = field(default_factory=list)

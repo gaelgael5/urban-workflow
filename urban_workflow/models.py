@@ -37,6 +37,20 @@ class IncomingEvent:
     external_id: str = ""
     creation_date: datetime | None = None
     event_date: datetime | None = None
+    #: Date d'insertion dans le système (``IntegrationDate``) : posée par le
+    #: moteur à l'entrée de ``evaluate_event`` (horloge ``WorkflowClock``),
+    #: jamais lue du payload — l'émetteur ne peut pas la fixer.
+    integration_date: datetime | None = None
+    #: Clé d'idempotence fournie par l'émetteur (propriété ``DedupKey``
+    #: du payload) — prioritaire sur les clés ``UNIQUE`` du DSL.
+    dedup_key: str = ""
+    #: Vrai si ``uuid`` vient du payload, faux s'il a été généré par
+    #: :func:`new_uuid`. Sans ce drapeau les deux cas seraient
+    #: indiscernables (``uuid`` est toujours renseigné), et le repli
+    #: anti-doublon automatique du moteur dédoublonnerait sur un Uuid
+    #: tiré au hasard — donc jamais. Un appelant qui construit lui-même
+    #: l'événement avec un Uuid porteur de sens le met à vrai.
+    uuid_from_payload: bool = False
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
 
@@ -62,9 +76,18 @@ class Event:
     uuid: UUID = field(default_factory=new_uuid)
     creation_date: datetime | None = None
     event_date: datetime | None = None
+    #: Date d'insertion dans le système, reprise de l'événement entrant.
+    integration_date: datetime | None = None
     from_state: str = ""
     to_state: str = ""
     change: ChangeEnum = ChangeEnum.NONE
+    #: Empreinte anti-doublon (SHA-256) de la clé retenue par
+    #: ``WorkflowProcessor._event_gate`` : ``DedupKey`` émetteur, sinon
+    #: propriétés ``UNIQUE`` déclarées, sinon repli sur le socle (``Uuid``
+    #: du payload, ou ``Name`` + ``EventDate`` + ``ExternalId``). Vide
+    #: seulement quand aucune clé ne s'applique (ni ``Uuid`` d'émetteur ni
+    #: ``EventDate``).
+    dedup_hash: str = ""
     actions: list[PushedAction] = field(default_factory=list)
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
@@ -77,6 +100,26 @@ class Event:
     def add_actions(self, *actions: PushedAction) -> Event:
         self.actions.extend(actions)
         return self
+
+
+@dataclass
+class StateInstance:
+    """Instance d'état : créée à CHAQUE passage par un SWITCH.
+
+    Socle non modifiable ``Name``/``Uuid``/``CreationDate`` (date d'entrée
+    dans l'état)/``EventId`` (événement entrant qui l'a créé — c'est l'état
+    qui référence l'événement, et non l'événement qui porte des états : un
+    même événement peut être traité par plusieurs workflows) ;
+    ``extended_datas`` portera les champs métier décrits par
+    le schéma de l'état (``DEFINE STATE X … AS @schema``) — leur calcul
+    reste à cadrer.
+    """
+
+    name: str = ""
+    uuid: UUID = field(default_factory=new_uuid)
+    creation_date: datetime | None = None
+    event_id: UUID | None = None
+    extended_datas: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,6 +136,8 @@ class Workflow:
     recursive: bool = False
     change: ChangeEnum = ChangeEnum.NONE
     events: list[Event] = field(default_factory=list)
+    #: Historique des instances d'état, dans l'ordre des SWITCH.
+    states: list[StateInstance] = field(default_factory=list)
     extended_datas: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -186,3 +231,8 @@ class RunContext:
     actions: list[ResultAction] = field(default_factory=list)
     functional_log: list[str] = field(default_factory=list)
     current_evaluation: CurrentEvaluation = field(default_factory=CurrentEvaluation)
+    #: Instances d'état créées par les SWITCH de cette évaluation, versées
+    #: dans ``workflow.states`` à l'ajout de l'événement à l'historique.
+    #: Créées dès le SWITCH (et non à l'ajout) : les règles de l'état cible
+    #: évaluées dans la foulée (RECURSIVE) voient déjà ``@state.Uuid``.
+    pending_states: list[StateInstance] = field(default_factory=list)

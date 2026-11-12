@@ -16,10 +16,41 @@ Rule = Callable[[RunContext], bool]
 
 @dataclass
 class DeclaredEventConfig:
-    """Événement déclaré (``DEFINE EVENT``) ou technique."""
+    """Événement déclaré (``DEFINE EVENT``) ou technique.
+
+    ``schema_ref`` porte le nom donné après ``AS @…`` ; quand un
+    :class:`~urban_workflow.schemas.SchemaRegistry` est fourni au
+    visiteur, ``schema`` et ``dedup_keys`` sont résolus au chargement et
+    le moteur valide chaque événement entrant.
+
+    ``dedup_keys`` vient de la clause DSL ``UNIQUE (Prop, …)`` (elle ne
+    dépend pas du registre de schémas). Elle n'est qu'un maillon de la
+    cascade appliquée par ``WorkflowProcessor._event_gate`` : ``DedupKey``
+    de l'émetteur, puis ``UNIQUE``, puis le repli automatique sur le socle.
+    """
 
     name: str = ""
     label: str = ""
+    schema_ref: str = ""
+    schema: dict[str, Any] | None = None
+    dedup_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DeclaredArtifactConfig:
+    """Artefact JSON nommé (``DEFINE ARTIFACT X 'l' AS @schema USING @script``).
+
+    ``script_ref`` : script du ScriptRegistry qui produit le JSON (langage
+    ``jslt`` en général) ; ``schema_ref``/``schema`` : JSON Schema facultatif
+    qui valide le JSON produit (résolu si un SchemaRegistry est fourni).
+    Consommé par le chemin ``@artifact.X`` dans les arguments d'action.
+    """
+
+    name: str = ""
+    label: str = ""
+    schema_ref: str = ""
+    schema: dict[str, Any] | None = None
+    script_ref: str = ""
 
 
 @dataclass

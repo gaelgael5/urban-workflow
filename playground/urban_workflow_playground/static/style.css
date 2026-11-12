@@ -1,20 +1,12 @@
-:root {
-  --bg: #11151c;
-  --panel: #1a2029;
-  --border: #2b3442;
-  --text: #d8dee9;
-  --muted: #7f8ea3;
-  --accent: #5fb3f0;
-  --ok: #4cc38a;
-  --ko: #e5484d;
-}
+/* Mise en page de la page de référence du playground (index.html). Les
+   styles des composants eux-mêmes sont dans uw/urban-workflow.css. */
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--uw-bg);
+  color: var(--uw-text);
   font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
   height: 100vh;
   display: flex;
@@ -26,186 +18,55 @@ header {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  background: var(--uw-panel);
+  border-bottom: 1px solid var(--uw-border);
 }
 header h1 { font-size: 16px; margin: 0; }
-header h1 span { color: var(--muted); font-weight: normal; }
+header h1 span { color: var(--uw-muted); font-weight: normal; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
-
-.status { font-size: 13px; color: var(--muted); }
-.status.ok { color: var(--ok); }
-.status.ko { color: var(--ko); }
 
 main { flex: 1; display: flex; min-height: 0; }
 
-.editor-pane {
-  flex: 1.4;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-right: 1px solid var(--border);
-}
-.editor-pane .CodeMirror {
-  flex: 1;
-  height: auto;
-  font: 13px/1.5 "Cascadia Code", "Fira Code", Consolas, monospace;
-  background: var(--bg);
-  color: var(--text);
-}
-.CodeMirror-gutters { background: var(--panel); border-right: 1px solid var(--border); }
-.CodeMirror-linenumber { color: var(--muted); }
-.CodeMirror-cursor { border-color: var(--text); }
-.CodeMirror-selected { background: #2b3442 !important; }
-.cm-keyword { color: #c792ea; font-weight: 600; }
-.cm-string { color: #ecc48d; }
-.cm-comment { color: #637777; font-style: italic; }
-.cm-number { color: #f78c6c; }
-.cm-variable-2 { color: #7fdbca; }
-.cm-variable { color: #d8dee9; }
-
-.CodeMirror-hints {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  font: 12px/1.6 Consolas, monospace;
-}
-.CodeMirror-hint { color: var(--text); }
-li.CodeMirror-hint-active { background: var(--accent); color: #0b0e13; }
-
-.diagnostics {
-  max-height: 140px;
-  overflow: auto;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-}
-.diag {
-  padding: 4px 12px;
-  color: var(--ko);
-  cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-}
-.diag:hover { background: #242c38; }
+.editor-pane { flex: 1.4; min-width: 0; border-right: 1px solid var(--uw-border); }
 
 .side-pane {
   flex: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 320px;
   max-width: 480px;
-  background: var(--panel);
+  background: var(--uw-panel);
 }
+#side-tabs { flex: 1; min-height: 0; }
+#side-tabs > .tabs { padding-right: 36px; }
+#side-tabs > .tabs > button { flex: 1; }
 
-.tabs { display: flex; border-bottom: 1px solid var(--border); }
-.tabs button {
-  flex: 1;
-  padding: 8px 4px;
+/* Repli du panneau de droite : il reste une bande étroite portant le seul
+   bouton de réouverture, pour laisser toute la largeur à la zone principale
+   (X6 en autoResize suit tout seul). */
+.side-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 34px;
+  height: 38px;
   background: none;
   border: none;
-  color: var(--muted);
+  color: var(--uw-muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 16px;
+  line-height: 1;
 }
-.tabs button.active {
-  color: var(--text);
-  border-bottom: 2px solid var(--accent);
-}
-
-.tab { display: none; padding: 12px; overflow: auto; flex: 1; }
-.tab.active { display: block; }
-
-.hint-text { color: var(--muted); font-size: 12.5px; }
-.hint-text code, .rule-row code { color: var(--accent); }
-kbd {
-  background: var(--border);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-size: 11px;
-}
-
-.rule-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-.rule-row code { flex: 1; word-break: break-all; }
-.rule-row .remove {
-  background: none; border: none; color: var(--muted); cursor: pointer;
-}
-.rule-row .remove:hover { color: var(--ko); }
-
-#rule-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-#rule-form input[type="text"], #rule-form input:not([type]) {
-  flex: 1 1 120px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 5px 8px;
-  border-radius: 4px;
-}
-label.inline { display: flex; align-items: center; gap: 4px; font-size: 13px; }
-
-button, select {
-  background: var(--border);
-  color: var(--text);
-  border: none;
-  border-radius: 4px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 13px;
-}
-button:hover { background: #3a4656; }
-
-#events-input {
-  width: 100%;
-  height: 160px;
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font: 12px/1.5 Consolas, monospace;
-  padding: 8px;
-  resize: vertical;
-}
-#run-simulation { margin: 8px 0; }
-
-.node { padding: 3px 0 3px 8px; font-size: 13px; }
-.node.init { color: var(--accent); }
-.node.state { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
-.node.transition { padding-left: 24px; color: var(--muted); }
-.node em { color: #ecc48d; font-style: normal; }
-.node small { color: var(--muted); }
-
-.sim-step { border-top: 1px solid var(--border); padding: 8px 0; }
-.sim-step h4, #simulation-result h4 { margin: 4px 0; font-size: 13.5px; }
-.sim-ctx {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
-  margin: 6px 0;
-  font-size: 13px;
-}
-.sim-action { margin-top: 6px; }
-.sim-action pre, .sim-ctx pre {
-  background: #0b0e13;
-  padding: 6px;
-  border-radius: 4px;
-  overflow: auto;
-  font-size: 11.5px;
-  margin: 4px 0 0;
-  max-height: 160px;
-}
-.sim-log {
-  margin-top: 6px;
-  color: var(--muted);
-  font: 11.5px/1.6 Consolas, monospace;
-}
+.side-toggle:hover { color: var(--uw-text); }
+.side-pane.collapsed { flex: 0 0 36px; min-width: 36px; max-width: 36px; }
+.side-pane.collapsed #side-tabs { display: none; }
 
 @media (max-width: 900px) {
   main { flex-direction: column; }
-  .side-pane { max-width: none; border-top: 1px solid var(--border); }
+  .editor-pane { min-height: 60vh; }
+  .side-pane { max-width: none; border-top: 1px solid var(--uw-border); }
+  /* Empilé : le panneau replié devient une barre basse pleine largeur. */
+  .side-pane.collapsed { flex: 0 0 38px; min-width: 0; max-width: none; }
 }
