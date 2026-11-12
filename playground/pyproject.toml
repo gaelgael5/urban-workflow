@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "urban-workflow-playground"
 version = "0.3.0"
 description = "Web components for the urban-workflow DSL (editor with intellisense, diagram, schemas, scripts, simulation) to embed in an application, and the playground that assembles them."
 readme = "README.en.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = [

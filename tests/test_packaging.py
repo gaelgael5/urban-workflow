@@ -1,4 +1,4 @@
-"""Les pages PyPI des deux paquets.
+"""Les pages PyPI des deux paquets, et ce que les distributions livrent.
 
 pypi.org affiche le ``readme`` déclaré dans chaque pyproject : il doit être
 en anglais (décision du 2026-11-08 : la 0.2.0 est partie avec les README
@@ -63,6 +63,41 @@ def test_pypi_readme_links_point_at_the_declared_version(project):
     assert tags == {f"v{version}"}, (
         f"liens vers {sorted(tags)} alors que la version déclarée est {version}"
     )
+
+
+@pytest.mark.parametrize("project", PROJECTS, ids=["urban-workflow", "playground"])
+def test_license_is_an_spdx_expression_with_its_file(project):
+    """``license`` en table TOML est déprécié (setuptools >= 77).
+
+    La forme ``{ file = … }`` / ``{ text = … }`` casse les constructions
+    après 2027-02-18 ; l'expression SPDX la remplace, et le fichier de
+    licence doit exister sous peine d'échec de construction.
+    """
+    data = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
+    assert isinstance(data["project"]["license"], str)
+    files = data["project"]["license-files"]
+    assert files
+    for pattern in files:
+        assert list(project.glob(pattern)), f"{pattern} introuvable dans {project}"
+
+
+def test_grammar_and_regenerator_are_shipped():
+    """Les .g4 et leur script doivent partir dans la distribution.
+
+    Le parseur généré est embarqué comme modules .py, mais sans la
+    grammaire ni ``regenerate.sh`` on ne peut pas le reconstruire depuis
+    la distribution — seulement depuis un clone du dépôt.
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = data["tool"]["setuptools"]["package-data"]["urban_workflow.dsl"]
+
+    grammar = ROOT / "urban_workflow" / "dsl"
+    livres = {f.resolve() for pattern in patterns for f in grammar.glob(pattern)}
+    attendus = {
+        (grammar / "grammar" / name).resolve()
+        for name in ("WorkflowLexer.g4", "WorkflowParser.g4", "regenerate.sh")
+    }
+    assert attendus <= livres, sorted(str(p) for p in attendus - livres)
 
 
 @pytest.mark.parametrize("project", PROJECTS, ids=["urban-workflow", "playground"])
