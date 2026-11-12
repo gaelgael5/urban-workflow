@@ -65,7 +65,7 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 
 | Guide | Contenu |
 |---|---|
-| [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, fragments |
+| [docs/guide-dsl.md](docs/guide-dsl.md) | **Créer un workflow** : référence complète du langage — création d'instances, transitions `SWITCH`, conditions `WHEN`, actions, expiration, schémas d'événements, **clés de dédoublonnage** (`UNIQUE`, `DedupKey`, repli automatique), fragments |
 | [docs/guide-regles.md](docs/guide-regles.md) | **Règles et scripts** : `DEFINE RULE … AS @script`, `ScriptRegistry` multi-langage, langage `expression` (opérateurs, fonctions, sémantique `NULL`), contrôles |
 | [docs/guide-artefacts.md](docs/guide-artefacts.md) | **Artefacts JSON** : `DEFINE ARTIFACT … AS @schema USING @script`, scripts `jslt` (urban-json), `@artifact.Nom` dans les actions, validation par schéma |
 | [docs/guide-integration.md](docs/guide-integration.md) | **L'utiliser dans du code** : règles métier, assemblage du moteur, templates JSLT, chaîne de sorties, événements techniques |

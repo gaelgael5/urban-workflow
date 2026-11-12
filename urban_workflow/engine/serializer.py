@@ -92,7 +92,9 @@ def event_to_document(event: IncomingEvent) -> dict[str, Any]:
 
     Propriétés du socle en CamelCase + données étendues — c'est ce
     document que les schémas d'événements valident et sur lequel le hash
-    anti-doublon (``x-dedup``) est calculé.
+    anti-doublon est calculé, quelle que soit la clé retenue (``UNIQUE``
+    déclaré ou repli automatique sur ``Uuid`` / ``Name`` + ``EventDate``
+    + ``ExternalId``).
     """
     document: dict[str, Any] = dict(event.extended_datas)
     document["Name"] = event.name

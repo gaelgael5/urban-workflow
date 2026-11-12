@@ -149,6 +149,14 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   l'historique → ignoré silencieusement (existants ET création).
   Colonne SQL `workflow_events.dedup_hash`. La validation ne s'applique
   que si l'événement serait réellement traité par la config.
+  **Portée vérifiée : par `ExternalId`** (les existants sont chargés par
+  ExternalId) — même `DedupKey` sur deux dossiers = deux intégrations
+  (`test_dedup_is_scoped_to_the_external_id`). Documentation à jour dans
+  les 4 guides (cascade en tableau + portée + règles communes dans
+  guide-dsl §Événements et son miroir EN, renvois depuis les guides
+  d'intégration), README FR/EN, aide du playground et docstrings
+  (`schemas.py`, `config/rules.py`, `engine/serializer.py`, `models.py` —
+  les mentions `x-dedup` résiduelles ont été retirées).
 - **`IntegrationDate`** (socle, `readOnly`) : posée par `evaluate_event`
   (`WorkflowClock`, avant validation, seulement si absente) ; ignorée si
   l'émetteur l'envoie (`_SYSTEM_FIELDS` du serializer). Portée par

@@ -411,7 +411,7 @@ format):
 | `Uuid` | Event identity — **the replay-without-duplicates key**. Absent or `null`, it is generated, and the event is then deduplicated on its functional signature |
 | `ExternalId` | Subject identifier: groups instances |
 | `CreationDate`, `EventDate` | ISO 8601 dates. `EventDate` is the **functional date**: it is part of the default deduplication key |
-| `DedupKey` | Optional idempotency key supplied by the emitter — two events carrying the same key are integrated only once (takes precedence over `UNIQUE`) |
+| `DedupKey` | Optional idempotency key supplied by the emitter — two events carrying the same key **and the same `ExternalId`** are integrated only once (takes precedence over `UNIQUE`) |
 | `IntegrationDate` | **Set by the engine** (`WorkflowClock`) when `evaluate_event` receives the event: the date it entered the system. A value sent by the emitter is ignored. Kept in the history (`Event.integration_date`, SQL column `integration_date`) and exposed to templates (`event.integration_date`, `incoming.integration_date`) |
 | *everything else* | Business data (`extended_datas`), visible to rules, `MATCHING` filters and templates |
 

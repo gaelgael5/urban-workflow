@@ -280,6 +280,23 @@ class TestEngineDedup:
         workflows = storage.get_by(Workflow, "DA-1", "external_id")
         assert len(workflows[0].events) == 2
 
+    def test_dedup_is_scoped_to_the_external_id(self):
+        """DedupKey est une clé d'idempotence par dossier, pas globale."""
+        from urban_workflow import Workflow
+
+        script = UNIQUE_SCRIPT.replace(" UNIQUE (ExternalId, Montant)", "")
+        engine, storage = make_engine(script)
+
+        engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-1",
+                               "DedupKey": "cmd-1"})
+        engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-2",
+                               "DedupKey": "cmd-1"})
+
+        # Même clé, deux dossiers : les deux sont intégrés.
+        for external_id in ("DA-1", "DA-2"):
+            workflows = storage.get_by(Workflow, external_id, "external_id")
+            assert sum(len(w.events) for w in workflows) == 1
+
     def test_dedup_key_is_a_typed_base_property(self):
         from urban_workflow import parse_incoming_event
 

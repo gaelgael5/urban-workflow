@@ -11,7 +11,9 @@ Chaque schéma décrit le payload complet de l'événement (socle commun
 
 Les schémas restent du JSON Schema pur — l'anti-doublon se déclare
 côté DSL (``UNIQUE (…)`` sur ``DEFINE EVENT``) ou côté émetteur
-(propriété ``DedupKey`` du payload, prioritaire quand elle est fournie).
+(propriété ``DedupKey`` du payload, prioritaire quand elle est fournie),
+et à défaut des deux le moteur se replie sur le socle de l'événement
+(voir :func:`urban_workflow.engine.processor._automatic_dedup_keys`).
 
 La validation s'appuie sur les paquets optionnels PyYAML et jsonschema :
 ``pip install urban-workflow[schemas]``.

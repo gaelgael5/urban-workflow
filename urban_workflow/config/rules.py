@@ -21,8 +21,12 @@ class DeclaredEventConfig:
     ``schema_ref`` porte le nom donné après ``AS @…`` ; quand un
     :class:`~urban_workflow.schemas.SchemaRegistry` est fourni au
     visiteur, ``schema`` et ``dedup_keys`` sont résolus au chargement et
-    le moteur valide chaque événement entrant (et applique l'anti-doublon
-    ``x-dedup``).
+    le moteur valide chaque événement entrant.
+
+    ``dedup_keys`` vient de la clause DSL ``UNIQUE (Prop, …)`` (elle ne
+    dépend pas du registre de schémas). Elle n'est qu'un maillon de la
+    cascade appliquée par ``WorkflowProcessor._event_gate`` : ``DedupKey``
+    de l'émetteur, puis ``UNIQUE``, puis le repli automatique sur le socle.
     """
 
     name: str = ""

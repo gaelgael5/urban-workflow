@@ -65,7 +65,7 @@ engine.evaluate_event({"Name": "DemandeSoumise", "ExternalId": "DA-42",
 
 | Guide | Contents |
 |---|---|
-| [docs/en/dsl-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/dsl-guide.md) | **Writing a workflow**: complete language reference — instance creation, `SWITCH` transitions, `WHEN` conditions, actions, expiration, fragments |
+| [docs/en/dsl-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/dsl-guide.md) | **Writing a workflow**: complete language reference — instance creation, `SWITCH` transitions, `WHEN` conditions, actions, expiration, event schemas, **deduplication keys** (`UNIQUE`, `DedupKey`, automatic fallback), fragments |
 | [docs/en/rules-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/rules-guide.md) | **Rules and scripts**: `DEFINE RULE … AS @script`, multi-language `ScriptRegistry`, the `expression` language (operators, functions, `NULL` semantics), checks |
 | [docs/en/artifacts-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/artifacts-guide.md) | **JSON artifacts**: `DEFINE ARTIFACT … AS @schema USING @script`, `jslt` scripts (urban-json), `@artifact.Name` in actions, schema validation |
 | [docs/en/integration-guide.md](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/docs/en/integration-guide.md) | **Using it in code**: business rules, engine assembly, JSLT templates, output chain, technical events |

@@ -418,7 +418,7 @@ Propriétés reconnues (CamelCase, héritées du format source) :
 | `Uuid` | Identité de l'événement — **la clé du rejeu sans doublon**. Absent ou `null`, il est généré, et l'événement est alors dédoublonné sur sa signature fonctionnelle |
 | `ExternalId` | Identifiant du sujet : regroupe les instances |
 | `CreationDate`, `EventDate` | Dates ISO 8601. `EventDate` est la **date fonctionnelle** : elle entre dans la clé de dédoublonnage par défaut |
-| `DedupKey` | Clé d'idempotence optionnelle fournie par l'émetteur — deux événements portant la même clé ne sont intégrés qu'une fois (prioritaire sur `UNIQUE`) |
+| `DedupKey` | Clé d'idempotence optionnelle fournie par l'émetteur — deux événements portant la même clé **et le même `ExternalId`** ne sont intégrés qu'une fois (prioritaire sur `UNIQUE`) |
 | `IntegrationDate` | **Posée par le moteur** (horloge `WorkflowClock`) à l'entrée de `evaluate_event` : date d'insertion dans le système. Une valeur envoyée par l'émetteur est ignorée. Conservée dans l'historique (`Event.integration_date`, colonne SQL `integration_date`) et exposée aux templates (`event.integration_date`, `incoming.integration_date`) |
 | *tout le reste* | Données métier (`extended_datas`), visibles des règles, des `MATCHING` et des templates |
 

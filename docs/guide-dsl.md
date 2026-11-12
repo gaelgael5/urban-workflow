@@ -158,6 +158,30 @@ un payload met `uuid_from_payload=True` pour que son `Uuid` serve de clé
 (cas 3) : sans ce drapeau, l'`Uuid` généré par défaut serait indiscernable
 d'un `Uuid` porteur de sens.
 
+**Portée : le dossier, pas le système.** L'empreinte est comparée à
+l'historique des workflows du **même `ExternalId`** — jamais à toute la
+base. Deux événements portant le même `DedupKey` mais deux `ExternalId`
+différents sont donc intégrés tous les deux : `DedupKey` est une clé
+d'idempotence *par dossier*, pas un identifiant global. Même règle pour
+`UNIQUE`.
+
+**Règles communes aux quatre cas :**
+
+- le rejet est **silencieux** — l'événement est ignoré, aucune exception,
+  aucun workflow impacté (`evaluate_event` rend une liste vide) ;
+- l'empreinte retenue est conservée dans l'historique
+  (`Event.dedup_hash`, colonne SQL `workflow_events.dedup_hash`), ce qui
+  rend le contrôle idempotent au rejeu ;
+- une propriété **absente compte comme vide** dans le hash : deux
+  événements qui ne diffèrent que par une propriété hors clé ont la même
+  empreinte ;
+- le contrôle ne s'applique qu'aux événements que la configuration
+  traiterait vraiment (déclarés par `DEFINE EVENT`) ;
+- il vaut pour les **deux chemins** : les workflows existants et la
+  création d'une nouvelle instance ;
+- l'anti-rejeu par `Uuid` (même `Uuid` déjà intégré) reste actif en plus,
+  indépendamment de la clé retenue.
+
 ### Règles
 
 ```sql

@@ -156,6 +156,29 @@ payload sets `uuid_from_payload=True` for its `Uuid` to be used as the
 key (case 3): without that flag, the default generated `Uuid` would be
 indistinguishable from a meaningful one.
 
+**Scope: the case file, not the system.** The fingerprint is compared
+against the history of the workflows with the **same `ExternalId`** —
+never against the whole database. Two events carrying the same
+`DedupKey` but two different `ExternalId` values are therefore both
+integrated: `DedupKey` is an idempotency key *per case file*, not a
+global identifier. Same rule for `UNIQUE`.
+
+**Rules common to all four cases:**
+
+- rejection is **silent** — the event is ignored, no exception, no
+  impacted workflow (`evaluate_event` returns an empty list);
+- the chosen fingerprint is kept in the history (`Event.dedup_hash`, SQL
+  column `workflow_events.dedup_hash`), which makes the check idempotent
+  on replay;
+- a **missing property counts as empty** in the hash: two events
+  differing only by a property outside the key share one fingerprint;
+- the check only applies to events the configuration would actually
+  process (declared with `DEFINE EVENT`);
+- it applies on **both paths**: existing workflows and the creation of a
+  new instance;
+- the `Uuid` anti-replay (same `Uuid` already integrated) stays active on
+  top, whichever key was chosen.
+
 ### Rules
 
 ```sql
