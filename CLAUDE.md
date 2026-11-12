@@ -84,6 +84,20 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   sur pypi.org) ; les `README.md` français restent dans le dépôt, liés
   entre eux. Garde : `tests/test_packaging.py`. Le Dockerfile copie aussi
   `README.en.md` (sinon la construction du socle échoue).
+- **0.3.0** (2026-11-12) : les deux paquets passent en 0.3.0 — rang
+  MINEUR car le repli anti-doublon change le comportement par défaut du
+  moteur (décision utilisateur). Version posée dans les 2 `pyproject`,
+  les 2 `__version__`, `urban-workflow>=0.3.0` côté playground, et les
+  liens `blob/vX.Y.Z` des 2 `README.en.md`. **Piège rencontré** : une
+  relance des workflows de release sans changer la version est verte mais
+  ne publie RIEN (`skip-existing: true` → « Skipping … already exist »),
+  et les liens des pages PyPI pointaient vers un tag où la doc annoncée
+  n'existait pas → garde ajoutée
+  (`test_pypi_readme_links_point_at_the_declared_version`).
+- Avertissement de construction non traité (volontairement hors release) :
+  `project.license` en table TOML est déprécié (setuptools ≥ 77, builds
+  cassés après 2027-02-18) — passer à `license = "MIT"` +
+  `license-files`, à faire hors d'une livraison.
 - L'idée de « paquets par pays » a été abandonnée par l'utilisateur
   (mauvaise conversation) — ne pas la relancer.
 

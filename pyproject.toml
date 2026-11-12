@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "urban-workflow"
-version = "0.2.1"
+version = "0.3.0"
 description = "Workflow engine driven by a business DSL — Python port of Black-Beard-Sdk/Workflow, with JSON outputs normalized by urban-json (JSLT)."
 readme = "README.en.md"
 license = { file = "LICENSE" }

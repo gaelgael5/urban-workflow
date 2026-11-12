@@ -47,6 +47,25 @@ def test_pypi_readme_has_only_absolute_links(project):
 
 
 @pytest.mark.parametrize("project", PROJECTS, ids=["urban-workflow", "playground"])
+def test_pypi_readme_links_point_at_the_declared_version(project):
+    """Les liens doivent viser le tag de CETTE version.
+
+    Sinon la page annonce une documentation que le tag visé ne contient
+    pas : la 0.3.0 vantait les clés de dédoublonnage en renvoyant au tag
+    v0.2.1, où la section n'existait pas.
+    """
+    data = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
+    version = data["project"]["version"]
+    text = _readme(project).read_text(encoding="utf-8")
+
+    tags = set(re.findall(r"/blob/(v[^/]+)/", text))
+    assert tags, "la page doit renvoyer vers un tag du dépôt"
+    assert tags == {f"v{version}"}, (
+        f"liens vers {sorted(tags)} alors que la version déclarée est {version}"
+    )
+
+
+@pytest.mark.parametrize("project", PROJECTS, ids=["urban-workflow", "playground"])
 def test_pypi_summary_is_english(project):
     data = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
     summary = data["project"]["description"]

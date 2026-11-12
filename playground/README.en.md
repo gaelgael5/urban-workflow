@@ -1,6 +1,6 @@
 # urban-workflow-playground
 
-*English · [Français](https://github.com/gaelgael5/urban-workflow/blob/v0.2.1/playground/README.md)*
+*English · [Français](https://github.com/gaelgael5/urban-workflow/blob/v0.3.0/playground/README.md)*
 
 Web components to write, visualize and test
 [urban-workflow](https://pypi.org/project/urban-workflow/) workflows, and
