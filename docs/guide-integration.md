@@ -167,6 +167,16 @@ Les fichiers `FRAGMENT` sont visités avant les scripts qui les
 `parse_directory(chemin, motif)` rend seulement les analyseurs (syntaxe),
 sans construire les configurations.
 
+Un script peut empiler **plusieurs `INCLUDE`** : chacun est résolu par
+chemin complet ou par nom de fichier et visité, dans l'ordre déclaré,
+dans le **même visiteur** que le script principal. Un fragment introuvable
+— ou qui n'est pas un fragment — lève `FileNotFoundError: missing file …`.
+Un visiteur neuf est fabriqué **par script complet** : deux workflows
+peuvent inclure les mêmes fragments sans se contaminer. Les limites du
+mécanisme (pas de cascade, inclusion non idempotente, `parse_config` qui
+ne résout rien) sont dans
+[guide-dsl.md](guide-dsl.md#9-fragments-réutilisables-fragment--include).
+
 ### Contrôle fin
 
 ```python

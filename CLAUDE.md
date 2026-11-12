@@ -449,6 +449,16 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   `antlr4-python3-runtime` d'urban-json).
 - `urban_workflow/dsl/generated/` : code généré commité, ne jamais l'éditer.
   Particularité cible Python : accesseurs `state_()` et `type_()`.
+- **Fragments vérifiés (2026-11-12)** : plusieurs `INCLUDE` dans un même
+  script marchent (événements/règles/actions/artefacts/constantes de
+  fragments différents), visiteur neuf par script complet (pas de fuite
+  entre workflows). Limites constatées : pas de cascade (`INCLUDE` dans
+  un fragment = erreur de syntaxe), inclusion non idempotente (deux fois
+  le même fragment = `DuplicatedArgumentNameError` positionnée sur le
+  fragment), cible obligatoirement un fragment, au moins un `DEFINE …;`
+  exigé dans le script principal (`(define_referenciel_statement
+  SEMICOLON)+`), et `parse_config` sur une chaîne ne résout PAS les
+  `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
 - `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,
   `is_fragment`, `crc`, erreurs de syntaxe positionnées (`check()` →
   `DslSyntaxError`).

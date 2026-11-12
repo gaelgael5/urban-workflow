@@ -650,6 +650,39 @@ Au chargement d'un répertoire, les fragments sont résolus par nom de
 fichier et visités avant le script qui les inclut : leurs déclarations
 sont disponibles comme si elles étaient locales.
 
+**Autant de fragments que nécessaire** — les `INCLUDE` s'empilent, un par
+ligne, en tête du script :
+
+```sql
+INCLUDE 'evenements.wf'
+INCLUDE 'regles.wf'
+INCLUDE 'artefacts.wf'
+NAME ValidationAchat VERSION 1
+…
+```
+
+Ce qu'un fragment peut porter, et ce qu'il ne peut pas :
+
+- un fragment ne contient que du **référentiel** : `DEFINE EVENT`,
+  `DEFINE RULE`, `DEFINE ACTION`, `DEFINE ARTIFACT`, `DEFINE CONST` — pas
+  d'état, pas d'initialiseur, pas de `VERSION`/`MATCHING`/`CONCURENCY` ;
+- **pas d'inclusion en cascade** : un `INCLUDE` dans un fragment est une
+  erreur de syntaxe ; chaque script complet liste tous ses fragments ;
+- **la cible doit être un fragment** : inclure un workflow complet lève
+  `FileNotFoundError: missing file …`, comme un fichier absent ;
+- **l'inclusion n'est pas idempotente** : inclure deux fois le même
+  fragment, ou deux fragments qui déclarent le même nom, lève
+  `DuplicatedArgumentNameError` positionnée **sur le fragment fautif** ;
+- chaque script complet est visité par un visiteur neuf : deux workflows
+  partagent un fragment sans rien se partager d'autre ;
+- le script complet doit garder **au moins un `DEFINE …;`** à lui, même
+  quand tout vient des fragments (la grammaire l'exige : sans lui,
+  `mismatched input 'INITIALIZE'`) ;
+- `parse_config()` sur une chaîne **ne résout pas** les `INCLUDE`, et ne
+  le signale pas : les déclarations du fragment manquent, simplement. La
+  résolution est le travail de `load_directory` (voir
+  [guide-integration.md](guide-integration.md) §3).
+
 ## 10. Les erreurs
 
 Le chargement échoue tôt, avec des messages positionnés

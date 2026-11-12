@@ -642,6 +642,39 @@ When loading a directory, fragments are resolved by file name and visited
 before the script that includes them: their declarations are available as
 if they were local.
 
+**As many fragments as needed** — `INCLUDE` lines stack up, one per line,
+at the top of the script:
+
+```sql
+INCLUDE 'evenements.wf'
+INCLUDE 'regles.wf'
+INCLUDE 'artefacts.wf'
+NAME ValidationAchat VERSION 1
+…
+```
+
+What a fragment may carry, and what it may not:
+
+- a fragment holds **declarations only**: `DEFINE EVENT`, `DEFINE RULE`,
+  `DEFINE ACTION`, `DEFINE ARTIFACT`, `DEFINE CONST` — no state, no
+  initializer, no `VERSION`/`MATCHING`/`CONCURENCY`;
+- **no nested includes**: an `INCLUDE` inside a fragment is a syntax
+  error; every full script lists all of its fragments;
+- **the target must be a fragment**: including a full workflow raises
+  `FileNotFoundError: missing file …`, like a missing file;
+- **including is not idempotent**: including the same fragment twice, or
+  two fragments declaring the same name, raises a
+  `DuplicatedArgumentNameError` positioned **on the offending fragment**;
+- every full script gets a fresh visitor: two workflows share a fragment
+  without sharing anything else;
+- the full script must keep **at least one `DEFINE …;`** of its own, even
+  when everything comes from fragments (the grammar requires it: without
+  one, `mismatched input 'INITIALIZE'`);
+- `parse_config()` on a string **does not resolve** `INCLUDE`, and does
+  not report it: the fragment's declarations are simply missing.
+  Resolution is `load_directory`'s job (see
+  [integration-guide.md](integration-guide.md) §3).
+
 ## 10. Errors
 
 Loading fails early, with positioned messages (`file:line:column`):

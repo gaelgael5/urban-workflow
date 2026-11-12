@@ -165,6 +165,15 @@ full script becomes a document of `configs`. `parse_directory(path,
 pattern)` only returns the parsers (syntax), without building the
 configurations.
 
+A script may stack **several `INCLUDE` lines**: each is resolved by full
+path or by file name and visited, in declaration order, into the **same
+visitor** as the main script. A fragment that cannot be found — or that
+is not a fragment — raises `FileNotFoundError: missing file …`. A fresh
+visitor is built **per full script**: two workflows can include the same
+fragments without contaminating each other. The mechanism's limits (no
+nesting, non-idempotent includes, `parse_config` resolving nothing) are
+in [dsl-guide.md](dsl-guide.md#9-reusable-fragments-fragment--include).
+
 ### Fine-grained control
 
 ```python
