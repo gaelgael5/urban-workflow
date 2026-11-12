@@ -94,6 +94,18 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   et les liens des pages PyPI pointaient vers un tag où la doc annoncée
   n'existait pas → garde ajoutée
   (`test_pypi_readme_links_point_at_the_declared_version`).
+  **Publiée le 2026-11-12** : tags `v0.3.0` / `playground-v0.3.0` sur
+  `44a11e7` (PR #3 — PR #2 avait été mergée AVANT le bump de version et
+  la licence SPDX, d'où une seconde PR), les deux workflows de release
+  verts, `0.3.0` présente sur pypi.org pour les deux paquets. Vérifié
+  depuis l'index public en conteneur vierge : `0.3.0 0.3.0`,
+  `Metadata-Version: 2.4`, `License-Expression: MIT`,
+  `License-File: LICENSE`, `grammar/{WorkflowLexer,WorkflowParser}.g4`
+  + `regenerate.sh` (bit exécutable 755 conservé), repli anti-doublon
+  actif (rejeu = aucun contexte), script console présent. **Latence
+  d'index** : la version apparaît sur l'API JSON de pypi.org avant
+  d'être installable (`pip install …==0.3.0` a échoué une première fois,
+  ~1 min) — ne pas en conclure que la publication a échoué.
 - **Licence en expression SPDX (fait)** : `license = "MIT"` +
   `license-files = ["LICENSE"]` dans les deux pyproject,
   `requires = ["setuptools>=77"]` (la table TOML était dépréciée, builds
