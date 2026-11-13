@@ -40,7 +40,14 @@ script_full :
     concurency?
     (DESCRIPTION comment)?
     (MATCHING matchings)? 
-	(define_referenciel_statement SEMICOLON)+ 
+    // Extension urban-workflow (decision utilisateur du 2026-11-13) : le
+    // source exigeait au moins une declaration ici (+). Un workflow qui
+    // tire tout son referentiel d'un INCLUDE n'avait alors aucune
+    // declaration propre et etait inecrivable -- erreur "mismatched input
+    // 'INITIALIZE' expecting 'DEFINE'". Passage a * : elargissement pur,
+    // tout script valide auparavant le reste. Le fragment, lui, garde le
+    // + : un referentiel sans declaration n'a pas de raison d'exister.
+	(define_referenciel_statement SEMICOLON)* 
     initializing?
 	(define_state_statement SEMICOLON)*
     ;

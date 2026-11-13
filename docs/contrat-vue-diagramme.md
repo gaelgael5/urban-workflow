@@ -183,29 +183,41 @@ de l'appelant pointe le bon document.
 `SurfaceError` ne sert plus pour `FRAGMENT` ni pour `INCLUDE`. Il subsiste
 pour un modèle non rendable (section suivante).
 
-## 7. Limite de grammaire à connaître
+## 7. Déclaration propre : limite levée
 
-La grammaire exige **au moins une déclaration propre** dans le script
-incluant (`WorkflowParser.g4:43` — `script_full : … (define_referenciel_statement SEMICOLON)+ …`).
-Mesuré sur un workflow qui tire tout de son fragment :
+Jusqu'à la 0.3.0, la grammaire exigeait **au moins une déclaration
+propre** dans le script incluant
+(`script_full : … (define_referenciel_statement SEMICOLON)+ …`). Un
+workflow qui tirait tout son référentiel du fragment était donc
+inécrivable :
 
 ```
 sans.wf:5:0: mismatched input 'INITIALIZE' expecting 'DEFINE'
 ```
 
-Tant que chaque workflow déclare ses propres `ACTION`, le cas ne se
-présente pas. Mais un workflow dont le référentiel couvre *tout* est
-**inécrivable aujourd'hui**, et l'API pourrait alors produire un script
-non reparsable.
+**C'est corrigé** : le `+` est passé à `*`. Un workflow peut n'avoir
+aucune déclaration à lui et tout tenir de ses `INCLUDE`. Vérifié de bout
+en bout — un tel script s'analyse sans erreur, se charge par
+`load_directory` et le moteur l'exécute jusqu'à l'état attendu.
 
-- `render_script` **refuse** de rendre un modèle sans déclaration propre,
-  avec une erreur explicite, plutôt que d'émettre un script invalide.
-- Lever la limite demande de relâcher `+` en `*` : extension de grammaire
-  strictement élargissante (tout script valide aujourd'hui le reste),
-  avec régénération du parseur ANTLR 4.13.2.
+L'élargissement est **pur** : tout script valide auparavant le reste. Sa
+portée exacte va un peu plus loin que le cas visé — un script réduit à
+son en-tête (`NAME X VERSION 1`, sans déclaration ni état) est désormais
+accepté par le parseur. Ce n'est pas un workflow utile, mais ce n'est
+plus une erreur de syntaxe.
 
-**Question ouverte à l'appelant** : avez-vous des workflows sans aucune
-déclaration propre ? La réponse décide du relâchement.
+Deux choses ne changent pas :
+
+- **un fragment doit toujours déclarer quelque chose** : il garde le
+  `+`, un référentiel vide n'ayant pas de raison d'exister
+  (`FRAGMENT NAME vide` → `mismatched input '<EOF>'`) ;
+- `render_script` reste tenu de ne produire que des scripts reparsables ;
+  la contrainte qui l'obligeait à refuser un modèle sans déclaration
+  propre, elle, tombe avec la grammaire.
+
+Le parseur ANTLR 4.13.2 généré a été régénéré et commité ; les 389 tests
+de la bibliothèque passent inchangés, plus quatre tests neufs qui
+verrouillent le nouveau cas et le refus maintenu côté fragment.
 
 ## 8. Compatibilité et version
 
@@ -215,8 +227,9 @@ déclaration propre ? La réponse décide du relâchement.
   modèle sont additifs et `SurfaceModel.from_dict` est déjà tolérant.
 - `normalize_layout` passe du playground au cœur, avec un ré-export
   conservé côté playground : rien ne casse pour ses utilisateurs.
-- Un seul changement de comportement, assumé : un script à `FRAGMENT` ou
-  à `INCLUDE` ne lève plus `SurfaceError`.
+- Deux changements de comportement, assumés : un script à `FRAGMENT` ou
+  à `INCLUDE` ne lève plus `SurfaceError`, et un script complet sans
+  déclaration propre n'est plus une erreur de syntaxe (§7).
 
 **Avertissement de montée de version** : passer de 0.2.1 à 0.4.0 traverse
 la **0.3.0**, qui change un défaut du moteur — faute de `DedupKey` et de

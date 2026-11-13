@@ -238,3 +238,61 @@ class TestSeveralFragments:
         with pytest.raises(DuplicatedArgumentNameError) as error:
             load_directory(WorkflowsConfig(), factory, tmp_path, "*.wf")
         assert "doublon.wf" in str(error.value)
+
+
+# ----------------------------------------------------------------------
+# Script sans déclaration propre (extension de grammaire du 2026-11-13)
+# ----------------------------------------------------------------------
+
+SANS_DECLARATION = """
+INCLUDE 'referentiel.wf'
+NAME wrk_sans_decl VERSION 1
+INITIALIZE WORKFLOW
+    ON EVENT Event1 WHEN NOT IsEmpty(text = @Workflow.ExternalId)
+        SWITCH State1
+DEFINE STATE State1 'state 1' ;
+"""
+
+
+class TestScriptSansDeclarationPropre:
+    """Un workflow peut tirer TOUT son référentiel d'un ``INCLUDE``.
+
+    Le source exigeait au moins une déclaration dans le script complet
+    (``(define_referenciel_statement SEMICOLON)+``) : un workflow dont le
+    référentiel vit entièrement dans un fragment était alors inécrivable
+    (« mismatched input 'INITIALIZE' expecting 'DEFINE' »). La grammaire
+    est passée à ``*``.
+    """
+
+    def test_script_without_own_declaration_parses(self):
+        parser = WorkflowScriptParser.parse_string(
+            SANS_DECLARATION, filename="sans.wf"
+        )
+        assert parser.errors == []
+        assert parser.includes == ["referentiel.wf"]
+
+    def test_script_without_own_declaration_loads_and_runs(self, tmp_path):
+        """Chargement réel : le fragment fournit événement, règle et constante."""
+        (tmp_path / "referentiel.wf").write_text(FRAGMENT, encoding="utf-8")
+        (tmp_path / "main.wf").write_text(SANS_DECLARATION, encoding="utf-8")
+
+        config = load_directory(WorkflowsConfig(), make_visitor, tmp_path, "*.wf")
+
+        document = config.get("wrk_sans_decl", 1)
+        assert "Event1" in document.declared_events
+        assert "State1" in document.states
+
+    def test_header_only_script_parses(self):
+        """Portée exacte de l'élargissement : ni déclaration ni état."""
+        parser = WorkflowScriptParser.parse_string(
+            "NAME Minimal VERSION 1\n", filename="min.wf"
+        )
+        assert parser.errors == []
+
+    def test_fragment_still_requires_a_declaration(self):
+        """Le fragment garde le ``+`` : un référentiel vide n'a pas de sens."""
+        parser = WorkflowScriptParser.parse_string(
+            "FRAGMENT NAME vide\n", filename="vide.wf"
+        )
+        assert parser.errors, "un fragment sans déclaration doit rester refusé"
+        assert "vide.wf" in str(parser.errors[0])

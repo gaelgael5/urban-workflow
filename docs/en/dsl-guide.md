@@ -31,7 +31,7 @@ CONCURENCY 1
 DESCRIPTION 'ce que fait ce workflow'
 MATCHING (Type = 'achat')
 
-DEFINE EVENT  …;        -- referential: at least one declaration required
+DEFINE EVENT  …;        -- referential (optional: it may all come from an INCLUDE)
 DEFINE RULE   …;
 DEFINE ACTION …;
 DEFINE CONST  …;
@@ -690,9 +690,11 @@ What a fragment may carry, and what it may not:
   `DuplicatedArgumentNameError` positioned **on the offending fragment**;
 - every full script gets a fresh visitor: two workflows share a fragment
   without sharing anything else;
-- the full script must keep **at least one `DEFINE …;`** of its own, even
-  when everything comes from fragments (the grammar requires it: without
-  one, `mismatched input 'INITIALIZE'`);
+- **a full script needs no declaration of its own**: it may take its
+  whole referential from the included fragments (up to 0.3.0 the grammar
+  required at least one, and such a script failed with
+  `mismatched input 'INITIALIZE' expecting 'DEFINE'`); a **fragment**,
+  however, must still declare something;
 - `parse_config()` on a string **does not resolve** `INCLUDE`, and does
   not report it: the fragment's declarations are simply missing.
   Resolution is `load_directory`'s job (see

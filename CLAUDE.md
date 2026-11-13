@@ -263,12 +263,11 @@ Points actés dans le contrat :
   (`diff_layout` → `missing`/`orphans`) ;
 - `place_missing_positions` dans le cœur, déterministe, ne touche que
   les objets sans position ;
-- **piège mesuré** : la grammaire exige au moins un `DEFINE …;` propre
-  (`WorkflowParser.g4:43`, `+`) — un workflow qui tire TOUT de son
-  fragment est inécrivable (`mismatched input 'INITIALIZE' expecting
-  'DEFINE'`). `render_script` refuse ce modèle ; lever la limite = passer
-  `+` en `*` (4e extension de grammaire, élargissante, régénération).
-  **Question ouverte à l'intégrateur.**
+- **limite levée (2026-11-13, décision utilisateur)** : la grammaire
+  exigeait au moins un `DEFINE …;` propre dans `script_full` (`+`) — un
+  workflow tirant TOUT de son fragment était inécrivable (`mismatched
+  input 'INITIALIZE' expecting 'DEFINE'`). Passé à `*` : voir
+  « Quatrième extension de grammaire » ci-dessous.
 
 ## Hors plan — Mise en page du diagramme (fait, 2026-11-07)
 
@@ -512,6 +511,36 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   Pas de pip local : tests via un conteneur `python:3.12-slim` jetable sur
   la machine de test.
 
+## Quatrième extension de grammaire — déclaration propre facultative (2026-11-13)
+
+`script_full` : `(define_referenciel_statement SEMICOLON)+` → `*`
+(commenté dans le `.g4`). Le source exigeait au moins une déclaration
+dans le script complet ; un workflow qui tire tout son référentiel d'un
+`INCLUDE` était donc **inécrivable** (`mismatched input 'INITIALIZE'
+expecting 'DEFINE'`). Demandé par un intégrateur, décidé par
+l'utilisateur.
+
+- **Élargissement pur** : tout script valide avant le reste. Portée
+  réelle un peu plus large que le cas visé — un script réduit à
+  `NAME X VERSION 1` (ni déclaration ni état) passe maintenant le
+  parseur.
+- **Le fragment garde le `+`** : un référentiel vide n'a pas de raison
+  d'exister (`FRAGMENT NAME vide` → `mismatched input '<EOF>'`).
+- Parseur régénéré (ANTLR 4.13.2, conteneur `eclipse-temurin:21-jre` sur
+  `test1`, jar par le miroir Google) et commité ; seuls
+  `WorkflowParser.py`/`.interp` changent. 389 tests inchangés + 4 neufs
+  (`tests/test_dsl_includes.py::TestScriptSansDeclarationPropre`), dont
+  un chargement réel par `load_directory` suivi d'une évaluation.
+- Docs mises à jour : `docs/guide-dsl.md` §9 + son miroir EN,
+  `docs/contrat-vue-diagramme.md` §7.
+- **Défaut PRÉEXISTANT repéré au passage, non corrigé** :
+  `script : script_fragment | script_full EOF` — en ANTLR, `a | b c` se
+  lit `(a) | (b c)`, donc l'`EOF` ne s'applique qu'au script complet. Du
+  texte parasite après le dernier `DEFINE …;` d'un **fragment** est
+  **ignoré en silence** (vérifié). Correction = `(script_fragment |
+  script_full) EOF`, mais elle RESTREINT la grammaire (des fragments
+  acceptés aujourd'hui seraient refusés) → décision utilisateur requise.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
@@ -531,10 +560,8 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   entre workflows). Limites constatées : pas de cascade (`INCLUDE` dans
   un fragment = erreur de syntaxe), inclusion non idempotente (deux fois
   le même fragment = `DuplicatedArgumentNameError` positionnée sur le
-  fragment), cible obligatoirement un fragment, au moins un `DEFINE …;`
-  exigé dans le script principal (`(define_referenciel_statement
-  SEMICOLON)+`), et `parse_config` sur une chaîne ne résout PAS les
-  `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
+  fragment), cible obligatoirement un fragment, et `parse_config` sur une
+  chaîne ne résout PAS les `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
 - `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,
   `is_fragment`, `crc`, erreurs de syntaxe positionnées (`check()` →
   `DslSyntaxError`).
