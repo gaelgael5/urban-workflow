@@ -238,6 +238,38 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
 
+## Hors plan — Vue diagramme et inclusions (contrat écrit, 2026-11-13)
+
+Demande d'évolution d'un intégrateur (back-office de paramétrage, en
+0.2.1) : `extract_surface` refuse `FRAGMENT` et `INCLUDE`, donc aucun
+workflow qui inclut un référentiel ne se dessine. Contrat de réponse :
+`docs/contrat-vue-diagramme.md` (cible **0.4.0**, API + garanties).
+Points actés dans le contrat :
+- le blocage est dans `surface.py` SEUL — le parseur expose déjà
+  `includes`/`is_fragment` (vérifié en conteneur sur la 0.3.0) ;
+- `extract_surface(source, filename="", fragments={nom: source})`,
+  fragments EN MÉMOIRE (aucune I/O dans la bibliothèque) ; sans
+  `fragments`, mode permissif comme le visiteur sans registre ;
+- modèle : `includes`, `is_fragment`, et `origin` par déclaration
+  (`""` = propre) ; `render_script` n'émet que `origin == ""` et remet
+  les `INCLUDE` avant `NAME` — **jamais d'aplatissement** ;
+- point fixe conservé, et il vaut MÊME SANS fragments (le rendu ignore
+  les héritées, donc la re-analyse n'en a pas besoin) ;
+- document de positions remonté du playground vers le cœur sans
+  changement, clé = **nom d'état** (un id généré ne survivrait pas à une
+  édition en mode texte : rien dans le DSL ne le porterait) ; renommage
+  en mode texte = position perdue + orpheline signalée, réordonnancement
+  = position conservée ; orphelines jamais purgées en silence
+  (`diff_layout` → `missing`/`orphans`) ;
+- `place_missing_positions` dans le cœur, déterministe, ne touche que
+  les objets sans position ;
+- **piège mesuré** : la grammaire exige au moins un `DEFINE …;` propre
+  (`WorkflowParser.g4:43`, `+`) — un workflow qui tire TOUT de son
+  fragment est inécrivable (`mismatched input 'INITIALIZE' expecting
+  'DEFINE'`). `render_script` refuse ce modèle ; lever la limite = passer
+  `+` en `*` (4e extension de grammaire, élargissante, régénération).
+  **Question ouverte à l'intégrateur.**
+
 ## Hors plan — Mise en page du diagramme (fait, 2026-11-07)
 
 - Positions par nom d'état dans `<workflow>.layout.json`
