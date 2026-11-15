@@ -533,13 +533,44 @@ l'utilisateur.
   un chargement réel par `load_directory` suivi d'une évaluation.
 - Docs mises à jour : `docs/guide-dsl.md` §9 + son miroir EN,
   `docs/contrat-vue-diagramme.md` §7.
-- **Défaut PRÉEXISTANT repéré au passage, non corrigé** :
-  `script : script_fragment | script_full EOF` — en ANTLR, `a | b c` se
-  lit `(a) | (b c)`, donc l'`EOF` ne s'applique qu'au script complet. Du
-  texte parasite après le dernier `DEFINE …;` d'un **fragment** est
-  **ignoré en silence** (vérifié). Correction = `(script_fragment |
-  script_full) EOF`, mais elle RESTREINT la grammaire (des fragments
-  acceptés aujourd'hui seraient refusés) → décision utilisateur requise.
+- **Défaut PRÉEXISTANT repéré au passage — corrigé le 2026-11-15, voir
+  la cinquième extension ci-dessous.**
+
+## Cinquième extension de grammaire — `EOF` sur les deux alternatives (2026-11-15)
+
+`script : script_fragment | script_full EOF` → `script :
+(script_fragment | script_full) EOF`. En ANTLR, `a | b c` se lit
+`(a) | (b c)` : l'`EOF` du source ne portait que sur le script complet,
+donc tout texte après la dernière déclaration d'un **FRAGMENT** était
+**ignoré en silence**. Déclenché par la question de l'utilisateur sur la
+signalisation des erreurs dans l'éditeur.
+
+- **Dégât mesuré avant correction** : la faute doit tomber sur le mot
+  `DEFINE` lui-même (lettres inversées `DEFIEN`, ou `define` en
+  minuscules — la casse compte). Ailleurs, ANTLR est encore DANS la
+  boucle et récupère : `;` oublié → `missing ';'`, `EVNET` →
+  `mismatched input 'EVNET'`, apostrophe non fermée → signalée. Sur
+  `DEFINE`, aucune erreur, et toutes les déclarations suivantes
+  disparaissent. Pire que l'absence : la constante perdue fait qu'un nom
+  nu redevient un **littéral** — la garde `Depasse(montant = seuil)`
+  recevait la chaîne `'seuil'` au lieu de l'entier `1000` (mesuré), d'où
+  un `TypeError` au traitement de l'événement, loin du fichier fautif.
+- **C'est une RESTRICTION assumée** (à l'inverse de la quatrième
+  extension) : un fragment avec du texte parasite, accepté avant, est
+  désormais refusé — c'est précisément ce qu'on veut voir signalé.
+- Parseur régénéré (même méthode que la quatrième extension) ; seuls
+  `WorkflowParser.py`/`.interp` changent. 393 tests inchangés + 5 neufs
+  (`tests/test_dsl_includes.py::TestTexteParasiteDansUnFragment`) = 398,
+  ruff propre.
+- **L'éditeur du playground signalait déjà les erreurs** (marqueurs de
+  gouttière + soulignement CodeMirror via `lint: {getAnnotations}` dans
+  `static/uw/editor.js`, alimentés par `ws.getErrors()` ←
+  `POST /api/analyze`, plus le panneau `diagnostics` cliquable) : rien à
+  ajouter côté éditeur, c'est la grammaire qui était aveugle. Vérifié
+  par `/api/analyze` : fragment fautif = 0 erreur avant, `ligne 5:0
+  mismatched input 'DEFIEN' expecting <EOF>` après. Un script COMPLET,
+  lui, était déjà protégé par l'`EOF`.
+- Docs mises à jour : `docs/guide-dsl.md` §9 + miroir EN.
 
 ## Étape 2 (DSL) — acquis
 

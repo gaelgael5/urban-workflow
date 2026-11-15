@@ -695,6 +695,14 @@ What a fragment may carry, and what it may not:
   required at least one, and such a script failed with
   `mismatched input 'INITIALIZE' expecting 'DEFINE'`); a **fragment**,
   however, must still declare something;
+- **nothing is ignored after a fragment's last declaration**: any line
+  that does not start a declaration is reported (`mismatched input …
+  expecting <EOF>`). Up to 0.3.0 it was **silently ignored**: a typo on
+  the word `DEFINE` — swapped letters, or the word in lower case, since
+  keywords are case-sensitive — made every following declaration of the
+  referential vanish without a word, and a guard
+  `Depasse(montant = seuil)` then received the text `seuil` instead of
+  the constant;
 - `parse_config()` on a string **does not resolve** `INCLUDE`, and does
   not report it: the fragment's declarations are simply missing.
   Resolution is `load_directory`'s job (see

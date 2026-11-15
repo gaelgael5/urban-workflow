@@ -230,6 +230,18 @@ verrouillent le nouveau cas et le refus maintenu côté fragment.
 - Deux changements de comportement, assumés : un script à `FRAGMENT` ou
   à `INCLUDE` ne lève plus `SurfaceError`, et un script complet sans
   déclaration propre n'est plus une erreur de syntaxe (§7).
+- **Un troisième, celui-là restrictif** : l'`EOF` de la grammaire ne
+  portait que sur le script complet, si bien que tout texte après la
+  dernière déclaration d'un **fragment** était *ignoré en silence*. Il
+  est désormais signalé (`mismatched input … expecting <EOF>`). Un
+  fragment qui comporte du texte parasite, accepté jusqu'ici, lèvera
+  donc une erreur de syntaxe positionnée. C'est ce que vous voulez :
+  avant, une faute de frappe sur le mot `DEFINE` faisait disparaître
+  sans un mot toutes les déclarations suivantes du référentiel, et une
+  garde recevait un littéral à la place d'une constante. **À vérifier de
+  votre côté** : si vos fragments embarquent du texte libre après la
+  dernière déclaration (un commentaire d'un autre dialecte, un reste de
+  copier-coller), il faudra le retirer.
 
 **Avertissement de montée de version** : passer de 0.2.1 à 0.4.0 traverse
 la **0.3.0**, qui change un défaut du moteur — faute de `DedupKey` et de

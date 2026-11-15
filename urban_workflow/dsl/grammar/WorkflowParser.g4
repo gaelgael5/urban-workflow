@@ -23,8 +23,18 @@ options {
     tokenVocab=WorkflowLexer; 
     }
 
+// Extension urban-workflow (decision utilisateur du 2026-11-15) : le source
+// ecrivait "script_fragment | script_full EOF". En ANTLR, "a | b c" se lit
+// "(a) | (b c)" : l'EOF ne portait donc que sur le script complet, et du
+// texte apres la derniere declaration d'un FRAGMENT etait IGNORE EN SILENCE
+// -- une faute de frappe sur le mot DEFINE (lettres inversees, ou le mot en
+// minuscules, la casse comptant ici) faisait disparaitre sans un mot toutes
+// les declarations suivantes du referentiel. Les parentheses rendent l'EOF
+// obligatoire dans les deux cas. C'est une RESTRICTION assumee : un fragment
+// avec du texte parasite, accepte avant, est desormais refuse -- c'est
+// precisement ce qu'on veut voir signale.
 script :
-    script_fragment | script_full
+    (script_fragment | script_full)
     EOF
     ;
 

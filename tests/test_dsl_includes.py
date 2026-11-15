@@ -10,7 +10,7 @@ from urban_workflow.dsl import (
     WorkflowScriptParser,
     load_directory,
 )
-from urban_workflow.exceptions import DuplicatedArgumentNameError
+from urban_workflow.exceptions import DslSyntaxError, DuplicatedArgumentNameError
 
 FRAGMENT = """
 FRAGMENT NAME referentiel
@@ -296,3 +296,84 @@ class TestScriptSansDeclarationPropre:
         )
         assert parser.errors, "un fragment sans déclaration doit rester refusé"
         assert "vide.wf" in str(parser.errors[0])
+
+
+# ----------------------------------------------------------------------
+# Texte parasite dans un fragment (correction de grammaire du 2026-11-15)
+# ----------------------------------------------------------------------
+
+REFERENTIEL = """FRAGMENT NAME referentiel
+DESCRIPTION 'référentiel achats'
+DEFINE EVENT Depot 'dépôt du dossier';
+DEFINE EVENT Valider 'validation';
+{ligne}
+DEFINE RULE  Depasse (INTEGER montant) 'au-delà du seuil';
+DEFINE CONST seuil 1000 'seuil de validation';
+"""
+
+
+class TestTexteParasiteDansUnFragment:
+    """Rien ne doit être ignoré en silence après les déclarations d'un fragment.
+
+    La grammaire du source écrivait ``script_fragment | script_full EOF``,
+    qu'ANTLR lit ``(script_fragment) | (script_full EOF)`` : l'``EOF`` ne
+    portait que sur le script complet. Une faute de frappe sur le mot
+    ``DEFINE`` sort de la boucle de déclarations, et le fragment se
+    terminait alors sans erreur — **toutes les déclarations suivantes
+    disparaissaient sans un mot**. Mesuré avant correction : la constante
+    perdue faisait qu'une garde ``Depasse(montant = seuil)`` recevait la
+    chaîne ``'seuil'`` au lieu de l'entier ``1000``.
+    """
+
+    @pytest.mark.parametrize(
+        "ligne",
+        [
+            # Lettres inversées sur DEFINE.
+            "DEFIEN EVENT Refuser 'refus';",
+            # Mot-clé en minuscules : le DSL est sensible à la casse.
+            "define EVENT Refuser 'refus';",
+            # Ligne qui ne commence pas une déclaration du tout.
+            "Refuser 'refus';",
+        ],
+    )
+    def test_trailing_garbage_is_reported(self, ligne):
+        parser = WorkflowScriptParser.parse_string(
+            REFERENTIEL.format(ligne=ligne), filename="referentiel.wf"
+        )
+        assert parser.errors, f"{ligne!r} doit être signalé, pas ignoré"
+        assert parser.errors[0].line == 5, parser.errors[0]
+
+    def test_a_sound_fragment_keeps_every_declaration(self):
+        """Témoin : sans faute, les cinq déclarations sont vues."""
+        visitor = make_visitor()
+        parser = WorkflowScriptParser.parse_string(
+            REFERENTIEL.format(ligne="DEFINE EVENT Refuser 'refus';"),
+            filename="referentiel.wf",
+        ).check()
+        parser.visit(visitor)
+
+        assert sorted(visitor.declarations) == ["Depasse"]
+        assert visitor.constants["seuil"].value == 1000
+
+    def test_the_lost_constant_was_the_real_damage(self, tmp_path):
+        """Le script incluant un fragment fautif ne se charge plus en silence.
+
+        Avant correction, le chargement réussissait et la garde recevait
+        un littéral à la place de la constante.
+        """
+        (tmp_path / "referentiel.wf").write_text(
+            REFERENTIEL.format(ligne="DEFIEN EVENT Refuser 'refus';"), encoding="utf-8"
+        )
+        (tmp_path / "main.wf").write_text(
+            "INCLUDE 'referentiel.wf'\n"
+            "NAME Achat VERSION 1\n"
+            "INITIALIZE WORKFLOW\n"
+            "    ON EVENT Depot\n"
+            "        SWITCH Depose\n"
+            "DEFINE STATE Depose 'dossier déposé' ;\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(DslSyntaxError) as error:
+            load_directory(WorkflowsConfig(), make_visitor, tmp_path, "*.wf")
+        assert "referentiel.wf" in str(error.value)

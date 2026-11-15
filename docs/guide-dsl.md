@@ -704,6 +704,14 @@ Ce qu'un fragment peut porter, et ce qu'il ne peut pas :
   0.3.0 la grammaire en exigeait au moins une, et un tel script échouait
   sur `mismatched input 'INITIALIZE' expecting 'DEFINE'`) ; un
   **fragment**, lui, doit toujours déclarer quelque chose ;
+- **rien n'est ignoré après la dernière déclaration d'un fragment** :
+  toute ligne qui ne commence pas une déclaration est signalée
+  (`mismatched input … expecting <EOF>`). Jusqu'à la 0.3.0 elle était
+  **ignorée en silence** : une faute de frappe sur le mot `DEFINE` — des
+  lettres inversées, ou le mot en minuscules, la casse comptant ici —
+  faisait disparaître sans un mot toutes les déclarations suivantes du
+  référentiel, et une garde `Depasse(montant = seuil)` recevait alors le
+  texte `seuil` au lieu de la constante ;
 - `parse_config()` sur une chaîne **ne résout pas** les `INCLUDE`, et ne
   le signale pas : les déclarations du fragment manquent, simplement. La
   résolution est le travail de `load_directory` (voir
