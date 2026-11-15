@@ -1,4 +1,4 @@
-# Contrat — vue diagramme et inclusions (cible 0.4.0)
+# Contrat — vue diagramme et inclusions (cible 0.5.0)
 
 Réponse à une demande d'évolution : *sortir la vue diagramme du modèle de
 surface*, pour un back-office de paramétrage qui intègre urban-workflow
@@ -221,7 +221,7 @@ verrouillent le nouveau cas et le refus maintenu côté fragment.
 
 ## 8. Compatibilité et version
 
-**Cible 0.4.0 — aucune rupture de signature.**
+**Cible 0.5.0 — aucune rupture de signature.**
 
 - `fragments` est un paramètre nommé optionnel ; les nouveaux champs du
   modèle sont additifs et `SurfaceModel.from_dict` est déjà tolérant.
@@ -243,11 +243,17 @@ verrouillent le nouveau cas et le refus maintenu côté fragment.
   dernière déclaration (un commentaire d'un autre dialecte, un reste de
   copier-coller), il faudra le retirer.
 
-**Avertissement de montée de version** : passer de 0.2.1 à 0.4.0 traverse
-la **0.3.0**, qui change un défaut du moteur — faute de `DedupKey` et de
-`UNIQUE`, le moteur dédoublonne désormais quand même (`Uuid` du payload,
-sinon `Name` + `EventDate` (+ `ExternalId`)). Un back-office qui
-n'évalue pas n'est pas concerné ; le composant qui évalue, si.
+**Avertissement de montée de version** : passer de 0.2.1 à 0.5.0 traverse
+deux rangs qui changent du comportement.
+
+- La **0.3.0** change un défaut du moteur — faute de `DedupKey` et de
+  `UNIQUE`, le moteur dédoublonne désormais quand même (`Uuid` du
+  payload, sinon `Name` + `EventDate` (+ `ExternalId`)). Un back-office
+  qui n'évalue pas n'est pas concerné ; le composant qui évalue, si.
+- La **0.4.0** porte les deux changements de grammaire décrits en §7 et
+  §8 : la déclaration propre devient facultative (élargissement, rien à
+  reprendre) et le texte parasite d'un fragment est désormais signalé
+  (restriction — c'est le point à vérifier chez vous).
 
 ## 9. Hors périmètre
 

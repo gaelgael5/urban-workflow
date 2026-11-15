@@ -106,6 +106,16 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   d'index** : la version apparaît sur l'API JSON de pypi.org avant
   d'être installable (`pip install …==0.3.0` a échoué une première fois,
   ~1 min) — ne pas en conclure que la publication a échoué.
+- **0.4.0** (2026-11-15) : les deux paquets passent en 0.4.0 — rang
+  MINEUR car la grammaire change de comportement : la déclaration propre
+  devient facultative (élargissement, quatrième extension) et le texte
+  parasite d'un fragment n'est plus ignoré en silence (RESTRICTION,
+  cinquième extension — des fragments acceptés en 0.3.0 lèvent désormais
+  une erreur de syntaxe). Aucune signature touchée. Version posée dans
+  les 2 `pyproject`, les 2 `__version__`, `urban-workflow>=0.4.0` côté
+  playground, et les liens `blob/v0.4.0` des 2 `README.en.md`. Le
+  contrat de la vue diagramme, qui visait la 0.4.0, est retargé sur la
+  **0.5.0** (le numéro est consommé par cette publication).
 - **Licence en expression SPDX (fait)** : `license = "MIT"` +
   `license-files = ["LICENSE"]` dans les deux pyproject,
   `requires = ["setuptools>=77"]` (la table TOML était dépréciée, builds
@@ -243,7 +253,9 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
 Demande d'évolution d'un intégrateur (back-office de paramétrage, en
 0.2.1) : `extract_surface` refuse `FRAGMENT` et `INCLUDE`, donc aucun
 workflow qui inclut un référentiel ne se dessine. Contrat de réponse :
-`docs/contrat-vue-diagramme.md` (cible **0.4.0**, API + garanties).
+`docs/contrat-vue-diagramme.md` (cible **0.5.0** — la 0.4.0 a été
+consommée par la publication des deux corrections de grammaire ;
+API + garanties).
 Points actés dans le contrat :
 - le blocage est dans `surface.py` SEUL — le parseur expose déjà
   `includes`/`is_fragment` (vérifié en conteneur sur la 0.3.0) ;
