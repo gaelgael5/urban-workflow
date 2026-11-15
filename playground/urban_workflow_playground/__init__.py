@@ -10,4 +10,4 @@ Lancement ::
     # ou : python -m urban_workflow_playground
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

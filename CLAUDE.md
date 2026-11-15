@@ -94,6 +94,28 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   et les liens des pages PyPI pointaient vers un tag où la doc annoncée
   n'existait pas → garde ajoutée
   (`test_pypi_readme_links_point_at_the_declared_version`).
+  **Publiée le 2026-11-12** : tags `v0.3.0` / `playground-v0.3.0` sur
+  `44a11e7` (PR #3 — PR #2 avait été mergée AVANT le bump de version et
+  la licence SPDX, d'où une seconde PR), les deux workflows de release
+  verts, `0.3.0` présente sur pypi.org pour les deux paquets. Vérifié
+  depuis l'index public en conteneur vierge : `0.3.0 0.3.0`,
+  `Metadata-Version: 2.4`, `License-Expression: MIT`,
+  `License-File: LICENSE`, `grammar/{WorkflowLexer,WorkflowParser}.g4`
+  + `regenerate.sh` (bit exécutable 755 conservé), repli anti-doublon
+  actif (rejeu = aucun contexte), script console présent. **Latence
+  d'index** : la version apparaît sur l'API JSON de pypi.org avant
+  d'être installable (`pip install …==0.3.0` a échoué une première fois,
+  ~1 min) — ne pas en conclure que la publication a échoué.
+- **0.4.0** (2026-11-15) : les deux paquets passent en 0.4.0 — rang
+  MINEUR car la grammaire change de comportement : la déclaration propre
+  devient facultative (élargissement, quatrième extension) et le texte
+  parasite d'un fragment n'est plus ignoré en silence (RESTRICTION,
+  cinquième extension — des fragments acceptés en 0.3.0 lèvent désormais
+  une erreur de syntaxe). Aucune signature touchée. Version posée dans
+  les 2 `pyproject`, les 2 `__version__`, `urban-workflow>=0.4.0` côté
+  playground, et les liens `blob/v0.4.0` des 2 `README.en.md`. Le
+  contrat de la vue diagramme, qui visait la 0.4.0, est retargé sur la
+  **0.5.0** (le numéro est consommé par cette publication).
 - **Licence en expression SPDX (fait)** : `license = "MIT"` +
   `license-files = ["LICENSE"]` dans les deux pyproject,
   `requires = ["setuptools>=77"]` (la table TOML était dépréciée, builds
@@ -225,6 +247,39 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   branche. Tests Playwright : drags au rythme réel (pauses entre
   mousemove), clic des labels d'arêtes par coordonnées (le rect de fond
   intercepte).
+
+## Hors plan — Vue diagramme et inclusions (contrat écrit, 2026-11-13)
+
+Demande d'évolution d'un intégrateur (back-office de paramétrage, en
+0.2.1) : `extract_surface` refuse `FRAGMENT` et `INCLUDE`, donc aucun
+workflow qui inclut un référentiel ne se dessine. Contrat de réponse :
+`docs/contrat-vue-diagramme.md` (cible **0.5.0** — la 0.4.0 a été
+consommée par la publication des deux corrections de grammaire ;
+API + garanties).
+Points actés dans le contrat :
+- le blocage est dans `surface.py` SEUL — le parseur expose déjà
+  `includes`/`is_fragment` (vérifié en conteneur sur la 0.3.0) ;
+- `extract_surface(source, filename="", fragments={nom: source})`,
+  fragments EN MÉMOIRE (aucune I/O dans la bibliothèque) ; sans
+  `fragments`, mode permissif comme le visiteur sans registre ;
+- modèle : `includes`, `is_fragment`, et `origin` par déclaration
+  (`""` = propre) ; `render_script` n'émet que `origin == ""` et remet
+  les `INCLUDE` avant `NAME` — **jamais d'aplatissement** ;
+- point fixe conservé, et il vaut MÊME SANS fragments (le rendu ignore
+  les héritées, donc la re-analyse n'en a pas besoin) ;
+- document de positions remonté du playground vers le cœur sans
+  changement, clé = **nom d'état** (un id généré ne survivrait pas à une
+  édition en mode texte : rien dans le DSL ne le porterait) ; renommage
+  en mode texte = position perdue + orpheline signalée, réordonnancement
+  = position conservée ; orphelines jamais purgées en silence
+  (`diff_layout` → `missing`/`orphans`) ;
+- `place_missing_positions` dans le cœur, déterministe, ne touche que
+  les objets sans position ;
+- **limite levée (2026-11-13, décision utilisateur)** : la grammaire
+  exigeait au moins un `DEFINE …;` propre dans `script_full` (`+`) — un
+  workflow tirant TOUT de son fragment était inécrivable (`mismatched
+  input 'INITIALIZE' expecting 'DEFINE'`). Passé à `*` : voir
+  « Quatrième extension de grammaire » ci-dessous.
 
 ## Hors plan — Mise en page du diagramme (fait, 2026-11-07)
 
@@ -468,6 +523,67 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   Pas de pip local : tests via un conteneur `python:3.12-slim` jetable sur
   la machine de test.
 
+## Quatrième extension de grammaire — déclaration propre facultative (2026-11-13)
+
+`script_full` : `(define_referenciel_statement SEMICOLON)+` → `*`
+(commenté dans le `.g4`). Le source exigeait au moins une déclaration
+dans le script complet ; un workflow qui tire tout son référentiel d'un
+`INCLUDE` était donc **inécrivable** (`mismatched input 'INITIALIZE'
+expecting 'DEFINE'`). Demandé par un intégrateur, décidé par
+l'utilisateur.
+
+- **Élargissement pur** : tout script valide avant le reste. Portée
+  réelle un peu plus large que le cas visé — un script réduit à
+  `NAME X VERSION 1` (ni déclaration ni état) passe maintenant le
+  parseur.
+- **Le fragment garde le `+`** : un référentiel vide n'a pas de raison
+  d'exister (`FRAGMENT NAME vide` → `mismatched input '<EOF>'`).
+- Parseur régénéré (ANTLR 4.13.2, conteneur `eclipse-temurin:21-jre` sur
+  `test1`, jar par le miroir Google) et commité ; seuls
+  `WorkflowParser.py`/`.interp` changent. 389 tests inchangés + 4 neufs
+  (`tests/test_dsl_includes.py::TestScriptSansDeclarationPropre`), dont
+  un chargement réel par `load_directory` suivi d'une évaluation.
+- Docs mises à jour : `docs/guide-dsl.md` §9 + son miroir EN,
+  `docs/contrat-vue-diagramme.md` §7.
+- **Défaut PRÉEXISTANT repéré au passage — corrigé le 2026-11-15, voir
+  la cinquième extension ci-dessous.**
+
+## Cinquième extension de grammaire — `EOF` sur les deux alternatives (2026-11-15)
+
+`script : script_fragment | script_full EOF` → `script :
+(script_fragment | script_full) EOF`. En ANTLR, `a | b c` se lit
+`(a) | (b c)` : l'`EOF` du source ne portait que sur le script complet,
+donc tout texte après la dernière déclaration d'un **FRAGMENT** était
+**ignoré en silence**. Déclenché par la question de l'utilisateur sur la
+signalisation des erreurs dans l'éditeur.
+
+- **Dégât mesuré avant correction** : la faute doit tomber sur le mot
+  `DEFINE` lui-même (lettres inversées `DEFIEN`, ou `define` en
+  minuscules — la casse compte). Ailleurs, ANTLR est encore DANS la
+  boucle et récupère : `;` oublié → `missing ';'`, `EVNET` →
+  `mismatched input 'EVNET'`, apostrophe non fermée → signalée. Sur
+  `DEFINE`, aucune erreur, et toutes les déclarations suivantes
+  disparaissent. Pire que l'absence : la constante perdue fait qu'un nom
+  nu redevient un **littéral** — la garde `Depasse(montant = seuil)`
+  recevait la chaîne `'seuil'` au lieu de l'entier `1000` (mesuré), d'où
+  un `TypeError` au traitement de l'événement, loin du fichier fautif.
+- **C'est une RESTRICTION assumée** (à l'inverse de la quatrième
+  extension) : un fragment avec du texte parasite, accepté avant, est
+  désormais refusé — c'est précisément ce qu'on veut voir signalé.
+- Parseur régénéré (même méthode que la quatrième extension) ; seuls
+  `WorkflowParser.py`/`.interp` changent. 393 tests inchangés + 5 neufs
+  (`tests/test_dsl_includes.py::TestTexteParasiteDansUnFragment`) = 398,
+  ruff propre.
+- **L'éditeur du playground signalait déjà les erreurs** (marqueurs de
+  gouttière + soulignement CodeMirror via `lint: {getAnnotations}` dans
+  `static/uw/editor.js`, alimentés par `ws.getErrors()` ←
+  `POST /api/analyze`, plus le panneau `diagnostics` cliquable) : rien à
+  ajouter côté éditeur, c'est la grammaire qui était aveugle. Vérifié
+  par `/api/analyze` : fragment fautif = 0 erreur avant, `ligne 5:0
+  mismatched input 'DEFIEN' expecting <EOF>` après. Un script COMPLET,
+  lui, était déjà protégé par l'`EOF`.
+- Docs mises à jour : `docs/guide-dsl.md` §9 + miroir EN.
+
 ## Étape 2 (DSL) — acquis
 
 - `urban_workflow/dsl/grammar/` : `WorkflowLexer.g4` / `WorkflowParser.g4`
@@ -487,10 +603,8 @@ imports : **exécutés tels qu'écrits** par `tests/test_docs_examples.py`
   entre workflows). Limites constatées : pas de cascade (`INCLUDE` dans
   un fragment = erreur de syntaxe), inclusion non idempotente (deux fois
   le même fragment = `DuplicatedArgumentNameError` positionnée sur le
-  fragment), cible obligatoirement un fragment, au moins un `DEFINE …;`
-  exigé dans le script principal (`(define_referenciel_statement
-  SEMICOLON)+`), et `parse_config` sur une chaîne ne résout PAS les
-  `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
+  fragment), cible obligatoirement un fragment, et `parse_config` sur une
+  chaîne ne résout PAS les `INCLUDE` (silencieux). `tests/test_dsl_includes.py::TestSeveralFragments`.
 - `WorkflowScriptParser.parse_string/parse_path` → arbre + `includes`,
   `is_fragment`, `crc`, erreurs de syntaxe positionnées (`check()` →
   `DslSyntaxError`).

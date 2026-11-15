@@ -23,8 +23,18 @@ options {
     tokenVocab=WorkflowLexer; 
     }
 
+// Extension urban-workflow (decision utilisateur du 2026-11-15) : le source
+// ecrivait "script_fragment | script_full EOF". En ANTLR, "a | b c" se lit
+// "(a) | (b c)" : l'EOF ne portait donc que sur le script complet, et du
+// texte apres la derniere declaration d'un FRAGMENT etait IGNORE EN SILENCE
+// -- une faute de frappe sur le mot DEFINE (lettres inversees, ou le mot en
+// minuscules, la casse comptant ici) faisait disparaitre sans un mot toutes
+// les declarations suivantes du referentiel. Les parentheses rendent l'EOF
+// obligatoire dans les deux cas. C'est une RESTRICTION assumee : un fragment
+// avec du texte parasite, accepte avant, est desormais refuse -- c'est
+// precisement ce qu'on veut voir signale.
 script :
-    script_fragment | script_full
+    (script_fragment | script_full)
     EOF
     ;
 
@@ -40,7 +50,14 @@ script_full :
     concurency?
     (DESCRIPTION comment)?
     (MATCHING matchings)? 
-	(define_referenciel_statement SEMICOLON)+ 
+    // Extension urban-workflow (decision utilisateur du 2026-11-13) : le
+    // source exigeait au moins une declaration ici (+). Un workflow qui
+    // tire tout son referentiel d'un INCLUDE n'avait alors aucune
+    // declaration propre et etait inecrivable -- erreur "mismatched input
+    // 'INITIALIZE' expecting 'DEFINE'". Passage a * : elargissement pur,
+    // tout script valide auparavant le reste. Le fragment, lui, garde le
+    // + : un referentiel sans declaration n'a pas de raison d'exister.
+	(define_referenciel_statement SEMICOLON)* 
     initializing?
 	(define_state_statement SEMICOLON)*
     ;
