@@ -116,6 +116,20 @@ adaptateur asyncio, fusion des initialiseurs DSL multi-branches.
   playground, et les liens `blob/v0.4.0` des 2 `README.en.md`. Le
   contrat de la vue diagramme, qui visait la 0.4.0, est retargé sur la
   **0.5.0** (le numéro est consommé par cette publication).
+  **Publiée le 2026-11-15** : PR #4 mergée (`98b82cd`), tags `v0.4.0` /
+  `playground-v0.4.0` posés dessus, workflows de release verts, `0.4.0`
+  installable depuis pypi.org pour les deux paquets. Vérifié en
+  conteneur vierge depuis l'index public : versions `0.4.0 / 0.4.0`,
+  `Metadata-Version 2.4`, `License-Expression MIT`, les deux `.g4` +
+  `regenerate.sh` livrés (bit 755 conservé), et surtout les deux
+  changements de grammaire **constatés dans l'artefact publié** — un
+  script complet sans déclaration propre passe, et le texte parasite
+  d'un fragment lève `referentiel.wf:3:0: mismatched input 'DEFIEN'
+  expecting <EOF>`. **Piège rencontré** : un `workflow_dispatch` manuel
+  de `release-core.yml` lancé sur `main` en parallèle du tag → deux runs
+  concurrents pour la même version ; sans dommage (`skip-existing`),
+  mais c'est le run manuel qui a téléversé la wheel et le run du tag qui
+  a sauté. Ne pas lancer les deux : le tag suffit.
 - **Licence en expression SPDX (fait)** : `license = "MIT"` +
   `license-files = ["LICENSE"]` dans les deux pyproject,
   `requires = ["setuptools>=77"]` (la table TOML était dépréciée, builds
