@@ -105,3 +105,26 @@ def test_pypi_summary_is_english(project):
     data = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
     summary = data["project"]["description"]
     assert not re.search(r"[éèàù]| piloté | moteur ", summary), summary
+
+
+def test_antlr_runtime_is_declared_and_matches_the_grammar_jar():
+    """Ce que le socle importe, il doit le déclarer.
+
+    ``urban_workflow/dsl/`` importe ``antlr4`` directement ; la dépendance
+    n'arrivait que par transitivité d'urban-json. Et la version du runtime
+    doit rester celle du jar qui génère le parseur (``regenerate.sh``) :
+    le format sérialisé de l'ATN peut changer d'un rang mineur à l'autre,
+    auquel cas le parseur commité ne se charge plus.
+    """
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    declarees = data["project"]["dependencies"]
+    antlr = [d for d in declarees if d.startswith("antlr4-python3-runtime")]
+    assert antlr, f"antlr4-python3-runtime absent de {declarees}"
+
+    script = (ROOT / "urban_workflow" / "dsl" / "grammar" / "regenerate.sh").read_text(
+        encoding="utf-8"
+    )
+    version = re.search(r"^ANTLR_VERSION=(\S+)", script, flags=re.MULTILINE).group(1)
+    majeur_mineur = ".".join(version.split(".")[:2])
+    assert f">={version}" in antlr[0], f"{antlr[0]} ne vise pas le jar {version}"
+    assert "<" in antlr[0], f"{antlr[0]} doit borner le rang mineur ({majeur_mineur})"

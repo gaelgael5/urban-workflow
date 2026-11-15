@@ -15,6 +15,15 @@ authors = [{ name = "Gael Beard", email = "gaelgael5@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = [
     "urban-json>=0.2.1",
+    # Importé DIRECTEMENT par urban_workflow/dsl/ (parser, visiteur,
+    # expressions et le code généré). Il n'arrivait jusqu'ici que par
+    # transitivité d'urban-json, qui le pince en ==4.13.2 : ça tombait
+    # juste, mais un paquet doit déclarer ce qu'il importe, sans quoi une
+    # évolution du pinning d'un tiers casserait l'import du parseur.
+    # La borne haute est nécessaire : le runtime doit correspondre à la
+    # version du jar qui a généré le parseur (voir regenerate.sh), le
+    # format sérialisé de l'ATN pouvant changer d'un rang mineur à l'autre.
+    "antlr4-python3-runtime>=4.13.2,<4.14",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
